@@ -1,0 +1,887 @@
+// Prisma schema for the admin-first rental management system.
+// Phase 1 focuses on manual admin operations: create orders, assign equipment,
+// record payments, hand over items, receive returns, and settle balances.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "commonjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  /// Primary user id.
+  id             String             @id @default(uuid())
+  /// Login email, unique per staff/admin account.
+  email          String             @unique
+  /// Hashed password, never store raw password.
+  passwordHash   String
+  /// Display name shown in admin screens and audit logs.
+  fullName       String
+  /// Optional staff phone number.
+  phone          String?
+  /// Login/activity status for this staff/admin account.
+  activityStatus UserActivityStatus @default(ACTIVE)
+  /// Last successful login time.
+  lastLoginAt    DateTime?
+
+  /// RBAC role assignments.
+  roles             UserRole[]
+  /// Active and historical admin auth sessions.
+  sessions          AuthSession[]
+  /// Orders created by this user.
+  createdOrders     RentalOrder[]        @relation("CreatedOrders")
+  /// Orders assigned to this user for handling.
+  assignedOrders    RentalOrder[]        @relation("AssignedOrders")
+  /// Payments recorded manually by this user.
+  recordedPayments  PaymentRecord[]      @relation("RecordedPayments")
+  /// Order status changes performed by this user.
+  statusChanges     OrderStatusHistory[] @relation("StatusChangedBy")
+  /// Handover/return handover records handled by this user.
+  handovers         OrderHandover[]      @relation("HandoverBy")
+  /// Return inspections performed by this user.
+  returnInspections ReturnInspection[]   @relation("InspectedBy")
+  /// General order events created by this user.
+  orderEvents       OrderEvent[]         @relation("OrderEventCreatedBy")
+
+  /// Account creation time.
+  createdAt DateTime  @default(now())
+  /// Last account update time.
+  updatedAt DateTime  @updatedAt
+  /// Soft delete time; keep historical order data intact.
+  deletedAt DateTime?
+
+  @@index([email])
+  @@index([activityStatus])
+}
+
+model AuthSession {
+  /// Primary auth session id.
+  id String @id @default(uuid())
+
+  /// User that owns this admin session.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Hash of the latest refresh token for rotation/revocation.
+  refreshTokenHash String
+  /// Hash of the double-submit CSRF token.
+  csrfTokenHash    String
+  /// Whether this session has been revoked by logout or admin action.
+  isRevoked        Boolean   @default(false)
+  /// Refresh session expiry time.
+  expiresAt        DateTime
+  /// Last successful refresh/use time.
+  lastUsedAt       DateTime?
+  /// Revocation time, if revoked.
+  revokedAt        DateTime?
+  /// User agent captured at login.
+  userAgent        String?
+  /// IP address captured at login.
+  ipAddress        String?
+
+  /// Session creation time.
+  createdAt DateTime @default(now())
+  /// Last session update time.
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isRevoked])
+  @@index([expiresAt])
+}
+
+model Role {
+  /// Primary role id.
+  id          String  @id @default(uuid())
+  /// Stable role code, for example ADMIN, MANAGER, STAFF, VIEWER.
+  code        String  @unique
+  /// Human-readable role name.
+  name        String
+  /// Optional role description.
+  description String?
+  /// System roles should not be deleted from admin UI.
+  isSystem    Boolean @default(false)
+
+  /// Users assigned to this role.
+  users       UserRole[]
+  /// Permissions granted to this role.
+  permissions RolePermission[]
+
+  /// Role creation time.
+  createdAt DateTime @default(now())
+  /// Last role update time.
+  updatedAt DateTime @updatedAt
+}
+
+model Permission {
+  /// Primary permission id.
+  id          String  @id @default(uuid())
+  /// Stable permission code, for example orders.create or products.update.
+  code        String  @unique
+  /// Human-readable permission name.
+  name        String
+  /// Optional permission description.
+  description String?
+
+  /// Roles that include this permission.
+  roles RolePermission[]
+
+  /// Permission creation time.
+  createdAt DateTime @default(now())
+  /// Last permission update time.
+  updatedAt DateTime @updatedAt
+}
+
+model UserRole {
+  /// User receiving the role.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Role assigned to the user.
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  /// When this role was assigned.
+  assignedAt   DateTime @default(now())
+  /// User id that assigned this role, stored for audit.
+  assignedById String?
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  /// Role receiving the permission.
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  /// Permission granted to the role.
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  /// When this permission was granted to the role.
+  grantedAt   DateTime @default(now())
+  /// User id that granted this permission, stored for audit.
+  grantedById String?
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Customer {
+  /// Primary customer id.
+  id             String         @id @default(uuid())
+  /// Optional customer code for internal lookup.
+  code           String?        @unique
+  /// Customer full name.
+  name           String
+  /// Customer phone number.
+  phone          String?
+  /// Customer email.
+  email          String?
+  /// Customer address for delivery or contract.
+  address        String?
+  /// Citizen id/passport number, if required for deposit/contract.
+  identityNumber String?
+  /// Social contact such as Facebook/Zalo URL or handle.
+  socialContact  String?
+  /// Internal customer notes.
+  notes          String?
+  /// Customer account/relationship status.
+  status         CustomerStatus @default(ACTIVE)
+
+  /// Rental orders belonging to this customer.
+  orders RentalOrder[]
+
+  /// Customer creation time.
+  createdAt DateTime  @default(now())
+  /// Last customer update time.
+  updatedAt DateTime  @updatedAt
+  /// Soft delete time; customers with orders should not be hard-deleted.
+  deletedAt DateTime?
+
+  @@index([phone])
+  @@index([email])
+  @@index([name])
+  @@index([status])
+}
+
+model ProductCategory {
+  /// Primary category id.
+  id       String  @id @default(uuid())
+  /// Category name, for example Camera, Lens, Light.
+  name     String
+  /// Optional URL/admin slug.
+  slug     String? @unique
+  /// Whether this category is visible/usable.
+  isActive Boolean @default(true)
+
+  /// Products in this category.
+  products Product[]
+
+  /// Category creation time.
+  createdAt DateTime @default(now())
+  /// Last category update time.
+  updatedAt DateTime @updatedAt
+}
+
+model Brand {
+  /// Primary brand id.
+  id       String  @id @default(uuid())
+  /// Brand name, for example Sony, Canon, DJI.
+  name     String
+  /// Optional URL/admin slug.
+  slug     String? @unique
+  /// Whether this brand is visible/usable.
+  isActive Boolean @default(true)
+
+  /// Products under this brand.
+  products Product[]
+
+  /// Brand creation time.
+  createdAt DateTime @default(now())
+  /// Last brand update time.
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  /// Primary product id; represents the rentable product type/model.
+  id                  String  @id @default(uuid())
+  /// Product name, for example Sony A7 IV.
+  name                String
+  /// Unique product SKU.
+  sku                 String  @unique
+  /// Optional product description.
+  description         String?
+  /// Included accessories or package contents.
+  includedAccessories String?
+  /// Usage guide or handover note for staff/customer.
+  usageGuide          String?
+
+  /// Optional product category.
+  categoryId String?
+  category   ProductCategory? @relation(fields: [categoryId], references: [id])
+  /// Optional product brand.
+  brandId    String?
+  brand      Brand?           @relation(fields: [brandId], references: [id])
+
+  /// Full-day rental price.
+  dailyPrice         Decimal  @db.Decimal(12, 2)
+  /// Half-day rental price.
+  halfDayPrice       Decimal? @db.Decimal(12, 2)
+  /// Hourly overage price for extra hours.
+  hourlyOveragePrice Decimal? @db.Decimal(12, 2)
+  /// Standard deposit amount.
+  depositAmount      Decimal  @db.Decimal(12, 2)
+  /// Replacement value used for lost/severe damage cases.
+  replacementValue   Decimal? @db.Decimal(12, 2)
+  /// Fallback stock quantity if the shop does not manage serial units.
+  stockQuantity      Int      @default(0)
+  /// Whether this product can be used in new orders.
+  isActive           Boolean  @default(true)
+
+  /// Physical units/serials under this product.
+  assetUnits    AssetUnit[]
+  /// Historical/current order items for this product.
+  orderItems    RentalOrderItem[]
+  /// Damage reports involving this product.
+  damageReports DamageReport[]
+
+  /// Product creation time.
+  createdAt DateTime  @default(now())
+  /// Last product update time.
+  updatedAt DateTime  @updatedAt
+  /// Soft delete time; keep order history intact.
+  deletedAt DateTime?
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([sku])
+  @@index([isActive])
+}
+
+model AssetUnit {
+  /// Primary asset unit id; represents one physical device.
+  id        String  @id @default(uuid())
+  /// Product model/type this unit belongs to.
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  /// Optional unique serial number for the physical device.
+  serialNumber String?        @unique
+  /// Current operational status of this physical device.
+  status       AssetStatus    @default(AVAILABLE)
+  /// Current condition of this physical device.
+  condition    AssetCondition @default(GOOD)
+  /// Internal note about this device.
+  note         String?
+  /// Whether this physical unit can be assigned to orders.
+  isActive     Boolean        @default(true)
+
+  /// Order items that assigned this physical device.
+  orderItems    RentalOrderItem[]
+  /// Damage reports involving this physical device.
+  damageReports DamageReport[]
+
+  /// Asset unit creation time.
+  createdAt DateTime  @default(now())
+  /// Last asset unit update time.
+  updatedAt DateTime  @updatedAt
+  /// Soft delete/retire time.
+  deletedAt DateTime?
+
+  @@index([productId])
+  @@index([status])
+  @@index([condition])
+  @@index([isActive])
+}
+
+model RentalOrder {
+  /// Primary rental order id.
+  id            String        @id @default(uuid())
+  /// Human-readable unique order code.
+  code          String        @unique
+  /// Order source; phase 1 uses ADMIN, future checkout can use WEBSITE.
+  source        OrderSource   @default(ADMIN)
+  /// Operational rental status.
+  status        OrderStatus   @default(DRAFT)
+  /// Separate payment status for the order.
+  paymentStatus PaymentStatus @default(UNPAID)
+
+  /// Customer renting the equipment.
+  customerId               String
+  customer                 Customer @relation(fields: [customerId], references: [id])
+  /// Snapshot of customer name at order creation time.
+  customerNameSnapshot     String
+  /// Snapshot of customer phone at order creation time.
+  customerPhoneSnapshot    String?
+  /// Snapshot of customer email at order creation time.
+  customerEmailSnapshot    String?
+  /// Snapshot of customer address at order creation time.
+  customerAddressSnapshot  String?
+  /// Snapshot of customer identity number at order creation time.
+  customerIdentitySnapshot String?
+
+  /// Planned rental start/pickup time.
+  startDate        DateTime
+  /// Planned rental end/return time.
+  endDate          DateTime
+  /// Actual return time entered by admin.
+  actualReturnDate DateTime?
+
+  /// Pickup/delivery method.
+  pickupMethod     PickupMethod @default(PICKUP_AT_STORE)
+  /// Delivery address if pickup method is DELIVERY.
+  deliveryAddress  String?
+  /// Delivery/trip fee charged to customer.
+  deliveryFeeTotal Decimal      @default(0) @db.Decimal(12, 2)
+
+  /// Rental item subtotal before fees/discounts.
+  subtotal       Decimal @default(0) @db.Decimal(12, 2)
+  /// Total deposit expected for this order.
+  depositTotal   Decimal @default(0) @db.Decimal(12, 2)
+  /// Total late fee charged after return.
+  lateFeeTotal   Decimal @default(0) @db.Decimal(12, 2)
+  /// Total damage/missing fee charged after inspection.
+  damageFeeTotal Decimal @default(0) @db.Decimal(12, 2)
+  /// Total discount applied manually.
+  discountTotal  Decimal @default(0) @db.Decimal(12, 2)
+  /// Total money already collected from customer.
+  paidTotal      Decimal @default(0) @db.Decimal(12, 2)
+  /// Remaining amount customer still needs to pay.
+  remainingTotal Decimal @default(0) @db.Decimal(12, 2)
+  /// Amount that should be refunded to customer.
+  refundTotal    Decimal @default(0) @db.Decimal(12, 2)
+
+  /// Customer-facing note.
+  note         String?
+  /// Internal admin note.
+  internalNote String?
+  /// Cancellation reason if order is cancelled.
+  cancelReason String?
+
+  /// Admin/staff who created the order.
+  createdById  String
+  createdBy    User    @relation("CreatedOrders", fields: [createdById], references: [id])
+  /// Admin/staff assigned to handle the order.
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedOrders", fields: [assignedToId], references: [id])
+
+  /// Equipment/product lines in this order.
+  items             RentalOrderItem[]
+  /// Manual payment/refund records.
+  payments          PaymentRecord[]
+  /// Status transition history.
+  statusHistories   OrderStatusHistory[]
+  /// Handover and return handover records.
+  handovers         OrderHandover[]
+  /// Return inspections for this order.
+  returnInspections ReturnInspection[]
+  /// General event/audit log.
+  events            OrderEvent[]
+
+  /// Order creation time.
+  createdAt DateTime  @default(now())
+  /// Last order update time.
+  updatedAt DateTime  @updatedAt
+  /// Soft delete time, rarely used for orders.
+  deletedAt DateTime?
+
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([customerId])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([startDate, endDate])
+}
+
+model RentalOrderItem {
+  /// Primary order item id.
+  id String @id @default(uuid())
+
+  /// Parent rental order.
+  orderId String
+  order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Product being rented.
+  productId   String
+  product     Product    @relation(fields: [productId], references: [id])
+  /// Specific physical device assigned to this line, if serial-managed.
+  assetUnitId String?
+  assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
+
+  /// Quantity of this product in the order line.
+  quantity            Int     @default(1)
+  /// Product name snapshot to preserve historical order data.
+  productNameSnapshot String
+  /// Product SKU snapshot to preserve historical order data.
+  skuSnapshot         String?
+  /// Unit rental price snapshot.
+  unitPrice           Decimal @db.Decimal(12, 2)
+  /// Deposit amount snapshot per unit.
+  depositAmount       Decimal @db.Decimal(12, 2)
+  /// Total rental amount for this line.
+  lineTotal           Decimal @db.Decimal(12, 2)
+  /// Item-level note, for example accessories or serial assignment note.
+  note                String?
+
+  /// Order item creation time.
+  createdAt DateTime @default(now())
+  /// Last order item update time.
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([assetUnitId])
+}
+
+model PaymentRecord {
+  /// Primary payment record id.
+  id String @id @default(uuid())
+
+  /// Rental order this payment/refund belongs to.
+  orderId String
+  order   RentalOrder @relation(fields: [orderId], references: [id])
+
+  /// Business kind of the payment/refund.
+  kind          PaymentKind
+  /// Payment method used by the customer/admin.
+  method        PaymentMethod
+  /// Payment processing/recording status.
+  status        PaymentRecordStatus @default(SUCCESS)
+  /// Payment amount; refunds should still be positive and identified by kind REFUND.
+  amount        Decimal             @db.Decimal(12, 2)
+  /// Bank transfer code, receipt number, or external reference.
+  referenceCode String?
+  /// Admin note for this payment record.
+  note          String?
+
+  /// Admin/staff who recorded this payment.
+  recordedById String
+  recordedBy   User   @relation("RecordedPayments", fields: [recordedById], references: [id])
+
+  /// Time the payment was actually recorded/received.
+  recordedAt DateTime @default(now())
+  /// Row creation time.
+  createdAt  DateTime @default(now())
+  /// Last row update time.
+  updatedAt  DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([kind])
+  @@index([method])
+  @@index([status])
+  @@index([recordedAt])
+}
+
+model OrderStatusHistory {
+  /// Primary status history id.
+  id String @id @default(uuid())
+
+  /// Rental order whose status changed.
+  orderId String
+  order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Previous order status; null when creating the initial status record.
+  fromStatus  OrderStatus?
+  /// New order status.
+  toStatus    OrderStatus
+  /// Admin/staff who changed the status.
+  changedById String
+  changedBy   User         @relation("StatusChangedBy", fields: [changedById], references: [id])
+  /// Reason or note for this transition.
+  note        String?
+
+  /// Status change time.
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([toStatus])
+  @@index([changedById])
+  @@index([createdAt])
+}
+
+model OrderHandover {
+  /// Primary handover id.
+  id String @id @default(uuid())
+
+  /// Rental order being handed over or received back.
+  orderId String
+  order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Handover type: outgoing handover or return handover.
+  type          HandoverType
+  /// Admin/staff handling the handover.
+  handledById   String
+  handledBy     User         @relation("HandoverBy", fields: [handledById], references: [id])
+  /// Actual handover time.
+  handledAt     DateTime     @default(now())
+  /// Condition/accessory note at handover time.
+  conditionNote String?
+  /// General handover note.
+  note          String?
+
+  /// Row creation time.
+  createdAt DateTime @default(now())
+  /// Last row update time.
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([type])
+  @@index([handledById])
+}
+
+model ReturnInspection {
+  /// Primary return inspection id.
+  id String @id @default(uuid())
+
+  /// Rental order being inspected after return.
+  orderId String
+  order   RentalOrder @relation(fields: [orderId], references: [id])
+
+  /// Overall inspection result.
+  result           ReturnResult @default(PENDING)
+  /// Summary of returned condition.
+  conditionSummary String?
+  /// Late fee calculated/entered during inspection.
+  lateFee          Decimal      @default(0) @db.Decimal(12, 2)
+  /// Damage fee calculated/entered during inspection.
+  damageFee        Decimal      @default(0) @db.Decimal(12, 2)
+  /// Missing item/accessory fee calculated/entered during inspection.
+  missingFee       Decimal      @default(0) @db.Decimal(12, 2)
+  /// Inspection note.
+  note             String?
+
+  /// Admin/staff who inspected the return.
+  inspectedById String
+  inspectedBy   User     @relation("InspectedBy", fields: [inspectedById], references: [id])
+  /// Inspection time.
+  inspectedAt   DateTime @default(now())
+
+  /// Detailed damage/missing reports under this inspection.
+  damageReports DamageReport[]
+
+  /// Row creation time.
+  createdAt DateTime @default(now())
+  /// Last row update time.
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([result])
+  @@index([inspectedById])
+}
+
+model DamageReport {
+  /// Primary damage report id.
+  id String @id @default(uuid())
+
+  /// Parent return inspection.
+  inspectionId String
+  inspection   ReturnInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  /// Product involved in the damage/missing report.
+  productId   String
+  product     Product    @relation(fields: [productId], references: [id])
+  /// Specific physical device involved, if serial-managed.
+  assetUnitId String?
+  assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
+
+  /// Damage severity.
+  severity     DamageSeverity
+  /// Damage/missing description.
+  description  String
+  /// Estimated fee charged to customer.
+  estimatedFee Decimal?       @db.Decimal(12, 2)
+  /// Whether this damage issue has been settled.
+  resolved     Boolean        @default(false)
+
+  /// Row creation time.
+  createdAt DateTime @default(now())
+  /// Last row update time.
+  updatedAt DateTime @updatedAt
+
+  @@index([inspectionId])
+  @@index([productId])
+  @@index([assetUnitId])
+  @@index([severity])
+}
+
+model OrderEvent {
+  /// Primary order event id.
+  id String @id @default(uuid())
+
+  /// Rental order related to this event.
+  orderId String
+  order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Event type.
+  type     OrderEventType
+  /// Optional readable event message.
+  message  String?
+  /// Extra structured event data.
+  metadata Json?
+
+  /// Admin/staff who created the event, if any.
+  createdById String?
+  createdBy   User?   @relation("OrderEventCreatedBy", fields: [createdById], references: [id])
+
+  /// Event creation time.
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([type])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+enum CustomerStatus {
+  /// Customer can create/rent orders.
+  ACTIVE
+  /// Customer is inactive but historical data remains.
+  INACTIVE
+  /// Customer is blocked from new rental orders.
+  BLOCKED
+}
+
+enum UserActivityStatus {
+  /// User can log in normally.
+  ACTIVE
+  /// User is banned from logging in.
+  BANNED
+  /// User is temporarily locked and must contact an administrator.
+  LOCKED
+  /// User is inactive or not activated.
+  INACTIVE
+}
+
+enum AssetStatus {
+  /// Unit is available for new rental assignment.
+  AVAILABLE
+  /// Unit is reserved by an upcoming confirmed order.
+  RESERVED
+  /// Unit is currently rented out.
+  RENTED
+  /// Unit is under maintenance.
+  MAINTENANCE
+  /// Unit has been retired and should not be rented.
+  RETIRED
+  /// Unit is lost.
+  LOST
+}
+
+enum AssetCondition {
+  /// Brand-new condition.
+  NEW
+  /// Good working condition.
+  GOOD
+  /// Fair condition with visible wear.
+  FAIR
+  /// Damaged but not necessarily lost.
+  DAMAGED
+  /// Lost item.
+  LOST
+}
+
+enum OrderSource {
+  /// Order created manually by admin/staff.
+  ADMIN
+  /// Order created from future website checkout.
+  WEBSITE
+}
+
+enum OrderStatus {
+  /// Draft order, not yet confirmed and should not block availability.
+  DRAFT
+  /// Admin confirmed the rental schedule; should block availability.
+  CONFIRMED
+  /// Staff is preparing equipment.
+  PREPARING
+  /// Equipment is ready for pickup at store.
+  READY_FOR_PICKUP
+  /// Equipment is being delivered to customer.
+  DELIVERING
+  /// Customer is currently renting the equipment.
+  RENTING
+  /// Customer has passed planned return time.
+  OVERDUE
+  /// Customer returned the equipment.
+  RETURNED
+  /// Order is fully settled and closed.
+  COMPLETED
+  /// Order was cancelled.
+  CANCELLED
+  /// Refund is being processed.
+  REFUNDING
+  /// Refund has been completed.
+  REFUNDED
+  /// Order has a dispute.
+  DISPUTED
+}
+
+enum PickupMethod {
+  /// Customer receives equipment at the store.
+  PICKUP_AT_STORE
+  /// Shop delivers equipment to customer.
+  DELIVERY
+}
+
+enum PaymentStatus {
+  /// No successful payment has been recorded.
+  UNPAID
+  /// Some but not all payable amount has been collected.
+  PARTIALLY_PAID
+  /// Payable amount has been fully collected.
+  PAID
+  /// Some amount has been refunded.
+  PARTIALLY_REFUNDED
+  /// Refund has been fully completed.
+  REFUNDED
+}
+
+enum PaymentKind {
+  /// Fee to hold the schedule, if used manually.
+  HOLD_FEE
+  /// Deposit collected before handover.
+  DEPOSIT
+  /// Rental fee collected from customer.
+  RENTAL_FEE
+  /// Late return fee.
+  LATE_FEE
+  /// Damage/missing item fee.
+  DAMAGE_FEE
+  /// Delivery or return shipping fee.
+  DELIVERY_FEE
+  /// Refund paid back to customer.
+  REFUND
+  /// Manual correction or adjustment.
+  ADJUSTMENT
+}
+
+enum PaymentMethod {
+  /// Cash payment.
+  CASH
+  /// Bank transfer payment.
+  BANK_TRANSFER
+  /// Card payment.
+  CARD
+  /// E-wallet payment.
+  E_WALLET
+  /// Other payment method.
+  OTHER
+}
+
+enum PaymentRecordStatus {
+  /// Payment is waiting to be confirmed.
+  PENDING
+  /// Payment was successfully recorded.
+  SUCCESS
+  /// Payment failed or was rejected.
+  FAILED
+  /// Payment record was cancelled.
+  CANCELLED
+}
+
+enum HandoverType {
+  /// Equipment is handed to customer.
+  OUTBOUND
+  /// Equipment is received back from customer.
+  RETURN
+}
+
+enum ReturnResult {
+  /// Inspection is not finished.
+  PENDING
+  /// Return is OK.
+  OK
+  /// Returned equipment is damaged.
+  DAMAGED
+  /// Accessories/items are missing.
+  MISSING_ITEMS
+  /// Return has a dispute.
+  DISPUTED
+}
+
+enum DamageSeverity {
+  /// Minor issue.
+  LOW
+  /// Medium issue.
+  MEDIUM
+  /// Serious issue.
+  HIGH
+  /// Lost item.
+  LOST
+}
+
+enum OrderEventType {
+  /// Order was created.
+  ORDER_CREATED
+  /// Order was confirmed.
+  ORDER_CONFIRMED
+  /// Equipment preparation started or completed.
+  ASSET_PREPARED
+  /// Equipment was ready for pickup.
+  READY_FOR_PICKUP
+  /// Equipment was delivered.
+  ASSET_DELIVERED
+  /// Rental started.
+  RENTAL_STARTED
+  /// Order became overdue.
+  ORDER_OVERDUE
+  /// Return was received.
+  ASSET_RETURNED
+  /// Order was completed.
+  ORDER_COMPLETED
+  /// Order was cancelled.
+  ORDER_CANCELLED
+  /// Order entered dispute.
+  ORDER_DISPUTED
+  /// Payment/refund was recorded.
+  PAYMENT_RECORDED
+  /// Damage/missing item was reported.
+  DAMAGE_REPORTED
+  /// Note was added.
+  NOTE_ADDED
+}

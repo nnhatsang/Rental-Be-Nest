@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    ports:
+      - '${POSTGRES_PORT}:5432'
+    volumes:
+      - ./dev-db/:/var/lib/postgresql/data
+    env_file:
+      - docker.env
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $POSTGRES_USER -d $POSTGRES_DB']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - postgres
+    command:
+      - 'postgres'
+      - '-c'
+      - 'track_commit_timestamp=on'
+      - '-c'
+      - 'log_destination=stderr'
+
+networks:
+  postgres:
+    driver: bridge

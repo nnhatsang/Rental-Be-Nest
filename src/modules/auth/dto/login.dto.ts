@@ -15,3 +15,26 @@ export class LoginDto {
   @MinLength(8)
   password!: string;
 }
+
+export class AuthUserOutDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'admin@rental.local' })
+  email!: string;
+
+  @ApiProperty({ example: 'System Admin' })
+  fullName!: string;
+
+  @ApiProperty({ type: String, format: 'uuid' })
+  sessionId!: string;
+
+  @ApiProperty({ type: [String], example: ['ADMIN'] })
+  roles!: string[];
+
+  @ApiProperty({
+    type: [String],
+    example: ['orders.read', 'orders.create'],
+  })
+  permissions!: string[];
+}

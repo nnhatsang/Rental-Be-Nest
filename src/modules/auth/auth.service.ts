@@ -1,20 +1,47 @@
 import { randomBytes } from 'crypto';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { Request, Response } from 'express';
+import { Request } from 'express';
 import { PrismaService } from '@modules/database/prisma.service';
 import { LoginDto } from './dto/login.dto';
-import { AuthUser, JwtAccessPayload, JwtRefreshPayload, RefreshRequestUser } from './types/auth-user.type';
-import { clearAuthCookies, setAuthCookies } from './utils/cookie.util';
+import {
+  AuthCookiePayload,
+  AuthUser,
+  JwtAccessPayload,
+  JwtRefreshPayload,
+  LoginResult,
+  RefreshRequestUser,
+  RefreshResult,
+} from './types/auth-user.type';
 import { parseDurationMs } from './utils/duration.util';
 import {
   EUserActivityStatus,
   INVALID_SESSION,
+  PASSWORD_NOT_MATCH,
   UNAUTHORIZED,
   USER_ACTIVITY_ERRORS,
+  USER_NOT_FOUND,
 } from '@/libs/constants/error.constants';
+import { AuthSession, User } from '@generated/prisma/browser';
+
+type UserWithAuth = User & {
+  roles: {
+    role: {
+      code: string;
+      permissions: {
+        permission: {
+          code: string;
+        };
+      }[];
+    };
+  }[];
+};
+
+type SessionWithUser = AuthSession & {
+  user: UserWithAuth;
+};
 
 @Injectable()
 export class AuthService {
@@ -24,68 +51,96 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async login(dto: LoginDto, request: Request, response: Response) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-      include: this.userAuthInclude(),
+  async login(dto: LoginDto, request: Request): Promise<LoginResult> {
+    const user = await this.validateLoginCredentials(dto.email, dto.password);
+    const session = await this.createAuthSession(user.id, request);
+    const cookies = await this.createCookiePayload(user.id, user.email, session.id);
+
+    await Promise.all([
+      this.saveSessionTokens(session.id, cookies),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      }),
+    ]);
+
+    return {
+      user: this.toAuthUser(user, session.id),
+      cookies,
+    };
+  }
+
+  async refresh(refreshUser: RefreshRequestUser): Promise<RefreshResult> {
+    const session = await this.validateRefreshSession(refreshUser);
+    const cookies = await this.createCookiePayload(session.user.id, session.user.email, session.id);
+
+    await this.saveSessionTokens(session.id, cookies);
+
+    return { cookies };
+  }
+
+  async logout(user: AuthUser): Promise<void> {
+    await this.revokeSession(user.sessionId);
+  }
+
+  async validateAccessSession(userId: string, sessionId: string): Promise<AuthUser> {
+    const session = await this.prisma.authSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        userId: true,
+        isRevoked: true,
+        expiresAt: true,
+      },
     });
 
+    this.assertSessionIsUsable(session, userId);
+
+    const user = await this.findAuthUserById(userId);
+
     if (!user || user.deletedAt) {
-      throw new UnauthorizedException(UNAUTHORIZED);
+      throw new UnauthorizedException(INVALID_SESSION);
     }
 
     this.assertUserCanLogin(user.activityStatus);
 
-    const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
-
-    if (!passwordValid) {
-      throw new UnauthorizedException(UNAUTHORIZED);
-    }
-
-    const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
-    const refreshMaxAge = parseDurationMs(refreshExpiresIn);
-    const csrfToken = this.generateOpaqueToken();
-
-    const session = await this.prisma.authSession.create({
-      data: {
-        userId: user.id,
-        refreshTokenHash: '',
-        csrfTokenHash: await bcrypt.hash(csrfToken, 10),
-        expiresAt: new Date(Date.now() + refreshMaxAge),
-        userAgent: request.headers['user-agent'],
-        ipAddress: request.ip,
-      },
-    });
-
-    const tokens = await this.issueTokens(user.id, user.email, session.id);
-    const refreshTokenHash = await bcrypt.hash(tokens.refreshToken, 10);
-
-    await this.prisma.authSession.update({
-      where: { id: session.id },
-      data: {
-        refreshTokenHash,
-        lastUsedAt: new Date(),
-      },
-    });
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
-
-    setAuthCookies(response, this.configService, {
-      ...tokens,
-      csrfToken,
-      accessMaxAge: this.getAccessMaxAge(),
-      refreshMaxAge,
-    });
-
-    return {
-      user: this.toAuthUserResponse(user, session.id),
-    };
+    return this.toAuthUser(user, sessionId);
   }
 
-  async refresh(refreshUser: RefreshRequestUser, response: Response) {
+  getMe(user: AuthUser): AuthUser {
+    return user;
+  }
+
+  getAccessMaxAge(): number {
+    return parseDurationMs(this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m'));
+  }
+
+  getRefreshMaxAge(): number {
+    return parseDurationMs(this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'));
+  }
+
+  private async validateLoginCredentials(email: string, password: string): Promise<UserWithAuth> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: this.userAuthInclude(),
+    });
+
+    if (!user || user.deletedAt) {
+      throw new HttpException(USER_NOT_FOUND, HttpStatus.NOT_FOUND);
+    }
+
+    this.assertUserCanLogin(user.activityStatus);
+
+    const passwordValid = await bcrypt.compare(password, user.passwordHash);
+
+    if (!passwordValid) {
+      throw new BadRequestException(PASSWORD_NOT_MATCH);
+    }
+
+    return user;
+  }
+
+  private async validateRefreshSession(refreshUser: RefreshRequestUser): Promise<SessionWithUser> {
     const session = await this.prisma.authSession.findUnique({
       where: { id: refreshUser.sessionId },
       include: {
@@ -114,72 +169,62 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_SESSION);
     }
 
-    const csrfToken = this.generateOpaqueToken();
-    const tokens = await this.issueTokens(session.user.id, session.user.email, session.id);
-    const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
-    const refreshMaxAge = parseDurationMs(refreshExpiresIn);
+    return session;
+  }
 
-    await this.prisma.authSession.update({
-      where: { id: session.id },
+  private async createAuthSession(userId: string, request: Request): Promise<AuthSession> {
+    return this.prisma.authSession.create({
       data: {
-        refreshTokenHash: await bcrypt.hash(tokens.refreshToken, 10),
-        csrfTokenHash: await bcrypt.hash(csrfToken, 10),
-        expiresAt: new Date(Date.now() + refreshMaxAge),
+        userId,
+        refreshTokenHash: '',
+        csrfTokenHash: '',
+        expiresAt: new Date(Date.now() + this.getRefreshMaxAge()),
+        userAgent: request.headers['user-agent'],
+        ipAddress: request.ip,
+      },
+    });
+  }
+
+  private async saveSessionTokens(sessionId: string, cookies: AuthCookiePayload): Promise<void> {
+    await this.prisma.authSession.update({
+      where: { id: sessionId },
+      data: {
+        refreshTokenHash: await bcrypt.hash(cookies.refreshToken, 10),
+        csrfTokenHash: await bcrypt.hash(cookies.csrfToken, 10),
+        expiresAt: new Date(Date.now() + cookies.refreshMaxAge),
         lastUsedAt: new Date(),
       },
     });
+  }
 
-    setAuthCookies(response, this.configService, {
+  private async createCookiePayload(userId: string, email: string, sessionId: string): Promise<AuthCookiePayload> {
+    const tokens = await this.issueTokens(userId, email, sessionId);
+
+    return {
       ...tokens,
-      csrfToken,
+      csrfToken: this.generateOpaqueToken(),
       accessMaxAge: this.getAccessMaxAge(),
-      refreshMaxAge,
-    });
-
-    return { success: true };
+      refreshMaxAge: this.getRefreshMaxAge(),
+    };
   }
 
-  async logout(user: AuthUser, response: Response) {
-    await this.revokeSession(user.sessionId);
-    clearAuthCookies(response, this.configService);
-
-    return { success: true };
-  }
-
-  async getAuthenticatedUser(userId: string, sessionId: string): Promise<AuthUser> {
-    const session = await this.prisma.authSession.findUnique({
-      where: { id: sessionId },
-      select: {
-        id: true,
-        userId: true,
-        isRevoked: true,
-        expiresAt: true,
-      },
-    });
-
-    if (!session || session.userId !== userId || session.isRevoked || session.expiresAt <= new Date()) {
-      throw new UnauthorizedException(INVALID_SESSION);
-    }
-
-    const user = await this.prisma.user.findUnique({
+  private async findAuthUserById(userId: string): Promise<UserWithAuth | null> {
+    return this.prisma.user.findUnique({
       where: { id: userId },
       include: this.userAuthInclude(),
     });
+  }
 
-    if (!user || user.deletedAt) {
+  private assertSessionIsUsable(
+    session: { userId: string; isRevoked: boolean; expiresAt: Date } | null,
+    expectedUserId: string,
+  ): asserts session is { userId: string; isRevoked: boolean; expiresAt: Date } {
+    if (!session || session.userId !== expectedUserId || session.isRevoked || session.expiresAt <= new Date()) {
       throw new UnauthorizedException(INVALID_SESSION);
     }
-
-    this.assertUserCanLogin(user.activityStatus);
-
-    return this.toAuthUserResponse(user, sessionId);
   }
 
-  getMe(user: AuthUser) {
-    return user;
-  }
-
-  private async revokeSession(sessionId: string) {
+  private async revokeSession(sessionId: string): Promise<void> {
     await this.prisma.authSession.updateMany({
       where: {
         id: sessionId,
@@ -212,7 +257,7 @@ export class AuthService {
       }),
       this.jwtService.signAsync(refreshPayload, {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: parseDurationMs(this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d')) / 1000,
+        expiresIn: this.getRefreshMaxAge() / 1000,
       }),
     ]);
 
@@ -222,15 +267,11 @@ export class AuthService {
     };
   }
 
-  private getAccessMaxAge() {
-    return parseDurationMs(this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m'));
-  }
-
-  private generateOpaqueToken() {
+  private generateOpaqueToken(): string {
     return randomBytes(32).toString('base64url');
   }
 
-  private assertUserCanLogin(activityStatus: EUserActivityStatus) {
+  private assertUserCanLogin(activityStatus: EUserActivityStatus): void {
     if (activityStatus === EUserActivityStatus.Active) {
       return;
     }
@@ -239,29 +280,9 @@ export class AuthService {
     throw new UnauthorizedException(error ?? INVALID_SESSION);
   }
 
-  private toAuthUserResponse(
-    user: {
-      id: string;
-      email: string;
-      fullName: string;
-      activityStatus: EUserActivityStatus;
-      roles: {
-        role: {
-          code: string;
-          permissions: {
-            permission: {
-              code: string;
-            };
-          }[];
-        };
-      }[];
-    },
-    sessionId: string,
-  ): AuthUser {
+  private toAuthUser(user: UserWithAuth, sessionId: string): AuthUser {
     const roles = user.roles.map(({ role }) => role.code);
-    const permissions = [
-      ...new Set(user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.code))),
-    ];
+    const permissions = [...new Set(user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.code)))];
 
     return {
       id: user.id,

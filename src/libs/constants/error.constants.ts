@@ -39,7 +39,7 @@ export const FORBIDDEN = new ErrorResponse({
 
 export const UNAUTHORIZED = new ErrorResponse({
   code: 'UNAUTHORIZED',
-  message: 'Chưa xác thực',
+  message: 'Lỗi xác thực',
 });
 
 export const INVALID_SESSION = new ErrorResponse({
@@ -70,3 +70,28 @@ export const USER_ACTIVITY_ERRORS: Record<Exclude<EUserActivityStatus, typeof EU
     message: 'Tài khoản của bạn chưa được kích hoạt hoặc đã ngừng hoạt động!',
   }),
 };
+
+export const USER_NOT_FOUND = new ErrorResponse({
+  code: 'USER_NOT_FOUND',
+  message: 'Không tìm thấy tài khoản!',
+});
+
+export const INVALID_USER = new ErrorResponse({
+  code: 'INVALID_USER',
+  message: 'Tài khoản không tồn tại',
+});
+
+export const PASSWORD_NOT_MATCH = new ErrorResponse({
+  code: 'PASSWORD_NOT_MATCH',
+  message: 'Mật khẩu không chính xác',
+});
+
+export const DATA_ERROR = new ErrorResponse({
+  code: 'DATA_ERROR',
+  message: 'Lỗi dữ liệu',
+});
+
+export const OLD_PASSWORD_NOT_VALID = new ErrorResponse({
+  code: 'OLD_PASSWORD_NOT_VALID',
+  message: 'Mật khẩu cũ không đúng',
+});

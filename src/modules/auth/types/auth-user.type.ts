@@ -23,3 +23,20 @@ export interface JwtRefreshPayload {
 export interface RefreshRequestUser extends JwtRefreshPayload {
   refreshToken: string;
 }
+
+export interface AuthCookiePayload {
+  accessToken: string;
+  refreshToken: string;
+  csrfToken: string;
+  accessMaxAge: number;
+  refreshMaxAge: number;
+}
+
+export interface LoginResult {
+  user: AuthUser;
+  cookies: AuthCookiePayload;
+}
+
+export interface RefreshResult {
+  cookies: AuthCookiePayload;
+}

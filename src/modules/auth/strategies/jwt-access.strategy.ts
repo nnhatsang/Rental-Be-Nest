@@ -28,6 +28,6 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
       throw new UnauthorizedException(UNAUTHORIZED);
     }
 
-    return this.authService.getAuthenticatedUser(payload.sub, payload.sessionId);
+    return this.authService.validateAccessSession(payload.sub, payload.sessionId);
   }
 }

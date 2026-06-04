@@ -29,7 +29,7 @@ export class UsersController {
   async getAllUsers(@Query() query: GetAllUsersInDto) {
     const result = await this.usersService.getAllUsers(query);
 
-    return new ApiPaginatedResponseDto(result.items, result.total, result.page, result.perPage, 'Lấy danh sách người dùng thành công');
+    return new ApiPaginatedResponseDto(result, 'Lấy danh sách người dùng thành công');
   }
 
   @Get(':id')

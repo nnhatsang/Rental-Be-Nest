@@ -91,6 +91,26 @@ export const USER_SELF_DELETE_NOT_ALLOWED = new ErrorResponse({
   message: 'Không thể tự xóa tài khoản đang đăng nhập',
 });
 
+export const CUSTOMER_NOT_FOUND = new ErrorResponse({
+  code: 'CUSTOMER_NOT_FOUND',
+  message: 'Không tìm thấy khách hàng',
+});
+
+export const CUSTOMER_EMAIL_EXISTED = new ErrorResponse({
+  code: 'CUSTOMER_EMAIL_EXISTED',
+  message: 'Email khách hàng đã tồn tại',
+});
+
+export const CUSTOMER_PHONE_EXISTED = new ErrorResponse({
+  code: 'CUSTOMER_PHONE_EXISTED',
+  message: 'Số điện thoại khách hàng đã tồn tại',
+});
+
+export const CUSTOMER_CODE_EXISTED = new ErrorResponse({
+  code: 'CUSTOMER_CODE_EXISTED',
+  message: 'Mã khách hàng đã tồn tại',
+});
+
 export const ROLE_NOT_FOUND = new ErrorResponse({
   code: 'ROLE_NOT_FOUND',
   message: 'Không tìm thấy vai trò phù hợp',

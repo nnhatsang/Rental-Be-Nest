@@ -70,20 +70,28 @@ export class ApiPag<T = unknown> {
   pagination!: Pagination;
 }
 
+export type ApiPaginatedResult<T = unknown> = {
+  items: T[];
+  total: number;
+  page: number;
+  perPage: number;
+};
+
 export class ApiPaginatedResponseDto<T = unknown> {
-  constructor(items: T[], total: number, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE, message = SUCCESS) {
-    const currentPage = Number(page) || DEFAULT_PAGE;
-    const currentPerPage = Number(perPage) || DEFAULT_PER_PAGE;
-    const totalPage = Math.max(Math.ceil(total / currentPerPage), 1);
+  constructor(result: ApiPaginatedResult<T>, message = SUCCESS) {
+    const currentPage = Number(result.page) || DEFAULT_PAGE;
+    const currentPerPage = Number(result.perPage) || DEFAULT_PER_PAGE;
+    const totalCount = Number(result.total) || 0;
+    const totalPage = Math.max(Math.ceil(totalCount / currentPerPage), 1);
 
     this.message = message;
     this.data = {
-      items,
+      items: result.items,
       pagination: {
         page: currentPage,
         perPage: currentPerPage,
-        total,
-        count: items.length,
+        total: totalCount,
+        count: result.items.length,
         totalPage,
         prevPage: currentPage > 1 ? currentPage - 1 : undefined,
         nextPage: currentPage < totalPage ? currentPage + 1 : undefined,

@@ -6,7 +6,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class GetAllUsersInDto extends ApiPagReq {
-  @ApiPropertyOptional({ description: 'Search by email, fullName, phone' })
+  @ApiPropertyOptional({ description: 'Tìm email, fullName, phone' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   search?: string;

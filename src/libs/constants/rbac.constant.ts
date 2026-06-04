@@ -10,6 +10,7 @@ export const PermissionCode = {
   CustomersRead: 'customers.read',
   CustomersCreate: 'customers.create',
   CustomersUpdate: 'customers.update',
+  CustomersDelete: 'customers.delete',
 
   ProductsRead: 'products.read',
   ProductsCreate: 'products.create',

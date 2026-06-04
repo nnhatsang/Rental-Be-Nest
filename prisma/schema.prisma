@@ -314,10 +314,15 @@ model Product {
   /// Soft delete time; keep order history intact.
   deletedAt DateTime?
 
+  searchText     String             @default("")
+
   @@index([categoryId])
   @@index([brandId])
   @@index([sku])
   @@index([isActive])
+
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_searchText_trgm_idx")
+
 }
 
 model AssetUnit {
@@ -338,6 +343,9 @@ model AssetUnit {
   /// Whether this physical unit can be assigned to orders.
   isActive     Boolean        @default(true)
 
+  searchText   String @default("")
+
+
   /// Order items that assigned this physical device.
   orderItems    RentalOrderItem[]
   /// Damage reports involving this physical device.
@@ -354,6 +362,9 @@ model AssetUnit {
   @@index([status])
   @@index([condition])
   @@index([isActive])
+
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "AssetUnit_searchText_trgm_idx")
+
 }
 
 model RentalOrder {

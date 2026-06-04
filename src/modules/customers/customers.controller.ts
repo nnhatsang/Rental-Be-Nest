@@ -33,7 +33,7 @@ export class CustomersController {
   @Get(':id')
   @RequirePermissions(PermissionCode.CustomersRead)
   @ApiOperation({
-    summary: 'ấy chi tiết khách hàng',
+    summary: 'Lấy chi tiết khách hàng',
     description: 'Trả về thông tin khách hàng theo id.',
   })
   @ApiOkResponse({ type: CustomerResponseDto })

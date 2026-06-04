@@ -23,3 +23,26 @@ export function buildCustomerSearchText(input: {
 }): string {
   return normalizeSearchText([input.code, input.name, input.phone, input.email, input.identityNumber, input.socialContact].filter(Boolean).join(' '));
 }
+
+export function buildProductSearchText(input: {
+  name?: string | null;
+  sku?: string | null;
+  brandName?: string | null;
+  categoryName?: string | null;
+  description?: string | null;
+}): string {
+  return normalizeSearchText([input.name, input.sku, input.brandName, input.categoryName, input.description].filter(Boolean).join(' '));
+}
+
+export function buildAssetUnitSearchText(input: {
+  serialNumber?: string | null;
+  note?: string | null;
+  status?: string | null;
+  condition?: string | null;
+  productName?: string | null;
+  productSku?: string | null;
+}): string {
+  return normalizeSearchText(
+    [input.serialNumber, input.note, input.status, input.condition, input.productName, input.productSku].filter(Boolean).join(' '),
+  );
+}

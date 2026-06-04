@@ -6,6 +6,8 @@ import { DatabaseModule } from '@modules/database/database.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { ProductsModule } from './modules/products/products.module';
+import { AssetUnitsModule } from './modules/asset-units/asset-units.module';
 import * as Joi from 'joi';
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import * as Joi from 'joi';
     AuthModule,
     UsersModule,
     CustomersModule,
+    ProductsModule,
+    AssetUnitsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

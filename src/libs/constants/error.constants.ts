@@ -111,6 +111,36 @@ export const CUSTOMER_CODE_EXISTED = new ErrorResponse({
   message: 'Mã khách hàng đã tồn tại',
 });
 
+export const PRODUCT_NOT_FOUND = new ErrorResponse({
+  code: 'PRODUCT_NOT_FOUND',
+  message: 'Không tìm thấy sản phẩm',
+});
+
+export const PRODUCT_SKU_EXISTED = new ErrorResponse({
+  code: 'PRODUCT_SKU_EXISTED',
+  message: 'SKU sản phẩm đã tồn tại',
+});
+
+export const PRODUCT_CATEGORY_NOT_FOUND = new ErrorResponse({
+  code: 'PRODUCT_CATEGORY_NOT_FOUND',
+  message: 'Không tìm thấy danh mục sản phẩm',
+});
+
+export const PRODUCT_BRAND_NOT_FOUND = new ErrorResponse({
+  code: 'PRODUCT_BRAND_NOT_FOUND',
+  message: 'Không tìm thấy thương hiệu sản phẩm',
+});
+
+export const ASSET_UNIT_NOT_FOUND = new ErrorResponse({
+  code: 'ASSET_UNIT_NOT_FOUND',
+  message: 'Không tìm thấy đơn vị tài sản',
+});
+
+export const ASSET_UNIT_SERIAL_NUMBER_EXISTED = new ErrorResponse({
+  code: 'ASSET_UNIT_SERIAL_NUMBER_EXISTED',
+  message: 'Serial Number tồn tại',
+});
+
 export const ROLE_NOT_FOUND = new ErrorResponse({
   code: 'ROLE_NOT_FOUND',
   message: 'Không tìm thấy vai trò phù hợp',

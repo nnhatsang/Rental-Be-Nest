@@ -1,5 +1,11 @@
+-- CreateExtension
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
 -- CreateEnum
 CREATE TYPE "CustomerStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'BLOCKED');
+
+-- CreateEnum
+CREATE TYPE "UserActivityStatus" AS ENUM ('ACTIVE', 'BANNED', 'LOCKED', 'INACTIVE');
 
 -- CreateEnum
 CREATE TYPE "AssetStatus" AS ENUM ('AVAILABLE', 'RESERVED', 'RENTED', 'MAINTENANCE', 'RETIRED', 'LOST');
@@ -47,13 +53,32 @@ CREATE TABLE "User" (
     "passwordHash" TEXT NOT NULL,
     "fullName" TEXT NOT NULL,
     "phone" TEXT,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "searchText" TEXT NOT NULL DEFAULT '',
+    "activityStatus" "UserActivityStatus" NOT NULL DEFAULT 'ACTIVE',
     "lastLoginAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AuthSession" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "refreshTokenHash" TEXT NOT NULL,
+    "csrfTokenHash" TEXT NOT NULL,
+    "isRevoked" BOOLEAN NOT NULL DEFAULT false,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "lastUsedAt" TIMESTAMP(3),
+    "revokedAt" TIMESTAMP(3),
+    "userAgent" TEXT,
+    "ipAddress" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AuthSession_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -342,7 +367,19 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "User_email_idx" ON "User"("email");
 
 -- CreateIndex
-CREATE INDEX "User_isActive_idx" ON "User"("isActive");
+CREATE INDEX "User_activityStatus_idx" ON "User"("activityStatus");
+
+-- CreateIndex
+CREATE INDEX "User_searchText_trgm_idx" ON "User" USING GIN ("searchText" gin_trgm_ops);
+
+-- CreateIndex
+CREATE INDEX "AuthSession_userId_idx" ON "AuthSession"("userId");
+
+-- CreateIndex
+CREATE INDEX "AuthSession_isRevoked_idx" ON "AuthSession"("isRevoked");
+
+-- CreateIndex
+CREATE INDEX "AuthSession_expiresAt_idx" ON "AuthSession"("expiresAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Role_code_key" ON "Role"("code");
@@ -505,6 +542,9 @@ CREATE INDEX "OrderEvent_createdById_idx" ON "OrderEvent"("createdById");
 
 -- CreateIndex
 CREATE INDEX "OrderEvent_createdAt_idx" ON "OrderEvent"("createdAt");
+
+-- AddForeignKey
+ALTER TABLE "AuthSession" ADD CONSTRAINT "AuthSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "UserRole" ADD CONSTRAINT "UserRole_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -104,12 +104,16 @@ export class ApiPagReq {
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(1)
   @IsOptional()
-  page?: number = DEFAULT_PAGE;
+  page: number = DEFAULT_PAGE;
 
   @ApiProperty({ type: Number, required: false, default: DEFAULT_PER_PAGE })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(1)
   @IsOptional()
-  perPage?: number = DEFAULT_PER_PAGE;
+  perPage: number = DEFAULT_PER_PAGE;
+
+  @ApiProperty({ type: Number, required: false })
+  @IsOptional()
+  sort?: number;
 }

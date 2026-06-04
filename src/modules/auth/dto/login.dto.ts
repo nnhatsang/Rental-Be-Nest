@@ -26,6 +26,9 @@ export class AuthUserOutDto {
   @ApiProperty({ example: 'System Admin' })
   fullName!: string;
 
+  @ApiProperty({ example: '0900000000', nullable: true })
+  phone!: string | null;
+
   @ApiProperty({ type: String, format: 'uuid' })
   sessionId!: string;
 

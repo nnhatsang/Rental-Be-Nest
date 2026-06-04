@@ -6,6 +6,8 @@ import * as bcrypt from 'bcrypt';
 import { Request } from 'express';
 import { PrismaService } from '@modules/database/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import {
   AuthCookiePayload,
   AuthUser,
@@ -19,11 +21,14 @@ import { parseDurationMs } from './utils/duration.util';
 import {
   EUserActivityStatus,
   INVALID_SESSION,
+  OLD_PASSWORD_NOT_VALID,
   PASSWORD_NOT_MATCH,
   UNAUTHORIZED,
   USER_ACTIVITY_ERRORS,
+  USER_EMAIL_EXISTED,
   USER_NOT_FOUND,
 } from '@/libs/constants/error.constants';
+import { buildUserSearchText } from '@/libs/utils/search-text.util';
 import { AuthSession, User } from '@generated/prisma/browser';
 
 type UserWithAuth = User & {
@@ -111,6 +116,82 @@ export class AuthService {
     return user;
   }
 
+  async updateMe(currentUser: AuthUser, dto: UpdateMeDto): Promise<AuthUser> {
+    const { fullName, phone } = dto;
+    const existingUser = await this.findExistingAuthUserById(currentUser.id);
+    // const nextEmail = dto.email ?? existingUser.email;
+    const nextFullName = fullName ?? existingUser.fullName;
+    const nextPhone = phone ?? existingUser.phone;
+
+    // if (dto.email) {
+    //   await this.ensureEmailAvailable(dto.email, currentUser.id);
+    // }
+
+    const user = await this.prisma.user.update({
+      where: { id: currentUser.id },
+      data: {
+        // email: dto.email,
+        fullName: nextFullName,
+        phone: nextPhone,
+        searchText: buildUserSearchText({
+          // email: nextEmail,
+          fullName: nextFullName,
+          phone: nextPhone,
+        }),
+      },
+      include: this.userAuthInclude(),
+    });
+
+    return this.toAuthUser(user, currentUser.sessionId);
+  }
+
+  async changePassword(currentUser: AuthUser, dto: ChangePasswordDto): Promise<{ success: true }> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: currentUser.id,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        passwordHash: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
+    const oldPasswordValid = await bcrypt.compare(dto.oldPassword, user.passwordHash);
+
+    if (!oldPasswordValid) {
+      throw new BadRequestException(OLD_PASSWORD_NOT_VALID);
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: currentUser.id },
+        data: { passwordHash },
+      }),
+      this.prisma.authSession.updateMany({
+        where: {
+          userId: currentUser.id,
+          id: {
+            not: currentUser.sessionId,
+          },
+          isRevoked: false,
+        },
+        data: {
+          isRevoked: true,
+          revokedAt: new Date(),
+        },
+      }),
+    ]);
+
+    return { success: true };
+  }
+
   getAccessMaxAge(): number {
     return parseDurationMs(this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m'));
   }
@@ -150,13 +231,7 @@ export class AuthService {
       },
     });
 
-    if (
-      !session ||
-      session.userId !== refreshUser.sub ||
-      session.isRevoked ||
-      session.expiresAt <= new Date() ||
-      session.user.deletedAt
-    ) {
+    if (!session || session.userId !== refreshUser.sub || session.isRevoked || session.expiresAt <= new Date() || session.user.deletedAt) {
       throw new UnauthorizedException(INVALID_SESSION);
     }
 
@@ -213,6 +288,29 @@ export class AuthService {
       where: { id: userId },
       include: this.userAuthInclude(),
     });
+  }
+
+  private async findExistingAuthUserById(userId: string): Promise<UserWithAuth> {
+    const user = await this.findAuthUserById(userId);
+
+    if (!user || user.deletedAt) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
+    this.assertUserCanLogin(user.activityStatus);
+
+    return user;
+  }
+
+  private async ensureEmailAvailable(email: string, excludedUserId?: string): Promise<void> {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (existingUser && existingUser.id !== excludedUserId) {
+      throw new BadRequestException(USER_EMAIL_EXISTED);
+    }
   }
 
   private assertSessionIsUsable(
@@ -288,6 +386,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
+      phone: user.phone,
       sessionId,
       roles,
       permissions,

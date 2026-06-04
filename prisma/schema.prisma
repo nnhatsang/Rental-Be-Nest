@@ -2,14 +2,22 @@
 // Phase 1 focuses on manual admin operations: create orders, assign equipment,
 // record payments, hand over items, receive returns, and settle balances.
 
+// Fresh development setup:
+// pnpm prisma migrate reset --skip-seed
+// pnpm prisma migrate dev --name init --create-only
+// pnpm prisma migrate dev
+// pnpm prisma generate
+// pnpm db:seed
 generator client {
-  provider     = "prisma-client"
-  output       = "../generated/prisma"
-  moduleFormat = "commonjs"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  moduleFormat    = "commonjs"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [pg_trgm]
 }
 
 model User {
@@ -23,6 +31,8 @@ model User {
   fullName       String
   /// Optional staff phone number.
   phone          String?
+  /// Normalized text for accent-insensitive admin search.
+  searchText     String             @default("")
   /// Login/activity status for this staff/admin account.
   activityStatus UserActivityStatus @default(ACTIVE)
   /// Last successful login time.
@@ -56,6 +66,7 @@ model User {
 
   @@index([email])
   @@index([activityStatus])
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "User_searchText_trgm_idx")
 }
 
 model AuthSession {

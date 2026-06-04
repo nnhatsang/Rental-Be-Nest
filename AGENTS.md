@@ -49,6 +49,189 @@ src/migration/seeder/
 
 The seeder must be run manually. Do not import the seeder into `AppModule`.
 
+## Coding Conventions
+
+### Module Naming
+
+Use domain-based plural module names.
+
+Recommended:
+
+```txt
+src/modules/users
+src/modules/customers
+src/modules/products
+src/modules/asset-units
+src/modules/rental-orders
+```
+
+Do not use vague module names such as `admin` for user management.
+
+Meaning:
+
+```txt
+User      = internal admin/staff account
+Customer  = rental customer
+```
+
+Use admin route prefixes in controllers, not in module names:
+
+```ts
+@Controller('admin/users')
+export class UsersController {}
+
+@Controller('admin/customers')
+export class CustomersController {}
+```
+
+### Resource Structure
+
+Each business module should follow this shape:
+
+```txt
+src/modules/<resource>/
+  dto/
+    create-<resource>.dto.ts
+    update-<resource>.dto.ts
+    <resource>-out.dto.ts
+    <resource>-response.dto.ts
+  <resource>.controller.ts
+  <resource>.service.ts
+  <resource>.module.ts
+```
+
+### Controller Responsibilities
+
+Controllers should handle HTTP concerns only:
+
+- route paths
+- guards and permission decorators
+- request DTOs
+- response wrappers
+- Swagger decorators
+- cookies for auth endpoints
+- status codes when needed
+
+Controllers should return shared wrappers:
+
+```ts
+return new ApiRes(data, 'Message');
+return new ApiNullableRes(dataOrNull, 'Message');
+return new ApiPaginatedResponseDto(items, total, page, perPage, 'Message');
+```
+
+Controllers should use explicit Swagger response DTOs:
+
+```ts
+@ApiOkResponse({ type: UserResponseDto })
+```
+
+Avoid `@ApiOkResponse({ type: Object })` unless there is no better DTO yet.
+
+### Service Responsibilities
+
+Services should handle business logic only:
+
+- validation that depends on database state
+- Prisma queries and transactions
+- status transitions
+- permission-independent business rules
+- formatting internal service results
+
+Services should not:
+
+- set cookies
+- read/write `Response`
+- wrap data with `ApiRes`
+- hardcode user-facing error messages
+- contain large multi-purpose methods when smaller private helpers are clearer
+
+Prefer small private helper functions for reusable logic:
+
+```ts
+validateLoginCredentials();
+validateAccessSession();
+createAuthSession();
+saveSessionTokens();
+toAuthUser();
+```
+
+### DTO Rules
+
+Input DTOs describe client input only. They should not include server-generated fields such as:
+
+```txt
+id
+createdAt
+updatedAt
+deletedAt
+passwordHash
+refreshTokenHash
+csrfTokenHash
+```
+
+Output DTOs should describe response shape for Swagger and should not expose sensitive fields.
+
+Use `id`, not `_id`.
+
+Use `!` or `declare` for Swagger DTO properties when strict property initialization complains:
+
+```ts
+id!: string;
+declare data: UserOutDto;
+```
+
+### Permissions
+
+Admin APIs should use permission decorators when access needs RBAC:
+
+```ts
+@RequirePermissions(PermissionCode.UsersCreate)
+@Post()
+create() {}
+```
+
+Public auth endpoints must be marked explicitly:
+
+```ts
+@Public()
+@Post('login')
+login() {}
+```
+
+### Accent-Insensitive Search
+
+For admin list search, prefer an app-maintained normalized text column over calling SQL normalization functions inside every query.
+
+Recommended pattern:
+
+```txt
+searchText = normalized email + fullName + phone
+```
+
+Normalize in TypeScript with `src/libs/utils/search-text.util.ts`, store the result on create/update, and query the `searchText` column.
+
+For PostgreSQL performance, declare the `pg_trgm` extension and GIN trigram index in `schema.prisma` so Prisma migrations can generate them automatically:
+
+```prisma
+generator client {
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [pg_trgm]
+}
+
+model User {
+  searchText String @default("")
+
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "User_searchText_trgm_idx")
+}
+```
+
+Do not use Prisma `mode: 'insensitive'` as the main approach for Vietnamese accent-insensitive search, because it only handles case-insensitive matching and does not remove accents.
+
 ## Important Rules
 
 - IDs are UUIDs, not Mongo ObjectIds.
@@ -236,8 +419,14 @@ assets.read
 assets.create
 assets.update
 assets.delete
-users.manage
-roles.manage
+users.read
+users.create
+users.update
+users.delete
+roles.read
+roles.create
+roles.update
+roles.delete
 reports.read
 ```
 
@@ -257,9 +446,9 @@ inactive
 Map non-active statuses to reusable `ErrorResponse` constants in `src/libs/constants/error.constants.ts`, for example:
 
 ```ts
-USER_BANNED
-USER_LOCKED
-USER_INACTIVE
+USER_BANNED;
+USER_LOCKED;
+USER_INACTIVE;
 ```
 
 Auth services/strategies/guards should throw these shared constants instead of inline strings.

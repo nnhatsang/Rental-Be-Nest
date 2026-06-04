@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import 'dotenv/config';
 import { defineConfig } from 'prisma/config';
 

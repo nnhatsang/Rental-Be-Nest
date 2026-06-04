@@ -2,68 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@modules/database/prisma.service';
 import { EUserActivityStatus } from '@/libs/constants/error.constants';
-
-const PERMISSIONS = [
-  'orders.read',
-  'orders.create',
-  'orders.update',
-  'orders.update_status',
-  'orders.cancel',
-  'orders.record_payment',
-  'orders.refund',
-  'customers.read',
-  'customers.create',
-  'customers.update',
-  'products.read',
-  'products.create',
-  'products.update',
-  'products.delete',
-  'assets.read',
-  'assets.create',
-  'assets.update',
-  'assets.delete',
-  'users.manage',
-  'roles.manage',
-  'reports.read',
-] as const;
-
-const ROLES = [
-  {
-    code: 'ADMIN',
-    name: 'Administrator',
-    description: 'Full system access',
-    permissions: [...PERMISSIONS],
-  },
-  {
-    code: 'MANAGER',
-    name: 'Manager',
-    description: 'Manage rental operations and reports',
-    permissions: PERMISSIONS.filter((permission) => !['users.manage', 'roles.manage'].includes(permission)),
-  },
-  {
-    code: 'STAFF',
-    name: 'Staff',
-    description: 'Operate customers, products, orders, and payments',
-    permissions: [
-      'orders.read',
-      'orders.create',
-      'orders.update',
-      'orders.update_status',
-      'orders.record_payment',
-      'customers.read',
-      'customers.create',
-      'customers.update',
-      'products.read',
-      'assets.read',
-    ],
-  },
-  {
-    code: 'VIEWER',
-    name: 'Viewer',
-    description: 'Read-only admin access',
-    permissions: ['orders.read', 'customers.read', 'products.read', 'assets.read', 'reports.read'],
-  },
-] as const;
+import { PERMISSION_CODES, ROLE_SEEDS, RoleCode } from '@/libs/constants/rbac.constant';
+import { buildUserSearchText } from '@/libs/utils/search-text.util';
 
 @Injectable()
 export class SeederService {
@@ -79,7 +19,7 @@ export class SeederService {
   }
 
   private async seedPermissions() {
-    for (const code of PERMISSIONS) {
+    for (const code of PERMISSION_CODES) {
       await this.prisma.permission.upsert({
         where: { code },
         update: {
@@ -97,7 +37,7 @@ export class SeederService {
   }
 
   private async seedRoles() {
-    for (const roleSeed of ROLES) {
+    for (const roleSeed of ROLE_SEEDS) {
       const role = await this.prisma.role.upsert({
         where: { code: roleSeed.code },
         update: {
@@ -140,9 +80,10 @@ export class SeederService {
     const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@rental.local';
     const password = process.env.SEED_ADMIN_PASSWORD ?? 'Password123!';
     const fullName = process.env.SEED_ADMIN_FULL_NAME ?? 'System Admin';
+    const searchText = buildUserSearchText({ email, fullName });
 
     const adminRole = await this.prisma.role.findUnique({
-      where: { code: 'ADMIN' },
+      where: { code: RoleCode.Admin },
       select: { id: true },
     });
 
@@ -155,12 +96,14 @@ export class SeederService {
       where: { email },
       update: {
         fullName,
+        searchText,
         activityStatus: EUserActivityStatus.Active,
       },
       create: {
         email,
         passwordHash,
         fullName,
+        searchText,
         activityStatus: EUserActivityStatus.Active,
       },
     });

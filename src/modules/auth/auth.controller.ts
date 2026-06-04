@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { Public } from './decorators/public.decorator';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -56,8 +58,7 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({
     summary: 'Làm mới phiên đăng nhập',
-    description:
-      'Đọc refresh token từ HttpOnly cookie, rotate refresh token, rotate CSRF token và set lại cookies mới.',
+    description: 'Đọc refresh token từ HttpOnly cookie, rotate refresh token, rotate CSRF token và set lại cookies mới.',
   })
   @ApiOkResponse({
     description: 'Refresh token thành công.',
@@ -97,5 +98,31 @@ export class AuthController {
   })
   async me(@CurrentUser() user: AuthUser): Promise<ApiRes> {
     return new ApiRes(await this.authService.getMe(user), 'Thông tin tài khoản');
+  }
+
+  @Patch('me')
+  @ApiOperation({
+    summary: 'Cập nhật tài khoản hiện tại',
+    description: 'Cập nhật email, họ tên hoặc số điện thoại của admin đang đăng nhập.',
+  })
+  @ApiOkResponse({
+    description: 'Cập nhật tài khoản hiện tại thành công.',
+    type: MeResponseDto,
+  })
+  async updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateMeDto): Promise<ApiRes> {
+    return new ApiRes(await this.authService.updateMe(user, dto), 'Cập nhật tài khoản thành công');
+  }
+
+  @Patch('me/password')
+  @ApiOperation({
+    summary: 'Đổi mật khẩu tài khoản hiện tại',
+    description: 'Đổi mật khẩu cho admin đang đăng nhập và revoke các phiên đăng nhập khác.',
+  })
+  @ApiOkResponse({
+    description: 'Đổi mật khẩu thành công.',
+    type: SuccessResponseDto,
+  })
+  async changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto): Promise<ApiRes> {
+    return new ApiRes(await this.authService.changePassword(user, dto), 'Đổi mật khẩu thành công');
   }
 }

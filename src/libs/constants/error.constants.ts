@@ -81,6 +81,21 @@ export const INVALID_USER = new ErrorResponse({
   message: 'Tài khoản không tồn tại',
 });
 
+export const USER_EMAIL_EXISTED = new ErrorResponse({
+  code: 'USER_EMAIL_EXISTED',
+  message: 'Email tài khoản đã tồn tại',
+});
+
+export const USER_SELF_DELETE_NOT_ALLOWED = new ErrorResponse({
+  code: 'USER_SELF_DELETE_NOT_ALLOWED',
+  message: 'Không thể tự xóa tài khoản đang đăng nhập',
+});
+
+export const ROLE_NOT_FOUND = new ErrorResponse({
+  code: 'ROLE_NOT_FOUND',
+  message: 'Không tìm thấy vai trò phù hợp',
+});
+
 export const PASSWORD_NOT_MATCH = new ErrorResponse({
   code: 'PASSWORD_NOT_MATCH',
   message: 'Mật khẩu không chính xác',

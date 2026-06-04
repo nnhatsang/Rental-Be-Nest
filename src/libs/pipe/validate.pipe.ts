@@ -1,7 +1,14 @@
 import { ArgumentMetadata, BadRequestException, Injectable, InternalServerErrorException, PipeTransform } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidationError } from 'class-validator';
-import { ErrorResponse, INCORRECT_INPUT, UNKNOWN_ERROR } from '../constants/error.constants';
+import { INCORRECT_INPUT, UNKNOWN_ERROR } from '../constants/error.constants';
+
+export type ValidationErrorItem = {
+  property: string;
+  message: string;
+  detail?: string;
+};
+
 @Injectable()
 export class ValidatePipe implements PipeTransform<any> {
   async transform(value: any, { metatype, type }: ArgumentMetadata) {
@@ -37,14 +44,11 @@ export class ValidatePipe implements PipeTransform<any> {
       });
 
       if (errors.length > 0) {
-        const properties = this.formatErrors(errors);
-
-        throw new BadRequestException(
-          new ErrorResponse({
-            code: INCORRECT_INPUT.code,
-            message: properties[0]?.message || INCORRECT_INPUT.message,
-          }),
-        );
+        throw new BadRequestException({
+          code: INCORRECT_INPUT.code,
+          message: INCORRECT_INPUT.message,
+          error: this.formatErrors(errors),
+        });
       }
 
       return data;
@@ -91,30 +95,21 @@ export class ValidatePipe implements PipeTransform<any> {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  private formatErrors(errors: ValidationError[]) {
-    return errors.map((error) => {
-      const { property, constraints, children } = error;
+  private formatErrors(errors: ValidationError[], parentPath = ''): ValidationErrorItem[] {
+    return errors.flatMap((error) => {
+      const propertyPath = parentPath ? `${parentPath}.${error.property}` : error.property;
+      const currentErrors = this.formatConstraintErrors(error, propertyPath);
+      const childErrors = error.children?.length ? this.formatErrors(error.children, propertyPath) : [];
 
-      let message: string | undefined;
-      let detail: string | undefined;
-
-      if (constraints) {
-        message = Object.values(constraints)[0];
-      } else if (children?.length) {
-        for (const child of children) {
-          if (child.constraints) {
-            message = Object.values(child.constraints)[0];
-            detail = child.property;
-            break;
-          }
-        }
-      }
-
-      return {
-        property,
-        message,
-        detail,
-      };
+      return [...currentErrors, ...childErrors];
     });
+  }
+
+  private formatConstraintErrors(error: ValidationError, propertyPath: string): ValidationErrorItem[] {
+    if (!error.constraints) {
+      return [];
+    }
+
+    return Object.values(error.constraints).map((message) => ({ property: propertyPath, message }));
   }
 }

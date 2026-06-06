@@ -8,6 +8,10 @@ import { UsersModule } from './modules/users/users.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ProductsModule } from './modules/products/products.module';
 import { AssetUnitsModule } from './modules/asset-units/asset-units.module';
+import { RentalPolicyModule } from './modules/rental-policy/rental-policy.module';
+import { StoreBusinessHoursModule } from './modules/store-business-hours/store-business-hours.module';
+import { StoreClosureModule } from './modules/store-closure/store-closure.module';
+import { RentalOrdersModule } from './modules/rental-orders/rental-orders.module';
 import * as Joi from 'joi';
 @Module({
   imports: [
@@ -37,6 +41,10 @@ import * as Joi from 'joi';
     CustomersModule,
     ProductsModule,
     AssetUnitsModule,
+    RentalPolicyModule,
+    StoreBusinessHoursModule,
+    StoreClosureModule,
+    RentalOrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

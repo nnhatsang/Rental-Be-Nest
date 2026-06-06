@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
-import { INVALID_BOOLEAN, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ProductRentalPriceTierInDto } from './product-rental-price-tier.dto';
+import { INVALID_ARRAY, INVALID_BOOLEAN, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'Sony A7 IV' })
@@ -55,6 +56,14 @@ export class CreateProductDto {
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(0)
   hourlyOveragePrice!: number;
+
+  @ApiPropertyOptional({ type: [ProductRentalPriceTierInDto] })
+  @IsOptional()
+  @IsArray({ message: INVALID_ARRAY })
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ProductRentalPriceTierInDto)
+  rentalPriceTiers?: ProductRentalPriceTierInDto[];
 
   @ApiProperty({ example: 5000000 })
   @Type(() => Number)

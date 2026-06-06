@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
 import { PrismaService } from '../database/prisma.service';
 import { CreateAssetUnitDto } from './dto/create-asset-unit.dto';
 import { UpdateAssetUnitDto } from './dto/update-asset-unit.dto';
@@ -157,6 +158,67 @@ export class AssetUnitsService {
     });
 
     return { success: true };
+  }
+
+  async getAssignableAssetUnits(assetUnitIds: string[]) {
+    const uniqueAssetUnitIds = [...new Set(assetUnitIds)];
+
+    if (uniqueAssetUnitIds.length === 0) {
+      return [];
+    }
+
+    return this.prisma.assetUnit.findMany({
+      where: {
+        id: {
+          in: uniqueAssetUnitIds,
+        },
+        isActive: true,
+        deletedAt: null,
+        status: {
+          notIn: [AssetStatus.MAINTENANCE, AssetStatus.RETIRED, AssetStatus.LOST],
+        },
+        condition: {
+          not: AssetCondition.LOST,
+        },
+      },
+      select: {
+        id: true,
+        productId: true,
+        serialNumber: true,
+        status: true,
+        condition: true,
+      },
+    });
+  }
+
+  async countAssignableAssetUnitsByProduct(productIds: string[]): Promise<Map<string, number>> {
+    const uniqueProductIds = [...new Set(productIds)];
+
+    if (uniqueProductIds.length === 0) {
+      return new Map();
+    }
+
+    const groupedAssetUnits = await this.prisma.assetUnit.groupBy({
+      by: ['productId'],
+      where: {
+        productId: {
+          in: uniqueProductIds,
+        },
+        isActive: true,
+        deletedAt: null,
+        status: {
+          notIn: [AssetStatus.MAINTENANCE, AssetStatus.RETIRED, AssetStatus.LOST],
+        },
+        condition: {
+          not: AssetCondition.LOST,
+        },
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    return new Map(groupedAssetUnits.map((item) => [item.productId, item._count._all]));
   }
 
   private async findExistingAssetUnitById(id: string): Promise<ExistingAssetUnitWithRelations> {

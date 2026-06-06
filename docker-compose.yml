@@ -26,6 +26,18 @@ services:
       - '-c'
       - 'log_destination=stderr'
 
+  redis:
+    image: redis:7-alpine
+    container_name: rental_redis
+    restart: always
+    ports:
+      - '${REDIS_PORT}:6379'
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+
 networks:
   postgres:
+    driver: bridge
+  redis:
     driver: bridge

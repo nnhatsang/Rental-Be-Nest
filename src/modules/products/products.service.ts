@@ -1,12 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { GetAllProductsInDto } from './dto/get-all-products.dto';
 import { ProductOutDto } from './dto/product-out.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ProductRentalPriceTierInDto } from './dto/product-rental-price-tier.dto';
 import { buildProductSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
-import { PRODUCT_BRAND_NOT_FOUND, PRODUCT_CATEGORY_NOT_FOUND, PRODUCT_NOT_FOUND, PRODUCT_SKU_EXISTED } from '@/libs/constants/error.constants';
+import {
+  PRODUCT_BRAND_NOT_FOUND,
+  PRODUCT_CATEGORY_NOT_FOUND,
+  PRODUCT_NOT_FOUND,
+  PRODUCT_RENTAL_PRICE_TIER_INVALID,
+  PRODUCT_SKU_EXISTED,
+} from '@/libs/constants/error.constants';
 
 type ProductWithRelations = Awaited<ReturnType<ProductsService['findProductById']>>;
 type ExistingProductWithRelations = NonNullable<ProductWithRelations>;
@@ -71,6 +79,7 @@ export class ProductsService {
       dailyPrice,
       halfDayPrice,
       hourlyOveragePrice,
+      rentalPriceTiers,
       depositAmount,
       replacementValue,
       stockQuantity,
@@ -78,6 +87,7 @@ export class ProductsService {
     } = dto;
 
     await this.ensureSkuAvailable(sku);
+    this.validateRentalPriceTiers(rentalPriceTiers);
     const [category, brand] = await Promise.all([this.findCategoryOrThrow(categoryId), this.findBrandOrThrow(brandId)]);
 
     const product = await this.prisma.product.create({
@@ -92,6 +102,17 @@ export class ProductsService {
         dailyPrice,
         halfDayPrice,
         hourlyOveragePrice,
+        rentalPriceTiers: rentalPriceTiers?.length
+          ? {
+              create: rentalPriceTiers.map((tier) => ({
+                minDays: tier.minDays,
+                maxDays: tier.maxDays,
+                dailyPrice: tier.dailyPrice,
+                name: tier.name,
+                sortOrder: tier.sortOrder ?? 0,
+              })),
+            }
+          : undefined,
         depositAmount,
         replacementValue,
         stockQuantity: stockQuantity ?? 0,
@@ -116,6 +137,7 @@ export class ProductsService {
     if (dto.sku) {
       await this.ensureSkuAvailable(dto.sku, id);
     }
+    this.validateRentalPriceTiers(dto.rentalPriceTiers);
 
     const [category, brand] = await Promise.all([
       dto.categoryId ? this.findCategoryOrThrow(dto.categoryId) : existingProduct.category,
@@ -143,6 +165,25 @@ export class ProductsService {
         dailyPrice: dto.dailyPrice,
         halfDayPrice: dto.halfDayPrice,
         hourlyOveragePrice: dto.hourlyOveragePrice,
+        rentalPriceTiers: dto.rentalPriceTiers
+          ? {
+              updateMany: {
+                where: {
+                  deletedAt: null,
+                },
+                data: {
+                  deletedAt: new Date(),
+                },
+              },
+              create: dto.rentalPriceTiers.map((tier) => ({
+                minDays: tier.minDays,
+                maxDays: tier.maxDays,
+                dailyPrice: tier.dailyPrice,
+                name: tier.name,
+                sortOrder: tier.sortOrder ?? 0,
+              })),
+            }
+          : undefined,
         depositAmount: dto.depositAmount,
         replacementValue: dto.replacementValue,
         stockQuantity: dto.stockQuantity,
@@ -180,6 +221,32 @@ export class ProductsService {
     });
 
     return { success: true };
+  }
+
+  async getActiveProductsForRental(productIds: string[]) {
+    const uniqueProductIds = [...new Set(productIds)];
+
+    if (uniqueProductIds.length === 0) {
+      return [];
+    }
+
+    return this.prisma.product.findMany({
+      where: {
+        id: {
+          in: uniqueProductIds,
+        },
+        isActive: true,
+        deletedAt: null,
+      },
+      include: {
+        rentalPriceTiers: {
+          where: {
+            deletedAt: null,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { minDays: 'asc' }],
+        },
+      },
+    });
   }
 
   private async findExistingProductById(id: string): Promise<ExistingProductWithRelations> {
@@ -259,11 +326,43 @@ export class ProductsService {
     return brand;
   }
 
-  private productInclude() {
+  private productInclude(): Prisma.ProductInclude {
     return {
       category: true,
       brand: true,
-    } as const;
+      rentalPriceTiers: {
+        where: {
+          deletedAt: null,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { minDays: 'asc' }],
+      },
+    };
+  }
+
+  private validateRentalPriceTiers(rentalPriceTiers?: ProductRentalPriceTierInDto[]): void {
+    if (!rentalPriceTiers?.length) {
+      return;
+    }
+
+    const sortedTiers = [...rentalPriceTiers].sort((a, b) => a.minDays - b.minDays);
+
+    for (let index = 0; index < sortedTiers.length; index++) {
+      const tier = sortedTiers[index];
+
+      if (tier.maxDays !== undefined && tier.maxDays < tier.minDays) {
+        throw new BadRequestException(PRODUCT_RENTAL_PRICE_TIER_INVALID);
+      }
+
+      const nextTier = sortedTiers[index + 1];
+      if (!nextTier) {
+        continue;
+      }
+
+      const currentMaxDays = tier.maxDays ?? Number.POSITIVE_INFINITY;
+      if (currentMaxDays >= nextTier.minDays) {
+        throw new BadRequestException(PRODUCT_RENTAL_PRICE_TIER_INVALID);
+      }
+    }
   }
 
   private toProductOut(product: ExistingProductWithRelations): ProductOutDto {
@@ -289,6 +388,17 @@ export class ProductsService {
       dailyPrice: product.dailyPrice.toString(),
       halfDayPrice: product.halfDayPrice?.toString() ?? null,
       hourlyOveragePrice: product.hourlyOveragePrice?.toString() ?? null,
+      rentalPriceTiers: product.rentalPriceTiers.map((tier) => ({
+        id: tier.id,
+        minDays: tier.minDays,
+        maxDays: tier.maxDays,
+        dailyPrice: tier.dailyPrice.toString(),
+        name: tier.name,
+        sortOrder: tier.sortOrder,
+        createdAt: tier.createdAt,
+        updatedAt: tier.updatedAt,
+        deletedAt: tier.deletedAt,
+      })),
       depositAmount: product.depositAmount.toString(),
       replacementValue: product.replacementValue?.toString() ?? null,
       stockQuantity: product.stockQuantity,

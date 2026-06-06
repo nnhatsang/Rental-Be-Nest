@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ProductRentalPriceTierOutDto } from './product-rental-price-tier.dto';
 
 export class ProductRelationOutDto {
   @ApiProperty({ type: String, format: 'uuid' })
@@ -41,6 +42,9 @@ export class ProductOutDto {
 
   @ApiProperty({ example: '100000', nullable: true })
   hourlyOveragePrice!: string | null;
+
+  @ApiProperty({ type: [ProductRentalPriceTierOutDto] })
+  rentalPriceTiers!: ProductRentalPriceTierOutDto[];
 
   @ApiProperty({ example: '5000000' })
   depositAmount!: string;

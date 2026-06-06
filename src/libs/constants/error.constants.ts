@@ -131,6 +131,11 @@ export const PRODUCT_BRAND_NOT_FOUND = new ErrorResponse({
   message: 'Không tìm thấy thương hiệu sản phẩm',
 });
 
+export const PRODUCT_RENTAL_PRICE_TIER_INVALID = new ErrorResponse({
+  code: 'PRODUCT_RENTAL_PRICE_TIER_INVALID',
+  message: 'Bậc giá thuê sản phẩm không hợp lệ',
+});
+
 export const ASSET_UNIT_NOT_FOUND = new ErrorResponse({
   code: 'ASSET_UNIT_NOT_FOUND',
   message: 'Không tìm thấy đơn vị tài sản',
@@ -139,6 +144,71 @@ export const ASSET_UNIT_NOT_FOUND = new ErrorResponse({
 export const ASSET_UNIT_SERIAL_NUMBER_EXISTED = new ErrorResponse({
   code: 'ASSET_UNIT_SERIAL_NUMBER_EXISTED',
   message: 'Serial Number tồn tại',
+});
+
+export const RENTAL_POLICY_NOT_FOUND = new ErrorResponse({
+  code: 'RENTAL_POLICY_NOT_FOUND',
+  message: 'Không tìm thấy chính sách thuê',
+});
+
+export const STORE_BUSINESS_HOURS_INVALID = new ErrorResponse({
+  code: 'STORE_BUSINESS_HOURS_INVALID',
+  message: 'Cấu hình giờ hoạt động không hợp lệ',
+});
+
+export const STORE_CLOSURE_NOT_FOUND = new ErrorResponse({
+  code: 'STORE_CLOSURE_NOT_FOUND',
+  message: 'Không tìm thấy lịch đóng cửa của hàng',
+});
+
+export const STORE_CLOSURE_TIME_INVALID = new ErrorResponse({
+  code: 'STORE_CLOSURE_TIME_INVALID',
+  message: 'Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc',
+});
+
+export const RENTAL_ORDER_TIME_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_TIME_INVALID',
+  message: 'Thời gian thuê không hợp lệ',
+});
+
+export const RENTAL_ORDER_NOT_FOUND = new ErrorResponse({
+  code: 'RENTAL_ORDER_NOT_FOUND',
+  message: 'Không tìm thấy đơn thuê',
+});
+
+export const RENTAL_ORDER_CUSTOMER_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_CUSTOMER_INVALID',
+  message: 'Khách hàng trong đơn thuê không hợp lệ',
+});
+
+export const RENTAL_ORDER_ASSIGNED_USER_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_ASSIGNED_USER_INVALID',
+  message: 'Nhân viên được phân công không hợp lệ',
+});
+
+export const RENTAL_ORDER_PRODUCT_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_PRODUCT_INVALID',
+  message: 'Sản phẩm trong đơn thuê không hợp lệ',
+});
+
+export const RENTAL_ORDER_ASSET_UNIT_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_ASSET_UNIT_INVALID',
+  message: 'Tài sản gán vào đơn thuê không hợp lệ',
+});
+
+export const RENTAL_ORDER_STORE_CLOSED = new ErrorResponse({
+  code: 'RENTAL_ORDER_STORE_CLOSED',
+  message: 'Cửa hàng đóng cửa trong thời gian này',
+});
+
+export const RENTAL_ORDER_UNAVAILABLE = new ErrorResponse({
+  code: 'RENTAL_ORDER_UNAVAILABLE',
+  message: 'Lịch thuê không còn khả dụng',
+});
+
+export const RENTAL_ORDER_STATUS_TRANSITION_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_STATUS_TRANSITION_INVALID',
+  message: 'Không thể chuyển trạng thái đơn thuê theo yêu cầu',
 });
 
 export const ROLE_NOT_FOUND = new ErrorResponse({

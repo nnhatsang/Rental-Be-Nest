@@ -46,3 +46,31 @@ export function buildAssetUnitSearchText(input: {
     [input.serialNumber, input.note, input.status, input.condition, input.productName, input.productSku].filter(Boolean).join(' '),
   );
 }
+
+export function buildRentalOrderSearchText(input: {
+  code?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerIdentityNumber?: string | null;
+  deliveryAddress?: string | null;
+  note?: string | null;
+  internalNote?: string | null;
+  cancelReason?: string | null;
+}): string {
+  return normalizeSearchText(
+    [
+      input.code,
+      input.customerName,
+      input.customerPhone,
+      input.customerEmail,
+      input.customerIdentityNumber,
+      input.deliveryAddress,
+      input.note,
+      input.internalNote,
+      input.cancelReason,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+}

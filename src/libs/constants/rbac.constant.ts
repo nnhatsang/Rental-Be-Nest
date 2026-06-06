@@ -32,6 +32,9 @@ export const PermissionCode = {
   RolesUpdate: 'roles.update',
   RolesDelete: 'roles.delete',
 
+  SettingsRead: 'settings.read',
+  SettingsUpdate: 'settings.update',
+
   ReportsRead: 'reports.read',
 } as const;
 

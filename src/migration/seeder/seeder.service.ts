@@ -14,6 +14,8 @@ export class SeederService {
   async seed() {
     await this.seedPermissions();
     await this.seedRoles();
+    await this.seedRentalPolicy();
+    await this.seedStoreBusinessHours();
     await this.seedDefaultAdmin();
     this.logger.log('Seeding completed');
   }
@@ -74,6 +76,83 @@ export class SeederService {
     }
 
     this.logger.log('Roles seeded');
+  }
+
+  private async seedRentalPolicy() {
+    await this.prisma.rentalPolicy.upsert({
+      where: {
+        code: 'DEFAULT',
+      },
+      update: {},
+      create: {
+        code: 'DEFAULT',
+        name: 'Default Rental Policy',
+        bookingHoldAmountPerUnit: 50000,
+        turnaroundMinutes: 60,
+        holdPaymentExpiresInMinutes: 30,
+      },
+    });
+
+    this.logger.log('Rental policy seeded');
+  }
+
+  private async seedStoreBusinessHours() {
+    const businessHours = [
+      {
+        dayOfWeek: 0,
+        openTime: '08:00',
+        closeTime: '18:00',
+        isOpen: false,
+      },
+      {
+        dayOfWeek: 1,
+        openTime: '08:00',
+        closeTime: '20:00',
+        isOpen: true,
+      },
+      {
+        dayOfWeek: 2,
+        openTime: '08:00',
+        closeTime: '20:00',
+        isOpen: true,
+      },
+      {
+        dayOfWeek: 3,
+        openTime: '08:00',
+        closeTime: '20:00',
+        isOpen: true,
+      },
+      {
+        dayOfWeek: 4,
+        openTime: '08:00',
+        closeTime: '20:00',
+        isOpen: true,
+      },
+      {
+        dayOfWeek: 5,
+        openTime: '08:00',
+        closeTime: '20:00',
+        isOpen: true,
+      },
+      {
+        dayOfWeek: 6,
+        openTime: '08:00',
+        closeTime: '18:00',
+        isOpen: true,
+      },
+    ];
+
+    for (const businessHour of businessHours) {
+      await this.prisma.storeBusinessHour.upsert({
+        where: {
+          dayOfWeek: businessHour.dayOfWeek,
+        },
+        update: {},
+        create: businessHour,
+      });
+    }
+
+    this.logger.log('Store business hours seeded');
   }
 
   private async seedDefaultAdmin() {

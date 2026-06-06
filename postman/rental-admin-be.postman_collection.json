@@ -1,0 +1,730 @@
+{
+  "info": {
+    "_postman_id": "0b9a9cf4-6a58-4c0c-a6a0-rental-admin-be",
+    "name": "Rental Admin BE",
+    "description": "Postman collection for testing the admin-first rental backend. Import this file, run Auth / Login first, then run setup data and rental order requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const csrf = pm.cookies.get('admin_csrf_token');",
+          "if (csrf) {",
+          "  pm.collectionVariables.set('csrfToken', csrf);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    },
+    {
+      "key": "email",
+      "value": "admin@rental.local"
+    },
+    {
+      "key": "password",
+      "value": "Password123!"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "assetUnitId",
+      "value": ""
+    },
+    {
+      "key": "rentalOrderId",
+      "value": ""
+    },
+    {
+      "key": "rentalOrderItemId",
+      "value": ""
+    },
+    {
+      "key": "rentalStartDate",
+      "value": "2026-06-10T02:00:00.000Z"
+    },
+    {
+      "key": "rentalEndDate",
+      "value": "2026-06-10T09:00:00.000Z"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login success', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "const csrf = pm.cookies.get('admin_csrf_token');",
+                  "if (csrf) {",
+                  "  pm.collectionVariables.set('csrfToken', csrf);",
+                  "}",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.user?.id) {",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const csrf = pm.cookies.get('admin_csrf_token');",
+                  "if (csrf) {",
+                  "  pm.collectionVariables.set('csrfToken', csrf);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "refresh"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Setup Data",
+      "item": [
+        {
+          "name": "Create Customer",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const phoneSuffix = String(Math.floor(Math.random() * 100000000)).padStart(8, '0');",
+                  "const identitySuffix = String(Math.floor(Math.random() * 1000000000)).padStart(9, '0');",
+                  "pm.collectionVariables.set('customerPhone', `09${phoneSuffix}`);",
+                  "pm.collectionVariables.set('customerIdentityNumber', `079${identitySuffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) {",
+                  "  pm.collectionVariables.set('customerId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nguyen Van Test\",\n  \"phone\": \"{{customerPhone}}\",\n  \"email\": \"customer.test.{{customerPhone}}@example.com\",\n  \"address\": \"123 Nguyen Trai, Quan 1, TP.HCM\",\n  \"identityNumber\": \"{{customerIdentityNumber}}\",\n  \"socialContact\": \"zalo:{{customerPhone}}\",\n  \"notes\": \"Postman test customer\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?page=1&perPage=10&search=test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "test"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) {",
+                  "  pm.collectionVariables.set('productId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sony A7 IV Postman\",\n  \"sku\": \"SONY-A7-IV-POSTMAN-{{$timestamp}}\",\n  \"description\": \"Postman test camera body\",\n  \"includedAccessories\": \"Body, battery, charger, strap, memory card\",\n  \"usageGuide\": \"Check battery before handover\",\n  \"dailyPrice\": 500000,\n  \"halfDayPrice\": 300000,\n  \"hourlyOveragePrice\": 100000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000,\n  \"stockQuantity\": 3,\n  \"isActive\": true,\n  \"rentalPriceTiers\": [\n    {\n      \"minDays\": 3,\n      \"maxDays\": 6,\n      \"dailyPrice\": 450000,\n      \"name\": \"Combo 3-6 days\",\n      \"sortOrder\": 1\n    },\n    {\n      \"minDays\": 7,\n      \"dailyPrice\": 400000,\n      \"name\": \"Combo 7+ days\",\n      \"sortOrder\": 2\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?page=1&perPage=10&search=postman",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "postman"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Asset Unit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) {",
+                  "  pm.collectionVariables.set('assetUnitId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"serialNumber\": \"SN-POSTMAN-{{$timestamp}}\",\n  \"status\": \"AVAILABLE\",\n  \"condition\": \"GOOD\",\n  \"note\": \"Postman test serial\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/asset-units",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Rental Policy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rental-policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-policy"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Store Business Hours",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/store-business-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-business-hours"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rental Orders",
+      "item": [
+        {
+          "name": "Check Availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/check-availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "check-availability"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Rental Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) {",
+                  "  pm.collectionVariables.set('rentalOrderId', json.data.id);",
+                  "}",
+                  "if (json?.data?.items?.[0]?.id) {",
+                  "  pm.collectionVariables.set('rentalOrderItemId', json.data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"pickupMethod\": \"PICKUP_AT_STORE\",\n  \"deliveryFeeTotal\": 0,\n  \"discountTotal\": 0,\n  \"note\": \"Postman test rental order\",\n  \"internalNote\": \"Created from Postman collection\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Body + battery + charger\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Rental Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders?page=1&perPage=10&search=postman",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "postman"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Rental Order Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Draft Rental Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.items?.[0]?.id) {",
+                  "  pm.collectionVariables.set('rentalOrderItemId', json.data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Updated from Postman before confirm\",\n  \"internalNote\": \"Draft update smoke test\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Updated item note\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Assign Asset To Order Item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"itemId\": \"{{rentalOrderItemId}}\",\n      \"assetUnitId\": \"{{assetUnitId}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/items/assign-assets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}",
+                "items",
+                "assign-assets"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Confirm Rental Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Confirmed from Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}",
+                "confirm"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Rental Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelReason\": \"Cancelled from Postman smoke test\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}",
+                "cancel"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Rental Order",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

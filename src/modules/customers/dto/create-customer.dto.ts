@@ -9,7 +9,7 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({ example: '0900000000' })
   @IsOptional()
-  @Matches(/^(?:\+84|0)(3[2-9]|5[6|8|9]|7[0|6-9]|8[1-9]|9[0-9]|2[0-9]{1,2})[0-9]{7}$/, {
+  @Matches(/^(?:\+84|0)(3[2-9]|5[689]|7[06789]|8[1-9]|9\d|2\d{1,2})\d{7}$/, {
     message: INVALID_PHONE_NUMBER,
   })
   phone?: string;

@@ -26,3 +26,8 @@ export class DeleteUserResponseDto extends ApiRes<DeleteUserDataDto> {
   @ApiProperty({ type: DeleteUserDataDto })
   declare data: DeleteUserDataDto;
 }
+
+export class SuccessUserActionResponseDto extends ApiRes<DeleteUserDataDto> {
+  @ApiProperty({ type: DeleteUserDataDto })
+  declare data: DeleteUserDataDto;
+}

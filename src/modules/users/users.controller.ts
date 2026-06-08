@@ -6,7 +6,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserActivityStatusDto } from './dto/update-user-activity-status.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
-import { DeleteUserResponseDto, UserResponseDto, UsersPaginatedResponseDto } from './dto/users-response.dto';
+import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
+import { DeleteUserResponseDto, SuccessUserActionResponseDto, UserResponseDto, UsersPaginatedResponseDto } from './dto/users-response.dto';
 import { ApiNullableRes, ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
@@ -85,6 +86,21 @@ export class UsersController {
   @ApiOkResponse({ type: UserResponseDto })
   async updateUserRoles(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserRolesDto) {
     return new ApiRes(await this.usersService.updateUserRoles(id, dto), 'Cập nhật vai trò người dùng thành công');
+  }
+
+  @Patch(':id/password')
+  @RequirePermissions(PermissionCode.UsersUpdate)
+  @ApiOperation({
+    summary: 'Reset mat khau nguoi dung noi bo',
+    description: 'Admin reset mat khau cho nhan vien khac, khong yeu cau mat khau cu va revoke toan bo phien dang nhap cua user do.',
+  })
+  @ApiOkResponse({ type: SuccessUserActionResponseDto })
+  async resetUserPassword(
+    @Param('id', IdValidatePipe) id: string,
+    @CurrentUser() currentUser: AuthUser,
+    @Body() dto: ResetUserPasswordDto,
+  ) {
+    return new ApiRes(await this.usersService.resetUserPassword(id, currentUser.id, dto), 'Reset mat khau nguoi dung thanh cong');
   }
 
   @Delete(':id')

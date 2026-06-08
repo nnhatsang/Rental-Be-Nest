@@ -91,6 +91,11 @@ export const USER_SELF_DELETE_NOT_ALLOWED = new ErrorResponse({
   message: 'Không thể tự xóa tài khoản đang đăng nhập',
 });
 
+export const USER_SELF_PASSWORD_RESET_NOT_ALLOWED = new ErrorResponse({
+  code: 'USER_SELF_PASSWORD_RESET_NOT_ALLOWED',
+  message: 'Khôbg thể reset mật khẩu chính mình bằng cách này',
+});
+
 export const CUSTOMER_NOT_FOUND = new ErrorResponse({
   code: 'CUSTOMER_NOT_FOUND',
   message: 'Không tìm thấy khách hàng',

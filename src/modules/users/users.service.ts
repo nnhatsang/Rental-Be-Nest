@@ -6,13 +6,16 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserActivityStatusDto } from './dto/update-user-activity-status.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
+import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UserOutDto } from './dto/user-out.dto';
 import { RoleCode } from '@/libs/constants/rbac.constant';
 import {
   INVALID_USER,
+  PASSWORD_CONFIRM_NOT_MATCH,
   ROLE_NOT_FOUND,
   USER_EMAIL_EXISTED,
   USER_SELF_DELETE_NOT_ALLOWED,
+  USER_SELF_PASSWORD_RESET_NOT_ALLOWED,
 } from '@/libs/constants/error.constants';
 import { buildUserSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
 
@@ -177,6 +180,40 @@ export class UsersService {
     }
 
     return this.toUserOut(user);
+  }
+
+  async resetUserPassword(id: string, currentUserId: string, dto: ResetUserPasswordDto): Promise<{ success: true }> {
+    if (id === currentUserId) {
+      throw new BadRequestException(USER_SELF_PASSWORD_RESET_NOT_ALLOWED);
+    }
+
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException(PASSWORD_CONFIRM_NOT_MATCH);
+    }
+
+    await this.ensureUserExists(id);
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    const revokedAt = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { passwordHash },
+      }),
+      this.prisma.authSession.updateMany({
+        where: {
+          userId: id,
+          isRevoked: false,
+        },
+        data: {
+          isRevoked: true,
+          revokedAt,
+        },
+      }),
+    ]);
+
+    return { success: true };
   }
 
   async deleteUser(id: string, currentUserId: string): Promise<{ success: true }> {

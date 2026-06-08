@@ -318,7 +318,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Sony A7 IV Postman\",\n  \"sku\": \"SONY-A7-IV-POSTMAN-{{$timestamp}}\",\n  \"description\": \"Postman test camera body\",\n  \"includedAccessories\": \"Body, battery, charger, strap, memory card\",\n  \"usageGuide\": \"Check battery before handover\",\n  \"dailyPrice\": 500000,\n  \"halfDayPrice\": 300000,\n  \"hourlyOveragePrice\": 100000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000,\n  \"stockQuantity\": 3,\n  \"isActive\": true,\n  \"rentalPriceTiers\": [\n    {\n      \"minDays\": 3,\n      \"maxDays\": 6,\n      \"dailyPrice\": 450000,\n      \"name\": \"Combo 3-6 days\",\n      \"sortOrder\": 1\n    },\n    {\n      \"minDays\": 7,\n      \"dailyPrice\": 400000,\n      \"name\": \"Combo 7+ days\",\n      \"sortOrder\": 2\n    }\n  ]\n}"
+              "raw": "{\n  \"name\": \"Sony A7 IV Postman\",\n  \"sku\": \"SONY-A7-IV-POSTMAN-{{$timestamp}}\",\n  \"description\": \"Postman test camera body\",\n  \"includedAccessories\": \"Body, battery, charger, strap, memory card\",\n  \"usageGuide\": \"Check battery before handover\",\n  \"dailyPrice\": 500000,\n  \"halfDayPrice\": 300000,\n  \"hourlyOveragePrice\": 100000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000,\n  \"isActive\": true,\n  \"rentalPriceTiers\": [\n    {\n      \"minDays\": 3,\n      \"maxDays\": 6,\n      \"dailyPrice\": 450000,\n      \"name\": \"Combo 3-6 days\",\n      \"sortOrder\": 1\n    },\n    {\n      \"minDays\": 7,\n      \"dailyPrice\": 400000,\n      \"name\": \"Combo 7+ days\",\n      \"sortOrder\": 2\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/products",

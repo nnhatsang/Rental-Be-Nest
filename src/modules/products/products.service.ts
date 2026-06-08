@@ -82,7 +82,6 @@ export class ProductsService {
       rentalPriceTiers,
       depositAmount,
       replacementValue,
-      stockQuantity,
       isActive,
     } = dto;
 
@@ -115,7 +114,6 @@ export class ProductsService {
           : undefined,
         depositAmount,
         replacementValue,
-        stockQuantity: stockQuantity ?? 0,
         isActive: isActive ?? true,
         searchText: buildProductSearchText({
           name,
@@ -186,7 +184,6 @@ export class ProductsService {
           : undefined,
         depositAmount: dto.depositAmount,
         replacementValue: dto.replacementValue,
-        stockQuantity: dto.stockQuantity,
         isActive: dto.isActive,
         searchText: buildProductSearchText(nextProduct),
       },
@@ -401,7 +398,6 @@ export class ProductsService {
       })),
       depositAmount: product.depositAmount.toString(),
       replacementValue: product.replacementValue?.toString() ?? null,
-      stockQuantity: product.stockQuantity,
       isActive: product.isActive,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,

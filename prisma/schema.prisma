@@ -311,8 +311,6 @@ model Product {
   depositAmount      Decimal  @db.Decimal(12, 2)
   /// Replacement value used for lost/severe damage cases.
   replacementValue   Decimal? @db.Decimal(12, 2)
-  /// Fallback stock quantity if the shop does not manage serial units.
-  stockQuantity      Int      @default(0)
   /// Whether this product can be used in new orders.
   isActive           Boolean  @default(true)
 

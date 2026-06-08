@@ -199,13 +199,13 @@ Export CSV/XLSX có thể để Phase 1.1 nếu chưa cần ngay.
 
 | Trang | Route đề xuất | Mục tiêu | Action chính | Quyền |
 | --- | --- | --- | --- | --- |
-| Danh sách người dùng | `/users` | Quản lý tài khoản admin/staff | Tạo người dùng | `users.manage` |
-| Tạo người dùng | `/users/new` | Tạo tài khoản nội bộ | Lưu người dùng | `users.manage` |
-| Chi tiết người dùng | `/users/:id` | Xem thông tin, role, trạng thái, lịch sử liên quan | Sửa người dùng | `users.manage` |
-| Sửa người dùng | `/users/:id/edit` | Cập nhật profile, active, role | Lưu thay đổi | `users.manage` |
-| Danh sách vai trò | `/roles` | Quản lý role | Tạo vai trò | `roles.manage` |
-| Tạo/sửa vai trò | `/roles/new`, `/roles/:id/edit` | Cấu hình permission cho role | Lưu vai trò | `roles.manage` |
-| Danh sách quyền | `/permissions` | Xem permission seed trong hệ thống | Xem quyền | `roles.manage` |
+| Danh sách người dùng | `/users` | Quản lý tài khoản admin/staff | Tạo người dùng | `users.read` |
+| Tạo người dùng | `/users/new` | Tạo tài khoản nội bộ | Lưu người dùng | `users.create` |
+| Chi tiết người dùng | `/users/:id` | Xem thông tin, role, trạng thái, lịch sử liên quan | Sửa người dùng | `users.read` |
+| Sửa người dùng | `/users/:id/edit` | Cập nhật profile, active, role | Lưu thay đổi | `users.update` |
+| Danh sách vai trò | `/roles` | Quản lý role | Tạo vai trò | `roles.read` |
+| Tạo/sửa vai trò | `/roles/new`, `/roles/:id/edit` | Cấu hình permission cho role | Lưu vai trò | `roles.create` / `roles.update` |
+| Danh sách quyền | `/permissions` | Xem permission seed trong hệ thống | Xem quyền | `roles.read` |
 
 Permission thường được seed sẵn từ backend, UI không nhất thiết cho tạo permission mới nếu hệ thống chưa hỗ trợ.
 
@@ -312,6 +312,397 @@ Không dùng empty state chỉ để trang trí. Mỗi empty state cần có hà
 - Loading form submit: disable nút submit và hiển thị trạng thái đang lưu.
 - Lỗi validation: hiển thị ngay dưới field.
 - Lỗi nghiệp vụ: dùng alert/toast có nội dung rõ, ví dụ `Thiết bị SN001 đã được đặt trong khoảng thời gian này`.
+
+## 4.1. Page flow, dialog và modal
+
+Phần này mô tả cách chia màn hình lớn, modal, drawer và confirm dialog để UI vận hành nhanh nhưng không bị rối.
+
+### Nguyên tắc chọn page, modal, drawer
+
+| Loại UI | Dùng khi | Không dùng khi |
+| --- | --- | --- |
+| Page riêng | Flow dài, nhiều bước, cần URL/share/back browser | Chỉ nhập 1-3 field đơn giản |
+| Drawer bên phải | Xem/sửa nhanh một record trong khi vẫn giữ ngữ cảnh danh sách | Form quá dài hoặc có nhiều tab |
+| Modal form | Tạo nhanh record phụ, ví dụ tạo customer trong lúc tạo order | Flow có nhiều bước hoặc cần xem nhiều dữ liệu |
+| Confirm dialog | Hành động nguy hiểm/không dễ undo: hủy, xóa mềm, chuyển trạng thái quan trọng | Hành động thường xuyên, ít rủi ro |
+| Full-screen workflow | Tạo đơn thuê, bàn giao, nhận trả/kiểm tra | Chỉ cập nhật một field |
+
+Quy tắc chung:
+
+- List page là nơi scan, filter, sort và mở detail.
+- Detail page là nơi xử lý nghiệp vụ chính của record.
+- Modal chỉ nên giải quyết một việc rõ ràng.
+- Không đặt form dài nhiều section trong modal nhỏ.
+- Không dùng confirm dialog cho mọi hành động; chỉ dùng khi cần xác nhận thật sự.
+- Sau khi submit modal thành công, đóng modal và refresh vùng dữ liệu liên quan, không reload toàn trang nếu không cần.
+
+### Layout chuẩn cho list page
+
+List page nên có cấu trúc:
+
+```txt
+Header
+  Title + primary action
+
+Filter bar
+  Search
+  Status filters
+  Date range
+  Owner/assignee filter nếu có
+
+Table
+  Important columns
+  Row actions
+
+Pagination
+```
+
+Row action nên gồm:
+
+- Xem chi tiết.
+- Sửa nếu còn được phép.
+- Action phụ trong menu `...`.
+
+Không đưa quá nhiều nút ra từng row, vì bảng vận hành sẽ khó scan.
+
+### Layout chuẩn cho detail page
+
+Detail page nên có cấu trúc:
+
+```txt
+Header
+  Code/name
+  Status badge
+  Primary next action
+  Secondary action menu
+
+Summary band
+  Key facts and money totals
+
+Tabs/sections
+  Overview
+  Items/assets
+  Payments
+  Handover
+  Return/inspection
+  History/events
+```
+
+Các tab dữ liệu nặng như payment/history/event nên load theo tab hoặc endpoint riêng, không cần trả hết trong response detail ban đầu.
+
+### Confirm dialog chuẩn
+
+Confirm dialog nên có:
+
+- Tiêu đề nêu hành động thật, ví dụ `Hủy đơn thuê ORD-000123`.
+- Nội dung ngắn nêu hậu quả.
+- Field lý do nếu nghiệp vụ cần audit.
+- Nút chính dùng màu nguy hiểm khi hủy/xóa.
+- Nút phụ `Đóng` hoặc `Quay lại`.
+
+Ví dụ:
+
+```txt
+Title: Hủy đơn thuê ORD-000123
+Body: Đơn đã xác nhận sẽ không còn giữ lịch thiết bị sau khi hủy.
+Field: Lý do hủy
+Actions: Quay lại / Hủy đơn
+```
+
+### Form modal/drawer chuẩn
+
+Form modal/drawer nên có:
+
+- Title rõ nghiệp vụ.
+- Field theo thứ tự nhân viên nghĩ khi thao tác.
+- Validation inline dưới field.
+- Nút `Lưu` cố định ở footer.
+- Loading state khi submit.
+- Toast thành công sau khi lưu.
+
+Nếu form có hơn 8-10 field hoặc cần nhiều bảng phụ, dùng page riêng thay vì modal.
+
+### Flow Customers
+
+Trang:
+
+```txt
+/customers
+/customers/:id
+```
+
+Modal/drawer nên có:
+
+- `Create customer` modal từ list hoặc từ màn tạo order.
+- `Edit customer` drawer trong detail.
+- `Update status` confirm dialog nếu chuyển sang `BLOCKED`.
+- `Delete customer` confirm dialog.
+
+Flow tạo nhanh customer trong order:
+
+```txt
+Create rental order
+-> Click "Tạo khách mới"
+-> Modal create customer
+-> Save
+-> Modal close
+-> Newly created customer selected in order form
+```
+
+### Flow Products và AssetUnits
+
+Trang:
+
+```txt
+/products
+/products/:id
+/asset-units
+/asset-units/:id
+```
+
+Product nên dùng page/detail vì có giá, cọc, mô tả, accessories, tiers.
+
+AssetUnit có thể dùng modal hoặc drawer khi tạo từ product detail:
+
+```txt
+Product detail
+-> Tab AssetUnits
+-> Add AssetUnit modal
+-> Save
+-> Refresh asset unit table
+```
+
+Quy tắc inventory:
+
+- Product không có `stockQuantity`.
+- Product detail phải hiển thị số AssetUnit active/usable.
+- Nếu Product chưa có AssetUnit usable, hiển thị cảnh báo `Sản phẩm chưa thể cho thuê`.
+- Tạo order chỉ cho chọn product có AssetUnit usable.
+
+### Flow Rental Orders
+
+Trang:
+
+```txt
+/rental-orders
+/rental-orders/new
+/rental-orders/:id
+/rental-orders/:id/edit
+```
+
+Tạo order nên là page riêng dạng stepper:
+
+```txt
+Step 1: Chọn khách hàng
+Step 2: Chọn thời gian thuê
+Step 3: Chọn sản phẩm/thiết bị
+Step 4: Kiểm tra khả dụng
+Step 5: Tổng tiền và lưu nháp/xác nhận
+```
+
+Dialog/modal trong order:
+
+- Create customer modal.
+- Check availability result modal hoặc inline panel.
+- Assign asset modal/drawer.
+- Cancel order confirm dialog có field `cancelReason`.
+- Confirm order dialog nếu order sẽ bắt đầu block lịch.
+- Delete draft confirm dialog.
+
+Primary action theo trạng thái:
+
+| Status | Primary action | UI nên dùng |
+| --- | --- | --- |
+| `DRAFT` | Xác nhận đơn | Confirm dialog |
+| `CONFIRMED` | Bắt đầu chuẩn bị | Button/action |
+| `PREPARING` | Sẵn sàng nhận hoặc giao hàng | Button/action |
+| `READY_FOR_PICKUP` | Bàn giao | Full-screen workflow hoặc drawer |
+| `DELIVERING` | Xác nhận đã giao | Confirm dialog ngắn |
+| `RENTING` | Nhận trả | Full-screen workflow |
+| `RETURNED` | Kiểm tra sau trả | Full-screen workflow |
+| `DISPUTED` | Xử lý tranh chấp | Page/detail section |
+
+### Flow assign asset
+
+Assign asset nên dùng drawer hoặc full-screen nếu nhiều item:
+
+```txt
+Open assign asset
+-> Show order items
+-> For each quantity = 1 item, choose available AssetUnit
+-> Validate asset belongs to product
+-> Validate no overlap
+-> Save
+```
+
+UI cần hiển thị:
+
+- Product name/SKU snapshot.
+- Serial đang gán nếu có.
+- Danh sách serial khả dụng.
+- Cảnh báo serial bị block trong thời gian thuê.
+
+Nếu item quantity > 1, UI nên yêu cầu tách/gán từng serial hoặc chỉ cho product-level booking cho tới bước chuẩn bị.
+
+### Flow Payments
+
+Payment nên là modal trong order detail:
+
+```txt
+Order detail
+-> Click "Ghi nhận thanh toán"
+-> Payment modal
+-> Save PaymentRecord
+-> Refresh payment tab and money totals
+```
+
+Payment modal fields:
+
+- Kind: `HOLD_FEE`, `RENTAL_FEE`, `DEPOSIT`, `DELIVERY_FEE`, `LATE_FEE`, `DAMAGE_FEE`, `ADJUSTMENT`.
+- Method: cash/bank/card/e-wallet/other.
+- Amount.
+- Reference code.
+- Note.
+
+Refund nên là modal riêng:
+
+```txt
+Order detail
+-> Click "Ghi nhận hoàn tiền"
+-> Refund modal
+-> Save PaymentRecord kind REFUND
+-> Refresh refund/payment status
+```
+
+Không trộn payment thu tiền và refund vào cùng modal nếu làm UI khó hiểu.
+
+### Flow Handover
+
+Bàn giao nên là workflow tập trung, có thể là page hoặc large drawer:
+
+```txt
+Open handover
+-> Review customer and order info
+-> Review assigned asset units
+-> Checklist accessories/condition
+-> Record OUTBOUND handover
+-> Move order to RENTING
+```
+
+Nên có confirm cuối nếu order chưa thanh toán đủ phần cần thu trước bàn giao.
+
+Handover UI cần:
+
+- Danh sách asset unit/serial.
+- Condition note.
+- Accessories note.
+- Staff handling.
+- Actual handover time.
+
+### Flow Return / Inspection
+
+Nhận trả và kiểm tra nên tách 2 bước:
+
+```txt
+Return handover
+-> Mark order RETURNED
+-> Return inspection
+-> Calculate fees/refund
+-> Complete or dispute
+```
+
+Return handover fields:
+
+- Actual return date.
+- Asset units returned.
+- Quick condition note.
+- Missing obvious accessories if any.
+
+Inspection fields:
+
+- Result: OK/DAMAGED/MISSING_ITEMS/DISPUTED.
+- Late fee.
+- Damage fee.
+- Missing fee.
+- Condition summary.
+- Damage reports list.
+
+Damage report nên là sub-modal hoặc inline editable row trong inspection:
+
+```txt
+Add damage report
+-> Select product/asset unit
+-> Severity
+-> Description
+-> Estimated fee
+-> Save row
+```
+
+### Flow History / Events
+
+History nên là tab trong order detail, không phải modal.
+
+Nên tách:
+
+- Status history: timeline trạng thái.
+- Events: audit log tổng quát.
+- Payments: bảng thanh toán.
+- Handovers: bảng bàn giao/nhận trả.
+- Inspections: bảng kiểm tra sau trả.
+
+Mặc định detail chỉ cần load overview + items. Các tab còn lại load khi user mở tab.
+
+### Flow Users / Roles / Permissions
+
+Quản lý phân quyền nên dùng page riêng, không dùng modal nhỏ vì cần xem nhiều dữ liệu.
+
+Trang:
+
+```txt
+/users
+/users/:id
+/roles
+/roles/:id
+/permissions
+```
+
+User flow:
+
+```txt
+Users list
+-> Create user page or drawer
+-> Assign role(s)
+-> Save
+-> User detail shows roles and derived permissions
+```
+
+Role flow:
+
+```txt
+Roles list
+-> Role detail/edit page
+-> Edit name/description
+-> Select permissions by module group
+-> Save role permissions
+```
+
+Dialog/modal nên có:
+
+- `Change user activity status` confirm dialog nếu chuyển sang banned/locked/inactive.
+- `Assign roles` drawer hoặc section trong user detail.
+- `Delete user` confirm dialog, không cho tự xóa tài khoản hiện tại.
+- `Create role` page hoặc large drawer.
+- `Edit role permissions` page/detail, không dùng modal nhỏ.
+- `Delete role` confirm dialog, không cho xóa system role.
+
+Quy tắc UI:
+
+- Không hardcode role enum để quyết định quyền hiển thị nút.
+- FE nên dùng permission codes backend trả về sau login.
+- Role chỉ là nhóm quyền; user có thể có nhiều role.
+- Permission thường là dữ liệu seed từ backend, UI chủ yếu xem/chọn, không nhất thiết tạo permission mới.
+- System role nên hiển thị badge `System` và disable delete.
+- Khi sửa quyền role, cần cảnh báo thay đổi sẽ ảnh hưởng tất cả user đang dùng role đó.
 
 ## 5. Dashboard
 
@@ -427,8 +818,8 @@ Cột đề xuất:
 - Giá thuê ngày.
 - Giá nửa ngày.
 - Tiền cọc.
-- Số lượng fallback.
-- Số thiết bị active.
+- Số AssetUnit active/usable.
+- Số AssetUnit đang được thuê/đang block lịch.
 - Trạng thái.
 - Hành động.
 
@@ -437,7 +828,7 @@ Bộ lọc:
 - Danh mục.
 - Thương hiệu.
 - Đang hoạt động/ngừng hoạt động.
-- Có thiết bị vật lý/chỉ quản lý số lượng.
+- Có AssetUnit usable/chưa có AssetUnit.
 
 ### Form sản phẩm
 
@@ -447,7 +838,6 @@ Field bắt buộc:
 - SKU.
 - Giá thuê ngày.
 - Tiền cọc.
-- Số lượng fallback nếu chưa quản lý serial.
 
 Field tùy chọn:
 
@@ -460,6 +850,8 @@ Field tùy chọn:
 - Giá quá giờ.
 - Giá trị thay thế.
 - Trạng thái hoạt động.
+
+Sau khi tạo Product, admin cần tạo `AssetUnit` cho từng thiết bị vật lý. Product không có `AssetUnit` usable thì chưa thể cho thuê.
 
 ### Chi tiết sản phẩm
 
@@ -968,7 +1360,7 @@ Thiết bị Sony A7 IV - SN001 đã được đặt trong đơn RO-00012 từ 0
 Nếu không gán serial:
 
 - Tính tổng quantity của các item cùng `productId` trong đơn overlap.
-- So sánh với `stockQuantity` hoặc số asset unit active có thể cho thuê.
+- So sánh với số `AssetUnit` active/usable có thể cho thuê; không dùng fallback `Product.stockQuantity`.
 - Nếu vượt, không cho xác nhận đơn.
 
 UI nên hiển thị:
@@ -977,6 +1369,144 @@ UI nên hiển thị:
 - Đã bị giữ trong khoảng này.
 - Còn khả dụng.
 - Số lượng người dùng đang chọn.
+
+## 14.1. Luồng nghiệp vụ cần giữ nhất quán
+
+Phần này là checklist nghiệp vụ để backend/frontend không triển khai lệch giữa các module.
+
+### Product -> AssetUnit inventory flow
+
+`Product` chỉ là model/dòng sản phẩm cho thuê. `AssetUnit` mới là tồn kho vật lý thật.
+
+```txt
+Create Product
+-> Create AssetUnit(s) for Product
+-> Product can be selected in rental order only when it has usable AssetUnit(s)
+-> Availability is calculated from AssetUnit(s)
+```
+
+Quy tắc:
+
+- Không dùng fallback `Product.stockQuantity`.
+- Không thêm lại field tồn kho trên `Product`.
+- Product có thể tồn tại như catalog trước khi nhập thiết bị, nhưng chưa thể cho thuê nếu chưa có asset unit usable.
+- Usable asset unit là thiết bị `isActive = true`, `deletedAt = null`, không ở trạng thái `MAINTENANCE`, `RETIRED`, `LOST`, và condition không phải `LOST`.
+- Nếu admin chọn quantity theo product mà chưa gán serial, backend vẫn phải tính số lượng còn trống từ các asset unit usable và order overlap.
+- Trước khi bàn giao, staff nên gán serial cụ thể cho từng item quantity = 1.
+
+### Rental order core flow
+
+```txt
+check-availability
+-> create DRAFT
+-> assign asset units when needed
+-> confirm
+-> cancel/delete draft if needed
+```
+
+Quy tắc:
+
+- `DRAFT` chưa phải trạng thái block lịch.
+- Khi `CONFIRMED`, order bắt đầu block lịch theo `startDate` đến `blockedEndDate`.
+- Confirm phải re-check availability vì lịch có thể thay đổi sau lúc tạo draft.
+- Update order chỉ nên cho ở `DRAFT`, trừ khi có nghiệp vụ cụ thể cho phép manager sửa sau confirm.
+- Delete chỉ nên là soft delete và chỉ áp dụng cho `DRAFT` hoặc `CANCELLED`.
+- Create/update/confirm/cancel nên ghi `OrderStatusHistory` hoặc `OrderEvent` tương ứng.
+
+### Payment flow
+
+```txt
+record HOLD_FEE / RENTAL_FEE / DEPOSIT / DELIVERY_FEE
+-> update paidTotal
+-> update remainingTotal
+-> update paymentStatus
+-> write OrderEvent PAYMENT_RECORDED
+```
+
+Quy tắc:
+
+- `PaymentRecord` là từng lần thu/hoàn tiền thủ công, không phải tổng tiền.
+- `paidTotal` là tổng các payment `SUCCESS` không phải `REFUND`.
+- `remainingTotal` là số tiền còn phải thu.
+- `paymentStatus` nên là:
+  - `UNPAID` nếu chưa thu gì.
+  - `PARTIALLY_PAID` nếu đã thu một phần.
+  - `PAID` nếu đã thu đủ amount cần thu.
+  - `PARTIALLY_REFUNDED` hoặc `REFUNDED` sau refund.
+- Không tự xác nhận online payment trong Phase 1.
+
+### Handover flow
+
+```txt
+CONFIRMED
+-> PREPARING
+-> READY_FOR_PICKUP / DELIVERING
+-> OUTBOUND handover
+-> RENTING
+```
+
+Quy tắc:
+
+- Trước khi bàn giao, order nên có asset unit cụ thể cho các item cần quản lý serial.
+- Khi bàn giao, tạo `OrderHandover` type `OUTBOUND`.
+- Handover cần lưu staff xử lý, thời gian, tình trạng, phụ kiện và ghi chú.
+- Sau outbound handover, trạng thái order chuyển sang `RENTING`.
+- Nếu cửa hàng giao hàng, dùng `DELIVERING` trước khi chuyển sang `RENTING`.
+
+### Return / inspection / damage flow
+
+```txt
+RENTING
+-> RETURNED
+-> create RETURN handover
+-> create ReturnInspection
+-> create DamageReport(s) if needed
+-> calculate lateFee/damageFee/refundTotal/remainingTotal
+-> COMPLETED or DISPUTED
+```
+
+Quy tắc:
+
+- Khi nhận lại thiết bị, tạo `OrderHandover` type `RETURN`.
+- `actualReturnDate` dùng để tính trễ hạn.
+- `ReturnInspection` là kết quả kiểm tra tổng quát sau trả.
+- `DamageReport` là chi tiết từng lỗi/mất/hư hỏng theo product/asset unit.
+- Nếu có phí phát sinh, cập nhật `lateFeeTotal`, `damageFeeTotal`, `remainingTotal`.
+- Nếu còn tiền cọc cần hoàn, cập nhật `refundTotal`.
+- Nếu có tranh chấp, chuyển `DISPUTED`, chưa complete.
+
+### Refund / settlement flow
+
+```txt
+calculate refundTotal
+-> record PaymentRecord REFUND
+-> update paymentStatus
+-> COMPLETED / REFUNDED when settled
+```
+
+Quy tắc:
+
+- Refund cũng là `PaymentRecord`, kind = `REFUND`, amount dương.
+- Không trừ âm vào payment amount.
+- `refundTotal` là số tiền cần hoàn sau khi trừ phí trễ/hư hỏng/mất phụ kiện.
+- Khi đã thu/hoàn đủ và không còn tranh chấp, order có thể chuyển `COMPLETED`.
+
+### Audit/event flow
+
+```txt
+status change -> OrderStatusHistory
+important action -> OrderEvent
+money action -> PaymentRecord + OrderEvent
+handover action -> OrderHandover + OrderEvent
+inspection action -> ReturnInspection/DamageReport + OrderEvent
+```
+
+Quy tắc:
+
+- `OrderStatusHistory` chỉ ghi chuyển trạng thái.
+- `OrderEvent` ghi nhật ký tổng quát để UI hiển thị timeline/audit.
+- Không cần trả toàn bộ `payments`, `statusHistories`, `handovers`, `returnInspections`, `events` trong response list order.
+- Detail order nên trả core fields + `items`; các tab payment/history/handover/inspection/event có thể dùng endpoint riêng.
 
 ## 15. RBAC và hiển thị UI theo quyền
 
@@ -1004,8 +1534,14 @@ Ví dụ permission:
 | `assets.create` | Tạo thiết bị |
 | `assets.update` | Sửa thiết bị |
 | `assets.delete` | Xóa/ngừng thiết bị |
-| `users.manage` | Quản lý người dùng |
-| `roles.manage` | Quản lý vai trò/quyền |
+| `users.read` | Xem người dùng nội bộ |
+| `users.create` | Tạo người dùng nội bộ |
+| `users.update` | Sửa người dùng, trạng thái, role |
+| `users.delete` | Xóa mềm người dùng |
+| `roles.read` | Xem vai trò |
+| `roles.create` | Tạo vai trò |
+| `roles.update` | Sửa vai trò/quyền trong vai trò |
+| `roles.delete` | Xóa vai trò |
 | `reports.read` | Xem báo cáo |
 
 Quy tắc UI:
@@ -1013,8 +1549,71 @@ Quy tắc UI:
 - Không có quyền thì ẩn action chính.
 - Nếu action quan trọng cần giải thích, có thể disable và tooltip `Bạn không có quyền thực hiện thao tác này`.
 - Backend vẫn phải kiểm tra quyền, không tin vào FE.
+- Nếu user có nhiều role, quyền hiệu lực là hợp của tất cả permission trong các role.
+- UI không nên hardcode quyền theo role name như `ADMIN` hay `STAFF`; chỉ role management UI mới cần hiển thị role code/name.
 
 ## 16. Quản lý người dùng, vai trò và quyền
+
+Mục tiêu là quản lý tài khoản nội bộ và quyền truy cập bằng RBAC. Không lưu một enum role trực tiếp trên `User`.
+
+```txt
+User
+-> UserRole
+-> Role
+-> RolePermission
+-> Permission
+```
+
+### Trang và flow tổng quát
+
+Trang nên có:
+
+```txt
+/users
+/users/:id
+/roles
+/roles/:id
+/permissions
+```
+
+Flow tạo user:
+
+```txt
+Create user
+-> Nhập email, họ tên, phone, password
+-> Chọn role(s), mặc định STAFF nếu không chọn
+-> Save
+-> User detail hiển thị role và permission hiệu lực
+```
+
+Flow đổi role của user:
+
+```txt
+User detail
+-> Edit roles
+-> Chọn nhiều role
+-> Save
+-> Backend replace UserRole hiện tại
+-> Refresh user detail
+```
+
+Flow tạo/sửa role:
+
+```txt
+Roles list
+-> Create/Edit role
+-> Nhập code, name, description
+-> Chọn permissions theo module group
+-> Save Role + RolePermission
+```
+
+Flow xem permission:
+
+```txt
+Permissions page
+-> List permission seed từ backend
+-> Group theo module: orders, customers, products, assets, users, roles, reports, settings
+```
 
 ### Người dùng
 
@@ -1039,6 +1638,23 @@ Form:
 
 Không lưu role enum trực tiếp trên user. User nhận quyền thông qua `UserRole`, `Role`, `RolePermission`.
 
+Hành động:
+
+- Tạo user: page hoặc large drawer.
+- Sửa thông tin user: drawer hoặc detail edit section.
+- Đổi trạng thái hoạt động: confirm dialog nếu chuyển sang banned/locked/inactive.
+- Đổi role: drawer/section riêng, có checklist roles.
+- Xóa user: confirm dialog, không cho tự xóa tài khoản hiện tại.
+
+Trạng thái user nên hiển thị bằng badge:
+
+```txt
+ACTIVE
+BANNED
+LOCKED
+INACTIVE
+```
+
 ### Vai trò
 
 Cột danh sách:
@@ -1058,6 +1674,64 @@ Form role:
 - Danh sách permission grouped theo module.
 
 System role không nên cho xóa từ UI.
+
+Role UI nên có:
+
+- Badge `System` cho role seed mặc định.
+- Số lượng user đang dùng role.
+- Số lượng permission trong role.
+- Tab `Users` để xem user đang có role này nếu cần.
+- Tab `Permissions` để chỉnh quyền.
+
+Khi sửa permissions của role:
+
+- Hiển thị permissions theo group module.
+- Có checkbox group `Select all` theo từng module.
+- Có search permission.
+- Có summary số permission đã chọn.
+- Cảnh báo: `Thay đổi quyền sẽ ảnh hưởng tất cả người dùng đang dùng vai trò này`.
+
+Không nên cho sửa `code` của system role nếu code đang được seed hoặc dùng trong logic phân quyền mặc định.
+
+### Permission
+
+Permission là capability kỹ thuật/nghiệp vụ, ví dụ:
+
+```txt
+orders.read
+orders.create
+orders.update
+orders.update_status
+orders.cancel
+orders.record_payment
+orders.refund
+customers.read
+products.read
+assets.read
+users.read
+roles.read
+settings.read
+reports.read
+```
+
+UI permission page chủ yếu để xem và tra cứu. Phase 1 không nhất thiết cho tạo permission từ UI vì permission nên được seed từ backend để tránh code/frontend/backend lệch nhau.
+
+### Dialog/modal cho RBAC
+
+Confirm dialog cần có:
+
+- Delete user.
+- Delete role.
+- Change user to banned/locked/inactive.
+- Save role permission changes nếu role đang có nhiều user.
+
+Không nên dùng modal nhỏ cho:
+
+- Edit role permissions.
+- View effective permissions of user.
+- Compare permissions between roles.
+
+Các phần này nên là page/detail tab để dễ scan.
 
 ## 17. Báo cáo
 

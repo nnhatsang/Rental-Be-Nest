@@ -312,7 +312,7 @@ endDate + turnaroundMinutes
 
 If `assetUnitId` is assigned, the same physical unit cannot be used in overlapping rental periods.
 
-If only `productId` is used, the service sums overlapping quantities and compares against active asset units or fallback `Product.stockQuantity`.
+If only `productId` is used, the service sums overlapping quantities and compares against active usable `AssetUnit` records. A product without usable asset units cannot be rented.
 
 ## Search
 
@@ -335,5 +335,6 @@ The project uses `pg_trgm` + GIN indexes in `schema.prisma` for better PostgreSQ
 - `Customer` means rental customer.
 - `Product` means rentable model/type, for example Sony A7 IV.
 - `AssetUnit` means physical device/serial, for example Sony A7 IV SN001.
+- Product inventory is derived from `AssetUnit`; `Product` does not store fallback stock quantity.
 - Business/auth errors should be declared in `src/libs/constants/error.constants.ts`.
 - Controllers should return shared wrappers such as `ApiRes` and `ApiPaginatedResponseDto`.

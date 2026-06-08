@@ -52,9 +52,6 @@ export class ProductOutDto {
   @ApiProperty({ example: '45000000', nullable: true })
   replacementValue!: string | null;
 
-  @ApiProperty({ example: 3 })
-  stockQuantity!: number;
-
   @ApiProperty({ example: true })
   isActive!: boolean;
 

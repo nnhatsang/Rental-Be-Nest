@@ -239,7 +239,8 @@ Do not use Prisma `mode: 'insensitive'` as the main approach for Vietnamese acce
 - Do not move Prisma generated files back into `src/generated`.
 - Do not run seed logic automatically during normal app startup.
 - Use `Product` for rentable product types/models.
-- Use `AssetUnit` for physical devices or serial-number-managed inventory.
+- Use `AssetUnit` for physical devices and the actual rentable inventory.
+- Do not add or reintroduce `Product.stockQuantity`; product inventory is derived from active/usable `AssetUnit` records.
 - `RentalOrderItem` must store price and product snapshots.
 - Availability must be checked by rental time overlap, not only by asset status.
 - Keep checkout/cart/payment-gateway logic out of phase 1 unless explicitly requested.
@@ -278,7 +279,7 @@ Examples:
 - Sony A7 IV serial SN001
 - Sony A7 IV serial SN002
 
-If the shop does not manage serial numbers yet, use product-level quantity first, but keep the schema compatible with `AssetUnit`.
+AssetUnit is the source of rentable inventory. A product may exist as catalog data before asset units are entered, but it cannot be rented until it has at least one active/usable asset unit. Do not use product-level fallback stock.
 
 ### RentalOrder
 
@@ -384,7 +385,7 @@ AND existing.endDate > new.startDate
 
 If an `assetUnitId` is assigned, prevent the same physical unit from being used in overlapping rental periods.
 
-If only `productId` is used, sum overlapping quantities and compare against available product stock or active asset units.
+If only `productId` is used, sum overlapping quantities and compare against active/usable asset units for that product. If the product has zero usable asset units, it is unavailable for rental.
 
 ## RBAC
 

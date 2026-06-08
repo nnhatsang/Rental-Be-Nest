@@ -553,10 +553,18 @@ export class RentalOrdersService {
       }
 
       const assignableAssetCount = assignableAssetCountByProduct.get(productId) ?? 0;
-      const availableStock = assignableAssetCount > 0 ? assignableAssetCount : product.stockQuantity;
       const bookedQuantity = bookedQuantityByProduct.get(productId) ?? 0;
 
-      if (bookedQuantity + requestedQuantity > availableStock) {
+      if (assignableAssetCount === 0) {
+        unavailableItems.push({
+          productId,
+          assetUnitId: null,
+          reason: 'Product has no assignable asset units',
+        });
+        continue;
+      }
+
+      if (bookedQuantity + requestedQuantity > assignableAssetCount) {
         unavailableItems.push({
           productId,
           assetUnitId: null,

@@ -77,13 +77,6 @@ export class CreateProductDto {
   @Min(0)
   replacementValue!: number;
 
-  @ApiPropertyOptional({ example: 3, default: 0 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  stockQuantity?: number;
-
   @ApiPropertyOptional({ example: true, default: true })
   @IsOptional()
   @IsBoolean({ message: INVALID_BOOLEAN })

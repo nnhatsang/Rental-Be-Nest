@@ -5,6 +5,8 @@ import { Request, Response } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from './decorators/public.decorator';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -13,6 +15,7 @@ import { ApiNullableRes, ApiRes } from '@/libs/types/custom-response.type';
 import { clearAuthCookies, setAuthCookies } from './utils/cookie.util';
 import { ConfigService } from '@nestjs/config';
 import { LoginResponseDto, MeResponseDto, SuccessResponseDto } from './dto/auth-response.dto';
+import { SUCCESS } from '@/libs/constants/response.constant';
 
 @ApiTags('admin/auth')
 @Controller('admin/auth')
@@ -54,6 +57,36 @@ export class AuthController {
   }
 
   @Public()
+  @Post('forgot-password')
+  @ApiOperation({
+    summary: 'Quên mật khẩu',
+    description: 'Tao reset token ngan han trong Redis va gui link dat lai mat khau qua email neu tai khoan ton tai.',
+  })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiOkResponse({
+    description: 'Nhan yeu cau dat lai mat khau thanh cong.',
+    type: SuccessResponseDto,
+  })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<ApiRes> {
+    return new ApiNullableRes(await this.authService.forgotPassword(dto), SUCCESS);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @ApiOperation({
+    summary: 'Dat lai mat khau',
+    description: 'Xac thuc reset token trong Redis, doi mat khau va thu hoi toan bo phien dang nhap cu cua user.',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiOkResponse({
+    description: 'Dat lai mat khau thanh cong.',
+    type: SuccessResponseDto,
+  })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<ApiRes> {
+    return new ApiRes(await this.authService.resetPassword(dto), SUCCESS);
+  }
+
+  @Public()
   @UseGuards(JwtRefreshGuard)
   @Post('refresh')
   @ApiOperation({
@@ -68,7 +101,7 @@ export class AuthController {
     const result = await this.authService.refresh(user);
     setAuthCookies(response, this.configService, result.cookies);
 
-    return new ApiRes({ success: true }, 'Làm mới phiên đăng nhập thành công');
+    return new ApiRes({ success: true }, SUCCESS);
   }
 
   @Post('logout')

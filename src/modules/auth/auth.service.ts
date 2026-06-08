@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { BadRequestException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -8,6 +8,8 @@ import { PrismaService } from '@modules/database/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import {
   AuthCookiePayload,
   AuthUser,
@@ -22,7 +24,9 @@ import {
   EUserActivityStatus,
   INVALID_SESSION,
   OLD_PASSWORD_NOT_VALID,
+  PASSWORD_CONFIRM_NOT_MATCH,
   PASSWORD_NOT_MATCH,
+  PASSWORD_RESET_TOKEN_INVALID,
   UNAUTHORIZED,
   USER_ACTIVITY_ERRORS,
   USER_EMAIL_EXISTED,
@@ -30,6 +34,8 @@ import {
 } from '@/libs/constants/error.constants';
 import { buildUserSearchText } from '@/libs/utils/search-text.util';
 import { AuthSession, User } from '@generated/prisma/browser';
+import { MailService } from '@modules/mail/mail.service';
+import { PasswordResetTokenService } from './services/password-reset-token.service';
 
 type UserWithAuth = User & {
   roles: {
@@ -50,10 +56,14 @@ type SessionWithUser = AuthSession & {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
+    private readonly passwordResetTokenService: PasswordResetTokenService,
   ) {}
 
   async login(dto: LoginDto, request: Request): Promise<LoginResult> {
@@ -188,6 +198,84 @@ export class AuthService {
         },
       }),
     ]);
+
+    return { success: true };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ success: true }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        activityStatus: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user || user.deletedAt || user.activityStatus !== EUserActivityStatus.Active) {
+      return { success: true };
+    }
+
+    const rawToken = await this.passwordResetTokenService.createForUser(user.id);
+
+    try {
+      await this.mailService.sendPasswordResetEmail(user.email, this.buildPasswordResetUrl(rawToken), {
+        fullName: user.fullName,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to send password reset email to user ${user.id}`, error instanceof Error ? error.stack : undefined);
+    }
+
+    return { success: true };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ success: true }> {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException(PASSWORD_CONFIRM_NOT_MATCH);
+    }
+
+    const resetToken = await this.passwordResetTokenService.verify(dto.token);
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: resetToken.userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        activityStatus: true,
+      },
+    });
+
+    if (!user) {
+      await this.passwordResetTokenService.consume(resetToken);
+      throw new BadRequestException(PASSWORD_RESET_TOKEN_INVALID);
+    }
+
+    this.assertUserCanLogin(user.activityStatus);
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      }),
+      this.prisma.authSession.updateMany({
+        where: {
+          userId: user.id,
+          isRevoked: false,
+        },
+        data: {
+          isRevoked: true,
+          revokedAt: new Date(),
+        },
+      }),
+    ]);
+
+    await this.passwordResetTokenService.consume(resetToken);
 
     return { success: true };
   }
@@ -367,6 +455,11 @@ export class AuthService {
 
   private generateOpaqueToken(): string {
     return randomBytes(32).toString('base64url');
+  }
+
+  private buildPasswordResetUrl(token: string): string {
+    const adminOrigin = this.configService.get<string>('ADMIN_WEB_ORIGIN', 'http://localhost:3001').replace(/\/$/, '');
+    return `${adminOrigin}/reset-password?token=${encodeURIComponent(token)}`;
   }
 
   private assertUserCanLogin(activityStatus: EUserActivityStatus): void {

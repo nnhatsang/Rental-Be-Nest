@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from '@modules/database/database.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -13,6 +12,9 @@ import { StoreBusinessHoursModule } from './modules/store-business-hours/store-b
 import { StoreClosureModule } from './modules/store-closure/store-closure.module';
 import { RentalOrdersModule } from './modules/rental-orders/rental-orders.module';
 import * as Joi from 'joi';
+import { RedisModule } from '@liaoliaots/nestjs-redis';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -33,8 +35,37 @@ import * as Joi from 'joi';
         AUTH_COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
         AUTH_COOKIE_SAME_SITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
         ADMIN_WEB_ORIGIN: Joi.string().default('http://localhost:3001'),
+
+        REDIS_HOST: Joi.string().default('localhost'),
+        REDIS_PORT: Joi.number().default(6379),
+        REDIS_PASSWORD: Joi.string().allow('').optional(),
+
+        RESET_PASSWORD_EXPIRES_IN_SECONDS: Joi.number().default(1800),
+        RESET_PASSWORD_SECRET: Joi.string().required(),
+
+        SMTP_HOST: Joi.string().allow('').optional(),
+        SMTP_PORT: Joi.number().default(587),
+        SMTP_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
+        SMTP_USER: Joi.string().allow('').optional(),
+        SMTP_PASS: Joi.string().allow('').optional(),
+        MAIL_FROM: Joi.string().default('Rental Admin <no-reply@rental.local>'),
       }),
     }),
+    RedisModule.forRootAsync(
+      {
+        imports: [ConfigModule],
+        inject: [ConfigService],
+        useFactory: (configService: ConfigService) => ({
+          closeClient: true,
+          config: {
+            host: configService.get<string>('REDIS_HOST', 'localhost'),
+            port: configService.get<number>('REDIS_PORT', 6379),
+            password: configService.get<string>('REDIS_PASSWORD') || undefined,
+          },
+        }),
+      },
+      true,
+    ),
     DatabaseModule,
     AuthModule,
     UsersModule,

@@ -171,6 +171,16 @@ export const RENTAL_ORDER_TIME_INVALID = new ErrorResponse({
   message: 'Thời gian thuê không hợp lệ',
 });
 
+export const PASSWORD_CONFIRM_NOT_MATCH = new ErrorResponse({
+  code: 'PASSWORD_CONFIRM_NOT_MATCH',
+  message: 'Xác nhận mật khẩu không khớp',
+});
+
+export const PASSWORD_RESET_TOKEN_INVALID = new ErrorResponse({
+  code: 'PASSWORD_RESET_TOKEN_INVALID',
+  message: 'Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn!',
+});
+
 export const RENTAL_ORDER_NOT_FOUND = new ErrorResponse({
   code: 'RENTAL_ORDER_NOT_FOUND',
   message: 'Không tìm thấy đơn thuê',

@@ -9,12 +9,15 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CsrfGuard } from './guards/csrf.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { MailModule } from '@modules/mail/mail.module';
+import { PasswordResetTokenService } from './services/password-reset-token.service';
 
 @Module({
-  imports: [PassportModule, JwtModule.register({})],
+  imports: [PassportModule, JwtModule.register({}), MailModule],
   controllers: [AuthController],
   providers: [
     AuthService,
+    PasswordResetTokenService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
     {

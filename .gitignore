@@ -62,3 +62,4 @@ docker.env
 
 /dev-db
 /data
+*.pnpm-store

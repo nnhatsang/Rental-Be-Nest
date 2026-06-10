@@ -14,6 +14,8 @@ import { RentalOrdersModule } from './modules/rental-orders/rental-orders.module
 import * as Joi from 'joi';
 import { RedisModule } from '@liaoliaots/nestjs-redis';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { RolesModule } from './modules/roles/roles.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 @Module({
   imports: [
@@ -76,6 +78,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     StoreBusinessHoursModule,
     StoreClosureModule,
     RentalOrdersModule,
+    RolesModule,
+    PermissionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

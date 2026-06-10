@@ -31,6 +31,7 @@ export const PermissionCode = {
   RolesCreate: 'roles.create',
   RolesUpdate: 'roles.update',
   RolesDelete: 'roles.delete',
+  RolesAssign: 'roles.assign',
 
   SettingsRead: 'settings.read',
   SettingsUpdate: 'settings.update',

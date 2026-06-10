@@ -151,7 +151,7 @@ export class UsersService {
     return this.toUserOut(user);
   }
 
-  async updateUserRoles(id: string, dto: UpdateUserRolesDto): Promise<UserOutDto> {
+  async updateUserRoles(id: string, dto: UpdateUserRolesDto, assignedById?: string): Promise<UserOutDto> {
     await this.ensureUserExists(id);
 
     const roles = await this.findRolesByCodesOrThrow(dto.roleCodes);
@@ -165,6 +165,7 @@ export class UsersService {
         data: roles.map((role) => ({
           userId: id,
           roleId: role.id,
+          assignedById,
         })),
         skipDuplicates: true,
       });

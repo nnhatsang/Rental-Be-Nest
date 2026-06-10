@@ -84,8 +84,8 @@ export class UsersController {
     description: 'Thay thế toàn bộ danh sách role hiện tại của user bằng danh sách roleCodes mới.',
   })
   @ApiOkResponse({ type: UserResponseDto })
-  async updateUserRoles(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserRolesDto) {
-    return new ApiRes(await this.usersService.updateUserRoles(id, dto), 'Cập nhật vai trò người dùng thành công');
+  async updateUserRoles(@Param('id', IdValidatePipe) id: string, @CurrentUser() currentUser: AuthUser, @Body() dto: UpdateUserRolesDto) {
+    return new ApiRes(await this.usersService.updateUserRoles(id, dto, currentUser.id), 'Cập nhật vai trò người dùng thành công');
   }
 
   @Patch(':id/password')

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "0b9a9cf4-6a58-4c0c-a6a0-rental-admin-be",
     "name": "Rental Admin BE",
-    "description": "Postman collection for testing the admin-first rental backend. Import this file, run Auth / Login first, then run setup data and rental order requests.",
+    "description": "Full Postman collection for admin-first rental backend. Run 01 Auth / Login Admin first or run 08 Full Flow Runner.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -15,8 +15,15 @@
         "type": "text/javascript",
         "exec": [
           "const csrf = pm.cookies.get('admin_csrf_token');",
-          "if (csrf) {",
-          "  pm.collectionVariables.set('csrfToken', csrf);",
+          "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
+          "const start = new Date(Date.now() + 24 * 60 * 60 * 1000);",
+          "start.setUTCHours(2, 0, 0, 0);",
+          "const end = new Date(start.getTime());",
+          "end.setUTCHours(9, 0, 0, 0);",
+          "const currentStart = new Date(pm.collectionVariables.get('rentalStartDate') || 0);",
+          "if (!pm.collectionVariables.get('rentalStartDate') || currentStart <= new Date()) {",
+          "  pm.collectionVariables.set('rentalStartDate', start.toISOString());",
+          "  pm.collectionVariables.set('rentalEndDate', end.toISOString());",
           "}"
         ]
       }
@@ -25,7 +32,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3000/api"
+      "value": "http://localhost:4002/api"
     },
     {
       "key": "email",
@@ -36,11 +43,51 @@
       "value": "Password123!"
     },
     {
+      "key": "newPassword",
+      "value": "NewPassword123!"
+    },
+    {
       "key": "csrfToken",
       "value": ""
     },
     {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "staffUserId",
+      "value": ""
+    },
+    {
+      "key": "staffEmail",
+      "value": ""
+    },
+    {
+      "key": "staffPhone",
+      "value": ""
+    },
+    {
+      "key": "staffPassword",
+      "value": "StaffPassword123!"
+    },
+    {
+      "key": "staffNewPassword",
+      "value": "StaffNewPassword123!"
+    },
+    {
+      "key": "resetPasswordToken",
+      "value": ""
+    },
+    {
       "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "customerPhone",
+      "value": ""
+    },
+    {
+      "key": "customerIdentityNumber",
       "value": ""
     },
     {
@@ -49,6 +96,10 @@
     },
     {
       "key": "assetUnitId",
+      "value": ""
+    },
+    {
+      "key": "storeClosureId",
       "value": ""
     },
     {
@@ -61,40 +112,19 @@
     },
     {
       "key": "rentalStartDate",
-      "value": "2026-06-10T02:00:00.000Z"
+      "value": ""
     },
     {
       "key": "rentalEndDate",
-      "value": "2026-06-10T09:00:00.000Z"
+      "value": ""
     }
   ],
   "item": [
     {
-      "name": "Auth",
+      "name": "01 Auth",
       "item": [
         {
-          "name": "Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('login success', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "const csrf = pm.cookies.get('admin_csrf_token');",
-                  "if (csrf) {",
-                  "  pm.collectionVariables.set('csrfToken', csrf);",
-                  "}",
-                  "const json = pm.response.json();",
-                  "if (json?.data?.user?.id) {",
-                  "  pm.collectionVariables.set('userId', json.data.user.id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Login Admin",
           "request": {
             "method": "POST",
             "header": [
@@ -103,10 +133,6 @@
                 "value": "application/json"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/admin/auth/login",
               "host": [
@@ -117,11 +143,32 @@
                 "auth",
                 "login"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const csrf = pm.cookies.get('admin_csrf_token');",
+                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.user?.id) pm.collectionVariables.set('userId', json?.data?.user?.id);"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "Me",
+          "name": "Get Me",
           "request": {
             "method": "GET",
             "header": [],
@@ -136,24 +183,113 @@
                 "me"
               ]
             }
-          }
-        },
-        {
-          "name": "Refresh",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const csrf = pm.cookies.get('admin_csrf_token');",
-                  "if (csrf) {",
-                  "  pm.collectionVariables.set('csrfToken', csrf);",
-                  "}"
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Update Me",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"System Admin\",\n  \"phone\": \"0900000000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change My Password - Example",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "me",
+                "password"
+              ]
+            },
+            "description": "Use carefully: after success, update password variable or change it back manually.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oldPassword\": \"{{password}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot Password",
           "request": {
             "method": "POST",
             "header": [
@@ -162,6 +298,82 @@
                 "value": "application/json"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset Password - Requires Email Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Copy token from reset email URL into resetPasswordToken before running.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetPasswordToken}}\",\n  \"newPassword\": \"{{newPassword}}\",\n  \"confirmPassword\": \"{{newPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Session",
+          "request": {
+            "method": "POST",
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/refresh",
               "host": [
@@ -173,7 +385,22 @@
                 "refresh"
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const csrf = pm.cookies.get('admin_csrf_token');",
+                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Logout",
@@ -196,15 +423,436 @@
                 "logout"
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "Setup Data",
+      "name": "02 Users",
       "item": [
         {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?page=1&perPage=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Staff User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"fullName\": \"Postman Staff\",\n  \"phone\": \"{{staffPhone}}\",\n  \"password\": \"{{staffPassword}}\",\n  \"roleCodes\": [\n    \"STAFF\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = Date.now();",
+                  "pm.collectionVariables.set('staffEmail', `staff.${suffix}@rental.local`);",
+                  "pm.collectionVariables.set('staffPhone', `09${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('staffUserId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Staff Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Staff Basic Info",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Postman Staff Updated\",\n  \"phone\": \"{{staffPhone}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Staff Activity Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}/activity-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}",
+                "activity-status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"activityStatus\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Staff Roles",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleCodes\": [\n    \"STAFF\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset Staff Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}",
+                "password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"{{staffNewPassword}}\",\n  \"confirmPassword\": \"{{staffNewPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Staff User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?page=1&perPage=10&search=postman",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "postman"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nguyen Van Postman\",\n  \"phone\": \"{{customerPhone}}\",\n  \"email\": \"customer.{{customerPhone}}@example.com\",\n  \"address\": \"123 Nguyen Trai, Quan 1, TP.HCM\",\n  \"identityNumber\": \"{{customerIdentityNumber}}\",\n  \"socialContact\": \"zalo:{{customerPhone}}\",\n  \"notes\": \"Postman test customer\"\n}"
+            }
+          },
           "event": [
             {
               "listen": "prerequest",
@@ -223,89 +871,50 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
                   "const json = pm.response.json();",
-                  "if (json?.data?.id) {",
-                  "  pm.collectionVariables.set('customerId', json.data.id);",
-                  "}"
+                  "if (json?.data?.id) pm.collectionVariables.set('customerId', json?.data?.id);"
                 ]
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Nguyen Van Test\",\n  \"phone\": \"{{customerPhone}}\",\n  \"email\": \"customer.test.{{customerPhone}}@example.com\",\n  \"address\": \"123 Nguyen Trai, Quan 1, TP.HCM\",\n  \"identityNumber\": \"{{customerIdentityNumber}}\",\n  \"socialContact\": \"zalo:{{customerPhone}}\",\n  \"notes\": \"Postman test customer\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "customers"
-              ]
-            }
-          }
+          ]
         },
         {
-          "name": "List Customers",
+          "name": "Get Customer Detail",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/customers?page=1&perPage=10&search=test",
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "customers"
-              ],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "perPage",
-                  "value": "10"
-                },
-                {
-                  "key": "search",
-                  "value": "test"
-                }
+                "customers",
+                "{{customerId}}"
               ]
             }
-          }
-        },
-        {
-          "name": "Create Product",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json?.data?.id) {",
-                  "  pm.collectionVariables.set('productId', json.data.id);",
-                  "}"
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Update Customer",
           "request": {
-            "method": "POST",
+            "method": "PATCH",
             "header": [
               {
                 "key": "Content-Type",
@@ -316,28 +925,126 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Sony A7 IV Postman\",\n  \"sku\": \"SONY-A7-IV-POSTMAN-{{$timestamp}}\",\n  \"description\": \"Postman test camera body\",\n  \"includedAccessories\": \"Body, battery, charger, strap, memory card\",\n  \"usageGuide\": \"Check battery before handover\",\n  \"dailyPrice\": 500000,\n  \"halfDayPrice\": 300000,\n  \"hourlyOveragePrice\": 100000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000,\n  \"isActive\": true,\n  \"rentalPriceTiers\": [\n    {\n      \"minDays\": 3,\n      \"maxDays\": 6,\n      \"dailyPrice\": 450000,\n      \"name\": \"Combo 3-6 days\",\n      \"sortOrder\": 1\n    },\n    {\n      \"minDays\": 7,\n      \"dailyPrice\": 400000,\n      \"name\": \"Combo 7+ days\",\n      \"sortOrder\": 2\n    }\n  ]\n}"
-            },
             "url": {
-              "raw": "{{baseUrl}}/products",
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "products"
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nguyen Van Postman Updated\",\n  \"address\": \"456 Le Loi, Quan 1, TP.HCM\",\n  \"notes\": \"Updated by Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Customer Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Customer",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}"
               ]
             }
-          }
-        },
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Products",
+      "item": [
         {
           "name": "List Products",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/products?page=1&perPage=10&search=postman",
+              "raw": "{{baseUrl}}/products?page=1&perPage=10&search=postman&isActive=true",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -356,27 +1063,30 @@
                 {
                   "key": "search",
                   "value": "postman"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
                 }
               ]
             }
-          }
-        },
-        {
-          "name": "Create Asset Unit",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json?.data?.id) {",
-                  "  pm.collectionVariables.set('assetUnitId', json.data.id);",
-                  "}"
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Create Product",
           "request": {
             "method": "POST",
             "header": [
@@ -389,10 +1099,254 @@
                 "value": "{{csrfToken}}"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"serialNumber\": \"SN-POSTMAN-{{$timestamp}}\",\n  \"status\": \"AVAILABLE\",\n  \"condition\": \"GOOD\",\n  \"note\": \"Postman test serial\",\n  \"isActive\": true\n}"
+              "raw": "{\n  \"name\": \"Sony A7 IV Postman\",\n  \"sku\": \"SONY-A7-IV-POSTMAN-{{$timestamp}}\",\n  \"description\": \"Postman test camera body\",\n  \"includedAccessories\": \"Body, battery, charger, strap, memory card\",\n  \"usageGuide\": \"Check battery before handover\",\n  \"dailyPrice\": 500000,\n  \"halfDayPrice\": 300000,\n  \"hourlyOveragePrice\": 100000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000,\n  \"isActive\": true,\n  \"rentalPriceTiers\": [\n    {\n      \"minDays\": 3,\n      \"maxDays\": 6,\n      \"dailyPrice\": 450000,\n      \"name\": \"Combo 3-6 days\",\n      \"sortOrder\": 1\n    },\n    {\n      \"minDays\": 7,\n      \"dailyPrice\": 400000,\n      \"name\": \"Combo 7+ days\",\n      \"sortOrder\": 2\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('productId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
             },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated by Postman\",\n  \"dailyPrice\": 520000,\n  \"halfDayPrice\": 320000,\n  \"hourlyOveragePrice\": 110000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Asset Units",
+      "item": [
+        {
+          "name": "List Asset Units",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/asset-units?page=1&perPage=10&search=postman&isActive=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "postman"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Asset Unit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/asset-units",
               "host": [
@@ -401,9 +1355,185 @@
               "path": [
                 "asset-units"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"serialNumber\": \"SN-POSTMAN-{{$timestamp}}\",\n  \"status\": \"AVAILABLE\",\n  \"condition\": \"GOOD\",\n  \"note\": \"Postman test serial\",\n  \"isActive\": true\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('assetUnitId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
         },
+        {
+          "name": "Get Asset Unit Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/asset-units/{{assetUnitId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units",
+                "{{assetUnitId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Asset Unit",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/asset-units/{{assetUnitId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units",
+                "{{assetUnitId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Updated by Postman\",\n  \"status\": \"AVAILABLE\",\n  \"condition\": \"GOOD\",\n  \"isActive\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Asset Unit Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/asset-units/{{assetUnitId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units",
+                "{{assetUnitId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\",\n  \"condition\": \"GOOD\",\n  \"isActive\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Asset Unit",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/asset-units/{{assetUnitId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units",
+                "{{assetUnitId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 Settings",
+      "item": [
         {
           "name": "Get Rental Policy",
           "request": {
@@ -418,7 +1548,62 @@
                 "rental-policy"
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Rental Policy",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-policy"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Default Rental Policy\",\n  \"bookingHoldAmountPerUnit\": 50000,\n  \"turnaroundMinutes\": 60,\n  \"holdPaymentExpiresInMinutes\": 30\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Get Store Business Hours",
@@ -434,12 +1619,258 @@
                 "store-business-hours"
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Store Business Hours",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-business-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-business-hours"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"dayOfWeek\": 0,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 1,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 2,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 3,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 4,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 5,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 6,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Store Closures",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/store-closures?page=1&perPage=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-closures"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "perPage",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Store Closure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-closures",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-closures"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"2026-12-31T00:00:00.000Z\",\n  \"endDate\": \"2026-12-31T23:59:59.000Z\",\n  \"type\": \"OFF\",\n  \"reason\": \"Postman future closure\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('storeClosureId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Store Closure Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/store-closures/{{storeClosureId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-closures",
+                "{{storeClosureId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Store Closure",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-closures/{{storeClosureId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-closures",
+                "{{storeClosureId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"MAINTENANCE\",\n  \"reason\": \"Updated by Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Store Closure",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-closures/{{storeClosureId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-closures",
+                "{{storeClosureId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "Rental Orders",
+      "name": "07 Rental Orders",
       "item": [
         {
           "name": "Check Availability",
@@ -455,10 +1886,6 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/rental-orders/check-availability",
               "host": [
@@ -468,28 +1895,28 @@
                 "rental-orders",
                 "check-availability"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
             }
-          }
-        },
-        {
-          "name": "Create Rental Order",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json?.data?.id) {",
-                  "  pm.collectionVariables.set('rentalOrderId', json.data.id);",
-                  "}",
-                  "if (json?.data?.items?.[0]?.id) {",
-                  "  pm.collectionVariables.set('rentalOrderItemId', json.data.items[0].id);",
-                  "}"
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Create Rental Order",
           "request": {
             "method": "POST",
             "header": [
@@ -502,10 +1929,6 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"pickupMethod\": \"PICKUP_AT_STORE\",\n  \"deliveryFeeTotal\": 0,\n  \"discountTotal\": 0,\n  \"note\": \"Postman test rental order\",\n  \"internalNote\": \"Created from Postman collection\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Body + battery + charger\"\n    }\n  ]\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/rental-orders",
               "host": [
@@ -514,8 +1937,29 @@
               "path": [
                 "rental-orders"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"pickupMethod\": \"PICKUP_AT_STORE\",\n  \"deliveryFeeTotal\": 0,\n  \"discountTotal\": 0,\n  \"note\": \"Postman test rental order\",\n  \"internalNote\": \"Created from Postman collection\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Body + battery + charger\"\n    }\n  ]\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('rentalOrderId', json?.data?.id);",
+                  "const orderJson = pm.response.json();",
+                  "if (orderJson?.data?.items?.[0]?.id) pm.collectionVariables.set('rentalOrderItemId', orderJson.data.items[0].id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "List Rental Orders",
@@ -545,7 +1989,20 @@
                 }
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Get Rental Order Detail",
@@ -562,24 +2019,23 @@
                 "{{rentalOrderId}}"
               ]
             }
-          }
-        },
-        {
-          "name": "Update Draft Rental Order",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json?.data?.items?.[0]?.id) {",
-                  "  pm.collectionVariables.set('rentalOrderItemId', json.data.items[0].id);",
-                  "}"
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Update Draft Rental Order",
           "request": {
             "method": "PATCH",
             "header": [
@@ -592,10 +2048,6 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"note\": \"Updated from Postman before confirm\",\n  \"internalNote\": \"Draft update smoke test\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Updated item note\"\n    }\n  ]\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
               "host": [
@@ -605,8 +2057,27 @@
                 "rental-orders",
                 "{{rentalOrderId}}"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Updated from Postman before confirm\",\n  \"internalNote\": \"Draft update smoke test\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Updated item note\"\n    }\n  ]\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.items?.[0]?.id) pm.collectionVariables.set('rentalOrderItemId', json.data.items[0].id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Assign Asset To Order Item",
@@ -622,10 +2093,6 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"items\": [\n    {\n      \"itemId\": \"{{rentalOrderItemId}}\",\n      \"assetUnitId\": \"{{assetUnitId}}\"\n    }\n  ]\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/items/assign-assets",
               "host": [
@@ -637,8 +2104,25 @@
                 "items",
                 "assign-assets"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"itemId\": \"{{rentalOrderItemId}}\",\n      \"assetUnitId\": \"{{assetUnitId}}\"\n    }\n  ]\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Confirm Rental Order",
@@ -654,10 +2138,6 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"note\": \"Confirmed from Postman\"\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/confirm",
               "host": [
@@ -668,8 +2148,69 @@
                 "{{rentalOrderId}}",
                 "confirm"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Confirmed from Postman\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Overlap Availability Should Be Unavailable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/check-availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "check-availability"
+              ]
+            },
+            "description": "Run after confirm. Expected data.isAvailable=false when only one usable asset exists for this product/time.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Cancel Rental Order",
@@ -685,10 +2226,6 @@
                 "value": "{{csrfToken}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cancelReason\": \"Cancelled from Postman smoke test\"\n}"
-            },
             "url": {
               "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/cancel",
               "host": [
@@ -699,8 +2236,25 @@
                 "{{rentalOrderId}}",
                 "cancel"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelReason\": \"Cancelled from Postman smoke test\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Delete Rental Order",
@@ -721,8 +2275,692 @@
                 "rental-orders",
                 "{{rentalOrderId}}"
               ]
+            },
+            "description": "Only DRAFT/CANCELLED orders can be deleted."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
             }
-          }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 Full Flow Runner",
+      "description": "Run this folder from top to bottom for a backend smoke test.",
+      "item": [
+        {
+          "name": "01 Login Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const csrf = pm.cookies.get('admin_csrf_token');",
+                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.user?.id) pm.collectionVariables.set('userId', json?.data?.user?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Update Settings - Business Hours",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-business-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-business-hours"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"dayOfWeek\": 0,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 1,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 2,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 3,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 4,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 5,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    },\n    {\n      \"dayOfWeek\": 6,\n      \"openTime\": \"08:00\",\n      \"closeTime\": \"20:00\",\n      \"isOpen\": true\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nguyen Van Postman\",\n  \"phone\": \"{{customerPhone}}\",\n  \"email\": \"customer.{{customerPhone}}@example.com\",\n  \"address\": \"123 Nguyen Trai, Quan 1, TP.HCM\",\n  \"identityNumber\": \"{{customerIdentityNumber}}\",\n  \"socialContact\": \"zalo:{{customerPhone}}\",\n  \"notes\": \"Postman test customer\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const phoneSuffix = String(Math.floor(Math.random() * 100000000)).padStart(8, '0');",
+                  "const identitySuffix = String(Math.floor(Math.random() * 1000000000)).padStart(9, '0');",
+                  "pm.collectionVariables.set('customerPhone', `09${phoneSuffix}`);",
+                  "pm.collectionVariables.set('customerIdentityNumber', `079${identitySuffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('customerId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sony A7 IV Postman\",\n  \"sku\": \"SONY-A7-IV-POSTMAN-{{$timestamp}}\",\n  \"description\": \"Postman test camera body\",\n  \"includedAccessories\": \"Body, battery, charger, strap, memory card\",\n  \"usageGuide\": \"Check battery before handover\",\n  \"dailyPrice\": 500000,\n  \"halfDayPrice\": 300000,\n  \"hourlyOveragePrice\": 100000,\n  \"depositAmount\": 5000000,\n  \"replacementValue\": 45000000,\n  \"isActive\": true,\n  \"rentalPriceTiers\": [\n    {\n      \"minDays\": 3,\n      \"maxDays\": 6,\n      \"dailyPrice\": 450000,\n      \"name\": \"Combo 3-6 days\",\n      \"sortOrder\": 1\n    },\n    {\n      \"minDays\": 7,\n      \"dailyPrice\": 400000,\n      \"name\": \"Combo 7+ days\",\n      \"sortOrder\": 2\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('productId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Create Asset Unit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/asset-units",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "asset-units"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"serialNumber\": \"SN-POSTMAN-{{$timestamp}}\",\n  \"status\": \"AVAILABLE\",\n  \"condition\": \"GOOD\",\n  \"note\": \"Postman test serial\",\n  \"isActive\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('assetUnitId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Check Availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/check-availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "check-availability"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Create Rental Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"pickupMethod\": \"PICKUP_AT_STORE\",\n  \"deliveryFeeTotal\": 0,\n  \"discountTotal\": 0,\n  \"note\": \"Postman test rental order\",\n  \"internalNote\": \"Created from Postman collection\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1,\n      \"note\": \"Body + battery + charger\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('rentalOrderId', json?.data?.id);",
+                  "const orderJson = pm.response.json();",
+                  "if (orderJson?.data?.items?.[0]?.id) pm.collectionVariables.set('rentalOrderItemId', orderJson.data.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 Assign Asset",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/items/assign-assets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}",
+                "items",
+                "assign-assets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"itemId\": \"{{rentalOrderItemId}}\",\n      \"assetUnitId\": \"{{assetUnitId}}\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 Confirm Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}",
+                "confirm"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Confirmed from Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 Verify Overlap Unavailable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/check-availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "check-availability"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"{{rentalStartDate}}\",\n  \"endDate\": \"{{rentalEndDate}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelReason\": \"Cancelled from Postman smoke test\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 Delete Cancelled Order",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rental-orders",
+                "{{rentalOrderId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 Create Staff User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"fullName\": \"Postman Staff\",\n  \"phone\": \"{{staffPhone}}\",\n  \"password\": \"{{staffPassword}}\",\n  \"roleCodes\": [\n    \"STAFF\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = Date.now();",
+                  "pm.collectionVariables.set('staffEmail', `staff.${suffix}@rental.local`);",
+                  "pm.collectionVariables.set('staffPhone', `09${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "if (json?.data?.id) pm.collectionVariables.set('staffUserId', json?.data?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 Reset Staff Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}",
+                "password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"{{staffNewPassword}}\",\n  \"confirmPassword\": \"{{staffNewPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 Delete Staff User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{staffUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{staffUserId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 2xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

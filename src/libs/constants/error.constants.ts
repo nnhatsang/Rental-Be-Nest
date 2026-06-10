@@ -231,6 +231,36 @@ export const ROLE_NOT_FOUND = new ErrorResponse({
   message: 'Không tìm thấy vai trò phù hợp',
 });
 
+export const ROLE_CODE_EXISTED = new ErrorResponse({
+  code: 'ROLE_CODE_EXISTED',
+  message: 'Mã vài trò tồn tại',
+});
+
+export const ROLE_SYSTEM_PROTECTED = new ErrorResponse({
+  code: 'ROLE_SYSTEM_PROTECTED',
+  message: 'Không thể thay đổi vài trò hệ thống bằng thao tác này.',
+});
+
+export const ROLE_IN_USE = new ErrorResponse({
+  code: 'ROLE_IN_USE',
+  message: 'Vai tro dang duoc gan cho nguoi dung',
+});
+
+export const ROLE_PERMISSION_INVALID = new ErrorResponse({
+  code: 'ROLE_PERMISSION_INVALID',
+  message: 'Danh sách quyền không hợp lệ',
+});
+
+export const ROLE_USER_INVALID = new ErrorResponse({
+  code: 'ROLE_USER_INVALID',
+  message: 'Danh sách người dùng gán quyền khong hợp lệ',
+});
+
+export const PERMISSION_NOT_FOUND = new ErrorResponse({
+  code: 'PERMISSION_NOT_FOUND',
+  message: 'Không thấy quyền phù hợp',
+});
+
 export const PASSWORD_NOT_MATCH = new ErrorResponse({
   code: 'PASSWORD_NOT_MATCH',
   message: 'Mật khẩu không chính xác',

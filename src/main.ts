@@ -7,7 +7,7 @@ import { ValidatePipe } from '@pipe/validate.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const adminWebOrigin = process.env.ADMIN_WEB_ORIGIN ?? 'http://localhost:3001';
+  const adminWebOrigin = process.env.ADMIN_WEB_ORIGIN ?? 'http://localhost:3000';
 
   app.setGlobalPrefix('api');
   app.enableCors({

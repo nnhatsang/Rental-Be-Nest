@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
@@ -7,6 +7,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyResetPasswordTokenDto } from './dto/verify-reset-password-token.dto';
 import { Public } from './decorators/public.decorator';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -87,6 +88,20 @@ export class AuthController {
   }
 
   @Public()
+  @Get('reset-password/verify')
+  @ApiOperation({
+    summary: 'Kiem tra token khôi phục mật khẩu',
+    description: 'Kiểm tra token còn hợp lệ khôi phục mật khẩu.',
+  })
+  @ApiOkResponse({
+    description: 'Kiểm tra token hơp lệ.',
+    type: SuccessResponseDto,
+  })
+  async verifyResetPasswordToken(@Query() dto: VerifyResetPasswordTokenDto): Promise<ApiRes> {
+    return new ApiRes(await this.authService.verifyResetPasswordToken(dto.token), SUCCESS);
+  }
+
+  @Public()
   @UseGuards(JwtRefreshGuard)
   @Post('refresh')
   @ApiOperation({
@@ -95,13 +110,13 @@ export class AuthController {
   })
   @ApiOkResponse({
     description: 'Refresh token thành công.',
-    type: SuccessResponseDto,
+    type: LoginResponseDto,
   })
   async refresh(@CurrentUser() user: RefreshRequestUser, @Res({ passthrough: true }) response: Response): Promise<ApiRes> {
     const result = await this.authService.refresh(user);
     setAuthCookies(response, this.configService, result.cookies);
 
-    return new ApiRes({ success: true }, SUCCESS);
+    return new ApiRes({ user: result.user }, SUCCESS);
   }
 
   @Post('logout')

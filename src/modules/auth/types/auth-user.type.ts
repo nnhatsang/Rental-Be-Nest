@@ -39,5 +39,6 @@ export interface LoginResult {
 }
 
 export interface RefreshResult {
+  user: AuthUser;
   cookies: AuthCookiePayload;
 }

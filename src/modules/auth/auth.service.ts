@@ -91,7 +91,10 @@ export class AuthService {
 
     await this.saveSessionTokens(session.id, cookies);
 
-    return { cookies };
+    return {
+      user: this.toAuthUser(session.user, session.id),
+      cookies,
+    };
   }
 
   async logout(user: AuthUser): Promise<void> {
@@ -280,6 +283,12 @@ export class AuthService {
     return { success: true };
   }
 
+  async verifyResetPasswordToken(token: string): Promise<{ success: true }> {
+    await this.passwordResetTokenService.verify(token);
+
+    return { success: true };
+  }
+
   getAccessMaxAge(): number {
     return parseDurationMs(this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m'));
   }
@@ -459,7 +468,7 @@ export class AuthService {
 
   private buildPasswordResetUrl(token: string): string {
     const adminOrigin = this.configService.get<string>('ADMIN_WEB_ORIGIN', 'http://localhost:3001').replace(/\/$/, '');
-    return `${adminOrigin}/reset-password?token=${encodeURIComponent(token)}`;
+    return `${adminOrigin}/auth/reset-password?token=${encodeURIComponent(token)}`;
   }
 
   private assertUserCanLogin(activityStatus: EUserActivityStatus): void {

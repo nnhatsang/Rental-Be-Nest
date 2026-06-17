@@ -7,7 +7,6 @@ import { AuthController } from './auth.controller';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { CsrfGuard } from './guards/csrf.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { MailModule } from '@modules/mail/mail.module';
 import { PasswordResetTokenService } from './services/password-reset-token.service';
@@ -23,10 +22,6 @@ import { PasswordResetTokenService } from './services/password-reset-token.servi
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: CsrfGuard,
     },
     {
       provide: APP_GUARD,

@@ -195,24 +195,11 @@ export class UsersService {
     await this.ensureUserExists(id);
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
-    const revokedAt = new Date();
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id },
-        data: { passwordHash },
-      }),
-      this.prisma.authSession.updateMany({
-        where: {
-          userId: id,
-          isRevoked: false,
-        },
-        data: {
-          isRevoked: true,
-          revokedAt,
-        },
-      }),
-    ]);
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash },
+    });
 
     return { success: true };
   }
@@ -225,24 +212,12 @@ export class UsersService {
     await this.ensureUserExists(id);
 
     const deletedAt = new Date();
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id },
-        data: {
-          deletedAt,
-        },
-      }),
-      this.prisma.authSession.updateMany({
-        where: {
-          userId: id,
-          isRevoked: false,
-        },
-        data: {
-          isRevoked: true,
-          revokedAt: deletedAt,
-        },
-      }),
-    ]);
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        deletedAt,
+      },
+    });
 
     return { success: true };
   }

@@ -14,7 +14,7 @@ async function bootstrap() {
     origin: adminWebOrigin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization, x-csrf-token',
+    allowedHeaders: 'Content-Type, Accept, Authorization',
   });
 
   // Thêm validation pipe

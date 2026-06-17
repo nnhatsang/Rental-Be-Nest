@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
@@ -31,7 +31,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Đăng nhập',
     description:
-      'Đăng nhập vào hệ thống bằng email và mật khẩu. Response không trả token trong body; access token, refresh token và CSRF token được set qua cookies.',
+      'Đăng nhập vào hệ thống bằng email và mật khẩu. Response không trả token trong body; access token và refresh token được set qua HttpOnly cookies.',
   })
   @ApiBody({
     type: LoginDto,
@@ -50,8 +50,8 @@ export class AuthController {
     description: 'Đăng nhập thành công và gán auth cookies.',
     type: LoginResponseDto,
   })
-  async login(@Body() dto: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<ApiRes> {
-    const result = await this.authService.login(dto, request);
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response): Promise<ApiRes> {
+    const result = await this.authService.login(dto);
     setAuthCookies(response, this.configService, result.cookies);
 
     return new ApiRes({ user: result.user }, 'Đăng nhập thành công');
@@ -106,7 +106,7 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({
     summary: 'Làm mới phiên đăng nhập',
-    description: 'Đọc refresh token từ HttpOnly cookie, rotate refresh token, rotate CSRF token và set lại cookies mới.',
+    description: 'Đọc refresh token từ HttpOnly cookie, xác thực JWT refresh token và set lại auth cookies mới.',
   })
   @ApiOkResponse({
     description: 'Refresh token thành công.',
@@ -128,8 +128,8 @@ export class AuthController {
     description: 'Đăng xuất thành công.',
     type: SuccessResponseDto,
   })
-  async logout(@CurrentUser() user: AuthUser, @Res({ passthrough: true }) response: Response): Promise<ApiNullableRes> {
-    await this.authService.logout(user);
+  async logout(@Res({ passthrough: true }) response: Response): Promise<ApiNullableRes> {
+    this.authService.logout();
     clearAuthCookies(response, this.configService);
 
     return new ApiNullableRes({ success: true }, 'Đăng xuất thành công');

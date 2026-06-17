@@ -150,9 +150,9 @@ Prefer small private helper functions for reusable logic:
 
 ```ts
 validateLoginCredentials();
-validateAccessSession();
-createAuthSession();
-saveSessionTokens();
+issueAuthTokens();
+validateAccessUser();
+validateRefreshUser();
 toAuthUser();
 ```
 
@@ -167,7 +167,6 @@ updatedAt
 deletedAt
 passwordHash
 refreshTokenHash
-csrfTokenHash
 ```
 
 Output DTOs should describe response shape for Swagger and should not expose sensitive fields.
@@ -244,6 +243,8 @@ Do not use Prisma `mode: 'insensitive'` as the main approach for Vietnamese acce
 - `RentalOrderItem` must store price and product snapshots.
 - Availability must be checked by rental time overlap, not only by asset status.
 - Keep checkout/cart/payment-gateway logic out of phase 1 unless explicitly requested.
+- Keep CSRF token handling out of phase 1 auth unless a later browser-cookie flow explicitly needs it.
+- Keep Redis-backed session cache out of phase 1 auth unless there is a clear runtime scaling or revocation requirement.
 - Business/auth errors must be declared in `src/libs/constants/error.constants.ts`; do not hardcode error codes or user-facing messages inside services, guards, or strategies.
 
 ## Phase 1 Excluded
@@ -257,6 +258,8 @@ The following features are intentionally excluded for now:
 - VNPay/MoMo callback
 - Automatic online payment confirmation
 - Auto-expiring hold-payment orders
+- CSRF token issuing/validation
+- Redis session cache
 
 ## Core Database Concepts
 
@@ -453,6 +456,54 @@ USER_INACTIVE;
 ```
 
 Auth services/strategies/guards should throw these shared constants instead of inline strings.
+
+## Auth Flow Direction
+
+Phase 1 auth should stay simple and admin-focused.
+
+Recommended flow:
+
+```txt
+POST /auth/login
+-> validate credentials and user status
+-> issue access token and refresh token
+-> return authenticated user and HttpOnly auth cookies
+```
+
+Protected admin request flow:
+
+```txt
+request
+-> JWT access guard validates token signature and expiry
+-> load current user, activity status, roles, and permissions from PostgreSQL
+-> permission guard checks @RequirePermissions(...)
+-> controller executes admin operation
+```
+
+Refresh/logout flow:
+
+```txt
+POST /auth/refresh
+-> validate stateless refresh JWT signature and expiry
+-> load current user and permissions from PostgreSQL
+-> issue new access token and refresh token
+
+POST /auth/logout
+-> clear auth cookies only
+```
+
+Do not add `AuthSession`, a session cache layer in Redis, or CSRF tokens in the current Phase 1 backend flow. Logout is client-side cookie clearing only; token revocation is not supported until server-side sessions or a token blacklist is intentionally reintroduced.
+
+## Auth Cleanup Plan
+
+When removing older CSRF/session-cache code, follow this order:
+
+1. Remove CSRF DTO fields, cookie names, guards, middleware, Swagger fields, and tests.
+2. Remove Redis session-cache providers, modules, environment variables, and session lookup logic from auth guards/services.
+3. Remove `AuthSession` schema/model and any `prisma.authSession.*` calls.
+4. Update auth controllers so cookies/tokens are handled only at the HTTP boundary.
+5. Update services so they validate credentials, issue stateless JWTs, load current users from PostgreSQL, and throw shared auth errors from `src/libs/constants/error.constants.ts`.
+6. Run `pnpm typecheck`, `pnpm prisma validate`, and `pnpm build` after code changes.
 
 ## Seeder
 

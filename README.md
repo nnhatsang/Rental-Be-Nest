@@ -10,10 +10,10 @@ Phase hiện tại tập trung vào nghiệp vụ nội bộ: admin/staff tạo 
 - Prisma 7
 - PostgreSQL
 - RBAC bằng `User`, `Role`, `Permission`, `UserRole`, `RolePermission`
-- Cookie-based admin auth với JWT + server-side `AuthSession`
+- Cookie-based admin auth with stateless JWT
 - Prisma generated client nằm ngoài `src`: `generated/prisma`
 
-Redis đã có service trong `docker-compose.yml`, nhưng hiện chưa được dùng trong code. Có thể dùng sau cho cache session/permission, rate limit, queue/job hoặc locking.
+Redis is used for forgot/reset password tokens. Auth does not use Redis session cache.
 
 ## Project Structure
 
@@ -191,20 +191,15 @@ Admin auth uses HttpOnly cookies:
 ```txt
 admin_access_token
 admin_refresh_token
-admin_csrf_token
 ```
 
-Access token is JWT, but the app still checks `AuthSession` in PostgreSQL on authenticated requests. So auth is not stateless JWT-only; it is:
+Auth is stateless JWT cookie-based auth. Protected requests validate the access JWT, then load the current user, activity status, roles, and permissions from PostgreSQL.
 
 ```txt
-JWT cookie-based auth + server-side session validation
+JWT cookie-based auth + current user/permission lookup
 ```
 
-Unsafe requests (`POST`, `PATCH`, `PUT`, `DELETE`) must send:
-
-```txt
-x-csrf-token: <value from admin_csrf_token cookie>
-```
+Logout clears auth cookies on the client. The backend does not store or revoke individual auth sessions.
 
 ## Postman
 
@@ -234,7 +229,7 @@ Rental Orders / Confirm Rental Order
 Rental Orders / Get Rental Order Detail
 ```
 
-The collection automatically reads `admin_csrf_token` after login and sends `x-csrf-token` for unsafe requests.
+The collection relies on the access/refresh cookies set by login. No CSRF header is required.
 
 ## Rental Order Flow
 

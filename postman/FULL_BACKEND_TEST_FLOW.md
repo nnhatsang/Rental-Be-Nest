@@ -14,7 +14,7 @@ Use this with `postman/rental-admin-be.postman_collection.json`.
 
 | Step | Request | Expected |
 | --- | --- | --- |
-| 1 | Login Admin | 2xx, auth cookies set, `csrfToken` saved |
+| 1 | Login Admin | 2xx, access/refresh auth cookies set |
 | 2 | Update Store Business Hours | 7 business-hour rows returned |
 | 3 | Create Customer | `customerId` saved |
 | 4 | Create Product | `productId` saved. Product has no `stockQuantity` |
@@ -27,15 +27,15 @@ Use this with `postman/rental-admin-be.postman_collection.json`.
 | 11 | Cancel Order | status becomes `CANCELLED` |
 | 12 | Delete Cancelled Order | success true |
 | 13 | Create Staff User | `staffUserId` saved |
-| 14 | Reset Staff Password | success true, staff sessions revoked |
+| 14 | Reset Staff Password | success true |
 | 15 | Delete Staff User | success true |
 
 ## Auth Flow
 
-- Login stores HttpOnly access/refresh cookies and CSRF cookie.
-- Protected unsafe methods require `x-csrf-token={{csrfToken}}`.
-- Refresh rotates refresh token and CSRF token.
-- Logout revokes current `AuthSession`.
+- Login stores HttpOnly access/refresh cookies.
+- Protected requests do not require a CSRF header.
+- Refresh validates the refresh JWT and issues a new token pair.
+- Logout clears auth cookies on the client.
 
 ## Forgot Password Flow
 

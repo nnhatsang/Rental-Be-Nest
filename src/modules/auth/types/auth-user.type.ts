@@ -3,7 +3,6 @@ export interface AuthUser {
   email: string;
   fullName: string;
   phone: string | null;
-  sessionId: string;
   roles: string[];
   permissions: string[];
 }
@@ -11,24 +10,19 @@ export interface AuthUser {
 export interface JwtAccessPayload {
   sub: string;
   email: string;
-  sessionId: string;
   type: 'access';
 }
 
 export interface JwtRefreshPayload {
   sub: string;
-  sessionId: string;
   type: 'refresh';
 }
 
-export interface RefreshRequestUser extends JwtRefreshPayload {
-  refreshToken: string;
-}
+export type RefreshRequestUser = JwtRefreshPayload;
 
 export interface AuthCookiePayload {
   accessToken: string;
   refreshToken: string;
-  csrfToken: string;
   accessMaxAge: number;
   refreshMaxAge: number;
 }

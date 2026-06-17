@@ -22,16 +22,6 @@ export const DATABASE_ERROR = new ErrorResponse({
   message: 'Lỗi cơ sở dữ liệu',
 });
 
-export const INVALID_CSRF_TOKEN = new ErrorResponse({
-  code: 'INVALID_CSRF_TOKEN',
-  message: 'CSRF token không hợp lệ',
-});
-
-export const INVALID_AUTH_SESSION = new ErrorResponse({
-  code: 'INVALID_AUTH_SESSION',
-  message: 'Phiên đăng nhập không hợp lệ',
-});
-
 export const FORBIDDEN = new ErrorResponse({
   code: 'FORBIDDEN',
   message: 'Không có quyền truy cập',

@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy, StrategyOptionsWithRequest } from 'passport-jwt';
 import { Request } from 'express';
-import { AUTH_REFRESH_COOKIE } from '../auth.constants';
 import { JwtRefreshPayload } from '../types/auth-user.type';
+import { AUTH_REFRESH_COOKIE } from '../auth.constants';
 import { getCookieValue } from '../utils/cookie.util';
 import { UNAUTHORIZED } from '@/libs/constants/error.constants';
 
@@ -23,15 +23,10 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
   }
 
   validate(request: Request, payload: JwtRefreshPayload) {
-    const refreshToken = getCookieValue(request, AUTH_REFRESH_COOKIE);
-
-    if (payload.type !== 'refresh' || !refreshToken) {
+    if (payload.type !== 'refresh' || !getCookieValue(request, AUTH_REFRESH_COOKIE)) {
       throw new UnauthorizedException(UNAUTHORIZED);
     }
 
-    return {
-      ...payload,
-      refreshToken,
-    };
+    return payload;
   }
 }

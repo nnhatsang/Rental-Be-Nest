@@ -56,8 +56,6 @@ model User {
 
   /// RBAC role assignments.
   roles             UserRole[]
-  /// Active and historical admin auth sessions.
-  sessions          AuthSession[]
   /// Orders created by this user.
   createdOrders     RentalOrder[]        @relation("CreatedOrders")
   /// Orders assigned to this user for handling.
@@ -83,41 +81,6 @@ model User {
   @@index([email])
   @@index([activityStatus])
   @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "User_searchText_trgm_idx")
-}
-
-model AuthSession {
-  /// Primary auth session id.
-  id String @id @default(uuid())
-
-  /// User that owns this admin session.
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  /// Hash of the latest refresh token for rotation/revocation.
-  refreshTokenHash String
-  /// Hash of the double-submit CSRF token.
-  csrfTokenHash    String
-  /// Whether this session has been revoked by logout or admin action.
-  isRevoked        Boolean   @default(false)
-  /// Refresh session expiry time.
-  expiresAt        DateTime
-  /// Last successful refresh/use time.
-  lastUsedAt       DateTime?
-  /// Revocation time, if revoked.
-  revokedAt        DateTime?
-  /// User agent captured at login.
-  userAgent        String?
-  /// IP address captured at login.
-  ipAddress        String?
-
-  /// Session creation time.
-  createdAt DateTime @default(now())
-  /// Last session update time.
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([isRevoked])
-  @@index([expiresAt])
 }
 
 model Role {

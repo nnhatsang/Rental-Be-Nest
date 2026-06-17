@@ -14,8 +14,6 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const csrf = pm.cookies.get('admin_csrf_token');",
-          "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
           "const start = new Date(Date.now() + 24 * 60 * 60 * 1000);",
           "start.setUTCHours(2, 0, 0, 0);",
           "const end = new Date(start.getTime());",
@@ -45,10 +43,6 @@
     {
       "key": "newPassword",
       "value": "NewPassword123!"
-    },
-    {
-      "key": "csrfToken",
-      "value": ""
     },
     {
       "key": "userId",
@@ -158,8 +152,6 @@
                   "pm.test('status is 2xx', function () {",
                   "  pm.expect(pm.response.code).to.be.within(200, 299);",
                   "});",
-                  "const csrf = pm.cookies.get('admin_csrf_token');",
-                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
                   "const json = pm.response.json();",
                   "if (json?.data?.user?.id) pm.collectionVariables.set('userId', json?.data?.user?.id);"
                 ]
@@ -206,10 +198,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -250,10 +238,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -394,9 +378,7 @@
                 "exec": [
                   "pm.test('status is 2xx', function () {",
                   "  pm.expect(pm.response.code).to.be.within(200, 299);",
-                  "});",
-                  "const csrf = pm.cookies.get('admin_csrf_token');",
-                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);"
+                  "});"
                 ]
               }
             }
@@ -406,12 +388,7 @@
           "name": "Logout",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/logout",
               "host": [
@@ -490,10 +467,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -575,10 +548,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -618,10 +587,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -662,10 +627,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -706,10 +667,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -746,12 +703,7 @@
           "name": "Delete Staff User",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/users/{{staffUserId}}",
               "host": [
@@ -833,10 +785,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -919,10 +867,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -962,10 +906,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1002,12 +942,7 @@
           "name": "Delete Customer",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/customers/{{customerId}}",
               "host": [
@@ -1093,10 +1028,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1167,10 +1098,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1210,10 +1137,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1250,12 +1173,7 @@
           "name": "Delete Product",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/products/{{productId}}",
               "host": [
@@ -1341,10 +1259,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1415,10 +1329,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1458,10 +1368,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1498,12 +1404,7 @@
           "name": "Delete Asset Unit",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/asset-units/{{assetUnitId}}",
               "host": [
@@ -1571,10 +1472,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1642,10 +1539,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1723,10 +1616,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1797,10 +1686,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1836,12 +1721,7 @@
           "name": "Delete Store Closure",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/store-closures/{{storeClosureId}}",
               "host": [
@@ -1880,10 +1760,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -1923,10 +1799,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2042,10 +1914,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2087,10 +1955,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2132,10 +1996,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2176,10 +2036,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2220,10 +2076,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2260,12 +2112,7 @@
           "name": "Delete Rental Order",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
               "host": [
@@ -2333,8 +2180,6 @@
                   "pm.test('status is 2xx', function () {",
                   "  pm.expect(pm.response.code).to.be.within(200, 299);",
                   "});",
-                  "const csrf = pm.cookies.get('admin_csrf_token');",
-                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
                   "const json = pm.response.json();",
                   "if (json?.data?.user?.id) pm.collectionVariables.set('userId', json?.data?.user?.id);"
                 ]
@@ -2350,10 +2195,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2392,10 +2233,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2448,10 +2285,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2492,10 +2325,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2536,10 +2365,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2579,10 +2404,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2625,10 +2446,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2670,10 +2487,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2714,10 +2527,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2757,10 +2566,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2797,12 +2602,7 @@
           "name": "12 Delete Cancelled Order",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/rental-orders/{{rentalOrderId}}",
               "host": [
@@ -2836,10 +2636,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2891,10 +2687,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
               }
             ],
             "url": {
@@ -2931,12 +2723,7 @@
           "name": "15 Delete Staff User",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "x-csrf-token",
-                "value": "{{csrfToken}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/users/{{staffUserId}}",
               "host": [

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ArgumentsHost, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { DATABASE_ERROR, ErrorResponse, FORBIDDEN, UNAUTHORIZED, UNKNOWN_ERROR } from '../constants/error.constants';
+import { Prisma } from '@generated/prisma/client';
 
 export class ErrorException implements ExceptionFilter {
   private readonly logger = new Logger(ErrorException.name);
@@ -24,6 +25,42 @@ export class ErrorException implements ExceptionFilter {
   }
 
   private toErrorBody(e: any) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError) {
+      if (e.code === 'P2002') {
+        return {
+          message: DATABASE_ERROR.message,
+          code: DATABASE_ERROR.code,
+          error: e.message,
+          status: HttpStatus.BAD_REQUEST,
+        };
+      }
+
+      if (e.code === 'P2025') {
+        return {
+          message: 'Không tìm thấy bản ghi yêu cầu hoặc bản ghi đã bị xóa',
+          code: 'RECORD_NOT_FOUND',
+          error: e.message,
+          status: HttpStatus.NOT_FOUND,
+        };
+      }
+
+      if (e.code === 'P2003') {
+        return {
+          message: 'Dữ liệu liên kết không hợp lệ hoặc đang được sử dụng ở bảng khác',
+          code: 'DATABASE_RELATION_ERROR',
+          error: e.message,
+          status: HttpStatus.BAD_REQUEST,
+        };
+      }
+
+      return {
+        message: DATABASE_ERROR.message,
+        code: DATABASE_ERROR.code,
+        error: e.message,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+      };
+    }
+
     if (e?.code === 11000) {
       return {
         message: DATABASE_ERROR.message,

@@ -8,7 +8,7 @@ import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRI
 export class UpdateRentalOrderDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   customerId?: string;
 
   @ApiPropertyOptional({ example: '2026-06-10T07:00:00.000Z' })
@@ -49,7 +49,7 @@ export class UpdateRentalOrderDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   assignedToId?: string;
 
   @ApiPropertyOptional({ example: 'Khach doi gio nhan may' })

@@ -5,6 +5,7 @@ import { UpdateStoreClosureDto } from './dto/update-store-closure.dto';
 import { GetAllStoreClosuresDto } from './dto/get-all-store-closures.dto';
 import { StoreClosureOutDto } from './dto/store-closure-out.dto';
 import { RENTAL_ORDER_STORE_CLOSED, STORE_CLOSURE_NOT_FOUND, STORE_CLOSURE_TIME_INVALID } from '@/libs/constants/error.constants';
+import { DeleteStoreClosuresDto } from './dto/delete-store-closures.dto';
 
 type StoreClosureRecord = Awaited<ReturnType<StoreClosureService['findStoreClosureById']>>;
 type ExistingStoreClosureRecord = NonNullable<StoreClosureRecord>;
@@ -69,7 +70,7 @@ export class StoreClosureService {
     return this.toStoreClosureOut(storeClosure);
   }
 
-  async createStoreClosure(dto: CreateStoreClosureDto): Promise<StoreClosureOutDto> {
+  async createStoreClosure(dto: CreateStoreClosureDto, userId: string): Promise<StoreClosureOutDto> {
     this.validateClosureTime(dto.startDate, dto.endDate);
 
     const storeClosure = await this.prisma.storeClosure.create({
@@ -78,13 +79,14 @@ export class StoreClosureService {
         endDate: dto.endDate,
         type: dto.type,
         reason: dto.reason,
+        createdBy: userId,
       },
     });
 
     return this.toStoreClosureOut(storeClosure);
   }
 
-  async updateStoreClosure(id: string, dto: UpdateStoreClosureDto): Promise<StoreClosureOutDto> {
+  async updateStoreClosure(id: string, dto: UpdateStoreClosureDto, userId: string): Promise<StoreClosureOutDto> {
     const existingStoreClosure = await this.findExistingStoreClosureById(id);
     const startDate = dto.startDate ?? existingStoreClosure.startDate;
     const endDate = dto.endDate ?? existingStoreClosure.endDate;
@@ -98,19 +100,24 @@ export class StoreClosureService {
         endDate: dto.endDate,
         type: dto.type,
         reason: dto.reason,
+        updatedBy: userId,
       },
     });
 
     return this.toStoreClosureOut(storeClosure);
   }
 
-  async deleteStoreClosure(id: string): Promise<{ success: true }> {
-    await this.findExistingStoreClosureById(id);
+  async deleteStoreClosures(dto: DeleteStoreClosuresDto, userId: string): Promise<{ success: true }> {
+    const uniqueIds = [...new Set(dto.storeClosureIds)];
+    if (uniqueIds.length === 0) {
+      return { success: true };
+    }
 
-    await this.prisma.storeClosure.update({
-      where: { id },
+    await this.prisma.storeClosure.updateMany({
+      where: { id: { in: uniqueIds } },
       data: {
         deletedAt: new Date(),
+        deletedBy: userId,
       },
     });
 

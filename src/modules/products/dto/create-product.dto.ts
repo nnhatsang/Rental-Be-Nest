@@ -30,12 +30,12 @@ export class CreateProductDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   categoryId?: string;
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   brandId?: string;
 
   @ApiProperty({ example: 500000 })

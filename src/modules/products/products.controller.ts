@@ -11,6 +11,9 @@ import { SUCCESS } from '@/libs/constants/response.constant';
 import { PermissionCode } from '@/libs/constants/rbac.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
+import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
+import { AuthUser } from '@modules/auth/types/auth-user.type';
+import { DeleteProductsDto } from './dto/delete-products.dto';
 
 @ApiTags('products')
 @Controller('products')
@@ -48,8 +51,8 @@ export class ProductsController {
     description: 'Tạo product model/type cho thuê.',
   })
   @ApiOkResponse({ type: ProductResponseDto })
-  async createProduct(@Body() dto: CreateProductDto) {
-    return new ApiRes(await this.productsService.createProduct(dto), 'Tạo sản phẩm thành công');
+  async createProduct(@CurrentUser() user: AuthUser, @Body() dto: CreateProductDto) {
+    return new ApiRes(await this.productsService.createProduct(dto, user.id), 'Tạo sản phẩm thành công');
   }
 
   @Patch(':id')
@@ -59,8 +62,8 @@ export class ProductsController {
     description: 'Cập nhật thông tin cơ bản, giá thuê, category và brand của sản phẩm.',
   })
   @ApiOkResponse({ type: ProductResponseDto })
-  async updateProduct(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateProductDto) {
-    return new ApiRes(await this.productsService.updateProduct(id, dto), 'Cập nhật sản phẩm thành công');
+  async updateProduct(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateProductDto) {
+    return new ApiRes(await this.productsService.updateProduct(id, dto, user.id), 'Cập nhật sản phẩm thành công');
   }
 
   @Patch(':id/status')
@@ -70,18 +73,18 @@ export class ProductsController {
     description: 'Bật/tắt sản phẩm cho việc tạo đơn mới.',
   })
   @ApiOkResponse({ type: ProductResponseDto })
-  async updateProductStatus(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateProductStatusDto) {
-    return new ApiRes(await this.productsService.updateProductStatus(id, dto), 'Cập nhật trạng thái sản phẩm thành công');
+  async updateProductStatus(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateProductStatusDto) {
+    return new ApiRes(await this.productsService.updateProductStatus(id, dto, user.id), 'Cập nhật trạng thái sản phẩm thành công');
   }
 
-  @Delete(':id')
+  @Delete()
   @RequirePermissions(PermissionCode.ProductsDelete)
   @ApiOperation({
-    summary: 'Xóa mềm sản phẩm',
+    summary: 'Xóa mềm nhiều sản phẩm',
     description: 'Soft delete sản phẩm để giữ lịch sử đơn hàng.',
   })
   @ApiOkResponse({ type: DeleteProductResponseDto })
-  async deleteProduct(@Param('id', IdValidatePipe) id: string) {
-    return new ApiRes(await this.productsService.deleteProduct(id), 'Xóa sản phẩm thành công');
+  async deleteProducts(@CurrentUser() user: AuthUser, @Body() dto: DeleteProductsDto) {
+    return new ApiRes(await this.productsService.deleteProducts(dto, user.id), 'Xóa sản phẩm thành công');
   }
 }

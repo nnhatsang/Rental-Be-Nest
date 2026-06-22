@@ -55,9 +55,6 @@ export class RentalOrderItemOutDto {
   @ApiProperty({ type: RentalOrderAssetUnitOutDto, nullable: true })
   assetUnit!: RentalOrderAssetUnitOutDto | null;
 
-  @ApiProperty({ example: 1 })
-  quantity!: number;
-
   @ApiProperty({ example: 'Sony A7 IV' })
   productNameSnapshot!: string;
 
@@ -142,9 +139,6 @@ export class RentalOrderOutDto {
   blockedEndDate!: Date;
 
   @ApiProperty({ type: Date, format: 'date-time', nullable: true })
-  holdExpiresAt!: Date | null;
-
-  @ApiProperty({ type: Date, format: 'date-time', nullable: true })
   actualReturnDate!: Date | null;
 
   @ApiProperty({ enum: Object.values(PickupMethod), example: PickupMethod.PICKUP_AT_STORE })
@@ -198,8 +192,8 @@ export class RentalOrderOutDto {
   @ApiProperty({ example: 'Khach huy lich', nullable: true })
   cancelReason!: string | null;
 
-  @ApiProperty({ type: RentalOrderUserOutDto })
-  createdBy!: RentalOrderUserOutDto;
+  @ApiProperty({ type: String, format: 'uuid' })
+  createdBy!: string;
 
   @ApiProperty({ type: RentalOrderUserOutDto, nullable: true })
   assignedTo!: RentalOrderUserOutDto | null;

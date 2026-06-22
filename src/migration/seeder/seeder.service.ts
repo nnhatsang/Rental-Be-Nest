@@ -89,7 +89,6 @@ export class SeederService {
         name: 'Default Rental Policy',
         bookingHoldAmountPerUnit: 50000,
         turnaroundMinutes: 60,
-        holdPaymentExpiresInMinutes: 30,
       },
     });
 

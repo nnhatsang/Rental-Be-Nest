@@ -31,11 +31,11 @@ export class ReturnRentalOrderDto {
 
 export class AssignRentalOrderAssetItemDto {
   @ApiProperty({ type: String, format: 'uuid' })
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   itemId!: string;
 
   @ApiProperty({ type: String, format: 'uuid' })
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   assetUnitId!: string;
 }
 

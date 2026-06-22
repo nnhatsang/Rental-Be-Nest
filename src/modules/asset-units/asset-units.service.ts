@@ -8,6 +8,7 @@ import { UpdateAssetUnitStatusDto } from './dto/update-asset-unit-status.dto';
 import { AssetUnitOutDto } from './dto/asset-unit-out.dto';
 import { ASSET_UNIT_NOT_FOUND, ASSET_UNIT_SERIAL_NUMBER_EXISTED, PRODUCT_NOT_FOUND } from '@/libs/constants/error.constants';
 import { buildAssetUnitSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
+import { DeleteAssetUnitsDto } from './dto/delete-asset-unit.dto';
 
 type AssetUnitWithRelations = Awaited<ReturnType<AssetUnitsService['findAssetUnitById']>>;
 type ExistingAssetUnitWithRelations = NonNullable<AssetUnitWithRelations>;
@@ -62,7 +63,7 @@ export class AssetUnitsService {
     return this.toAssetUnitOut(assetUnit);
   }
 
-  async createAssetUnit(dto: CreateAssetUnitDto): Promise<AssetUnitOutDto> {
+  async createAssetUnit(dto: CreateAssetUnitDto, userId: string): Promise<AssetUnitOutDto> {
     const { productId, serialNumber, status, condition, note, isActive } = dto;
 
     await this.ensureSerialNumberAvailable(serialNumber);
@@ -84,6 +85,7 @@ export class AssetUnitsService {
           productName: product.name,
           productSku: product.sku,
         }),
+        createdBy: userId,
       },
       include: this.assetUnitInclude(),
     });
@@ -91,7 +93,7 @@ export class AssetUnitsService {
     return this.toAssetUnitOut(assetUnit);
   }
 
-  async updateAssetUnit(id: string, dto: UpdateAssetUnitDto): Promise<AssetUnitOutDto> {
+  async updateAssetUnit(id: string, dto: UpdateAssetUnitDto, userId: string): Promise<AssetUnitOutDto> {
     const existingAssetUnit = await this.findExistingAssetUnitById(id);
 
     await this.ensureSerialNumberAvailable(dto.serialNumber, id);
@@ -116,6 +118,8 @@ export class AssetUnitsService {
         note: dto.note,
         isActive: dto.isActive,
         searchText: buildAssetUnitSearchText(nextAssetUnit),
+        updatedBy: userId,
+        deletedAt: new Date(),
       },
       include: this.assetUnitInclude(),
     });
@@ -123,7 +127,7 @@ export class AssetUnitsService {
     return this.toAssetUnitOut(assetUnit);
   }
 
-  async updateAssetUnitStatus(id: string, dto: UpdateAssetUnitStatusDto): Promise<AssetUnitOutDto> {
+  async updateAssetUnitStatus(id: string, dto: UpdateAssetUnitStatusDto, userId: string): Promise<AssetUnitOutDto> {
     const existingAssetUnit = await this.findExistingAssetUnitById(id);
 
     const assetUnit = await this.prisma.assetUnit.update({
@@ -140,6 +144,8 @@ export class AssetUnitsService {
           productName: existingAssetUnit.product.name,
           productSku: existingAssetUnit.product.sku,
         }),
+        updatedBy: userId,
+        deletedAt: new Date(),
       },
       include: this.assetUnitInclude(),
     });
@@ -147,13 +153,13 @@ export class AssetUnitsService {
     return this.toAssetUnitOut(assetUnit);
   }
 
-  async deleteAssetUnit(id: string): Promise<{ success: true }> {
-    await this.findExistingAssetUnitById(id);
-
-    await this.prisma.assetUnit.update({
-      where: { id },
+  async deleteAssetUnit(dto: DeleteAssetUnitsDto, userId: string): Promise<{ success: true }> {
+    const uniquedIds = [...new Set(dto.assetUnitIds)];
+    await this.prisma.assetUnit.updateMany({
+      where: { id: { in: uniquedIds } },
       data: {
         deletedAt: new Date(),
+        deletedBy: userId,
       },
     });
 

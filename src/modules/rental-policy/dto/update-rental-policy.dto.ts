@@ -23,10 +23,4 @@ export class UpdateRentalPolicyDto {
   @Min(0)
   turnaroundMinutes?: number;
 
-  @ApiPropertyOptional({ example: 30 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(1)
-  holdPaymentExpiresInMinutes?: number;
 }

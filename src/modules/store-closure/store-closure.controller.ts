@@ -10,6 +10,9 @@ import { SUCCESS } from '@/libs/constants/response.constant';
 import { PermissionCode } from '@/libs/constants/rbac.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
+import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
+import { AuthUser } from '@modules/auth/types/auth-user.type';
+import { DeleteStoreClosuresDto } from './dto/delete-store-closures.dto';
 
 @ApiTags('store-closures')
 @Controller('store-closures')
@@ -47,8 +50,8 @@ export class StoreClosureController {
     description: 'ạo khoảng thời gian shop nghi/off/bao tri để chặn đặt lịch mới.',
   })
   @ApiOkResponse({ type: StoreClosureResponseDto })
-  async createStoreClosure(@Body() dto: CreateStoreClosureDto) {
-    return new ApiRes(await this.storeClosureService.createStoreClosure(dto), SUCCESS);
+  async createStoreClosure(@CurrentUser() user: AuthUser, @Body() dto: CreateStoreClosureDto) {
+    return new ApiRes(await this.storeClosureService.createStoreClosure(dto, user.id), SUCCESS);
   }
 
   @Patch(':id')
@@ -58,18 +61,18 @@ export class StoreClosureController {
     description: 'Cập nhật thời gian, type hoặc lý do của lịch chặn.',
   })
   @ApiOkResponse({ type: StoreClosureResponseDto })
-  async updateStoreClosure(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateStoreClosureDto) {
-    return new ApiRes(await this.storeClosureService.updateStoreClosure(id, dto), SUCCESS);
+  async updateStoreClosure(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateStoreClosureDto) {
+    return new ApiRes(await this.storeClosureService.updateStoreClosure(id, dto, user.id), SUCCESS);
   }
 
-  @Delete(':id')
+  @Delete()
   @RequirePermissions(PermissionCode.SettingsUpdate)
   @ApiOperation({
-    summary: 'Xóa mềm lịch chặn của hàng',
-    description: 'Soft delete lich nghi/off/bao tri',
+    summary: 'Xóa mềm nhiều lịch chặn của hàng',
+    description: 'Soft delete nhieu lich nghi/off/bao tri',
   })
   @ApiOkResponse({ type: DeleteStoreClosureResponseDto })
-  async deleteStoreClosure(@Param('id', IdValidatePipe) id: string) {
-    return new ApiRes(await this.storeClosureService.deleteStoreClosure(id), SUCCESS);
+  async deleteStoreClosures(@CurrentUser() user: AuthUser, @Body() dto: DeleteStoreClosuresDto) {
+    return new ApiRes(await this.storeClosureService.deleteStoreClosures(dto, user.id), SUCCESS);
   }
 }

@@ -38,7 +38,7 @@ datasource db {
 
 model User {
   /// Primary user id.
-  id             String             @id @default(uuid())
+  id             String             @id @default(uuid(7)) @db.Uuid
   /// Login email, unique per staff/admin account.
   email          String             @unique
   /// Hashed password, never store raw password.
@@ -55,37 +55,27 @@ model User {
   lastLoginAt    DateTime?
 
   /// RBAC role assignments.
-  roles             UserRole[]
-  /// Orders created by this user.
-  createdOrders     RentalOrder[]        @relation("CreatedOrders")
+  roles          UserRole[]
   /// Orders assigned to this user for handling.
-  assignedOrders    RentalOrder[]        @relation("AssignedOrders")
-  /// Payments recorded manually by this user.
-  recordedPayments  PaymentRecord[]      @relation("RecordedPayments")
-  /// Order status changes performed by this user.
-  statusChanges     OrderStatusHistory[] @relation("StatusChangedBy")
-  /// Handover/return handover records handled by this user.
-  handovers         OrderHandover[]      @relation("HandoverBy")
-  /// Return inspections performed by this user.
-  returnInspections ReturnInspection[]   @relation("InspectedBy")
-  /// General order events created by this user.
-  orderEvents       OrderEvent[]         @relation("OrderEventCreatedBy")
+  assignedOrders RentalOrder[] @relation("AssignedOrders")
 
-  /// Account creation time.
   createdAt DateTime  @default(now())
-  /// Last account update time.
   updatedAt DateTime  @updatedAt
-  /// Soft delete time; keep historical order data intact.
   deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([email])
   @@index([activityStatus])
   @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "User_searchText_trgm_idx")
+  @@index([deletedAt]) // Index tăng tốc bộ lọc Soft Delete
 }
 
 model Role {
   /// Primary role id.
-  id          String  @id @default(uuid())
+  id          String  @id @default(uuid(7)) @db.Uuid
   /// Stable role code, for example ADMIN, MANAGER, STAFF, VIEWER.
   code        String  @unique
   /// Human-readable role name.
@@ -100,15 +90,16 @@ model Role {
   /// Permissions granted to this role.
   permissions RolePermission[]
 
-  /// Role creation time.
   createdAt DateTime @default(now())
-  /// Last role update time.
   updatedAt DateTime @updatedAt
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
 }
 
 model Permission {
   /// Primary permission id.
-  id          String  @id @default(uuid())
+  id          String  @id @default(uuid(7)) @db.Uuid
   /// Stable permission code, for example orders.create or products.update.
   code        String  @unique
   /// Human-readable permission name.
@@ -163,7 +154,7 @@ model RolePermission {
 
 model Customer {
   /// Primary customer id.
-  id             String         @id @default(uuid())
+  id             String         @id @default(uuid(7)) @db.Uuid
   /// Optional customer code for internal lookup.
   code           String?        @unique
   /// Customer full name.
@@ -186,12 +177,13 @@ model Customer {
   /// Rental orders belonging to this customer.
   orders RentalOrder[]
 
-  /// Customer creation time.
   createdAt DateTime  @default(now())
-  /// Last customer update time.
   updatedAt DateTime  @updatedAt
-  /// Soft delete time; customers with orders should not be hard-deleted.
   deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   searchText String @default("")
 
@@ -204,7 +196,7 @@ model Customer {
 
 model ProductCategory {
   /// Primary category id.
-  id       String  @id @default(uuid())
+  id       String  @id @default(uuid(7)) @db.Uuid
   /// Category name, for example Camera, Lens, Light.
   name     String
   /// Optional URL/admin slug.
@@ -215,15 +207,22 @@ model ProductCategory {
   /// Products in this category.
   products Product[]
 
-  /// Category creation time.
-  createdAt DateTime @default(now())
-  /// Last category update time.
-  updatedAt DateTime @updatedAt
+  searchText String @default("")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
+
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "ProductCategory_searchText_trgm_idx")
 }
 
 model Brand {
   /// Primary brand id.
-  id       String  @id @default(uuid())
+  id       String  @id @default(uuid(7)) @db.Uuid
   /// Brand name, for example Sony, Canon, DJI.
   name     String
   /// Optional URL/admin slug.
@@ -234,15 +233,22 @@ model Brand {
   /// Products under this brand.
   products Product[]
 
-  /// Brand creation time.
-  createdAt DateTime @default(now())
-  /// Last brand update time.
-  updatedAt DateTime @updatedAt
+  searchText String @default("")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
+
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "Brand_searchText_trgm_idx")
 }
 
 model Product {
   /// Primary product id; represents the rentable product type/model.
-  id                  String  @id @default(uuid())
+  id                  String  @id @default(uuid(7)) @db.Uuid
   /// Product name, for example Sony A7 IV.
   name                String
   /// Unique product SKU.
@@ -262,7 +268,6 @@ model Product {
   brand      Brand?           @relation(fields: [brandId], references: [id])
 
   rentalPriceTiers ProductRentalPriceTier[]
-
 
   /// Full-day rental price.
   dailyPrice         Decimal  @db.Decimal(12, 2)
@@ -284,12 +289,13 @@ model Product {
   /// Damage reports involving this product.
   damageReports DamageReport[]
 
-  /// Product creation time.
   createdAt DateTime  @default(now())
-  /// Last product update time.
   updatedAt DateTime  @updatedAt
-  /// Soft delete time; keep order history intact.
   deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   searchText String @default("")
 
@@ -302,7 +308,7 @@ model Product {
 
 model ProductRentalPriceTier {
   /// Mã định danh chính của bậc giá thuê.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Sản phẩm áp dụng bậc giá này.
   productId String
@@ -323,14 +329,13 @@ model ProductRentalPriceTier {
   /// Thứ tự ưu tiên khi hiển thị/admin quản lý.
   sortOrder Int @default(0)
 
-  /// Thời gian tạo bậc giá.
-  createdAt DateTime @default(now())
-
-  /// Thời gian cập nhật bậc giá gần nhất.
-  updatedAt DateTime @updatedAt
-
-  /// Xóa mềm bậc giá nếu không còn dùng.
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([productId])
   @@index([minDays, maxDays])
@@ -338,7 +343,7 @@ model ProductRentalPriceTier {
 
 model AssetUnit {
   /// Primary asset unit id; represents one physical device.
-  id        String  @id @default(uuid())
+  id        String  @id @default(uuid(7)) @db.Uuid
   /// Product model/type this unit belongs to.
   productId String
   product   Product @relation(fields: [productId], references: [id])
@@ -361,12 +366,13 @@ model AssetUnit {
   /// Damage reports involving this physical device.
   damageReports DamageReport[]
 
-  /// Asset unit creation time.
   createdAt DateTime  @default(now())
-  /// Last asset unit update time.
   updatedAt DateTime  @updatedAt
-  /// Soft delete/retire time.
   deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([productId])
   @@index([status])
@@ -377,31 +383,32 @@ model AssetUnit {
 
 model RentalPolicy {
   /// Mã định danh chính của chính sách thuê.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Mã chính sách để tra cứu trong hệ thống, ví dụ DEFAULT.
-  code                        String  @unique
+  code                     String  @unique
   /// Tên chính sách hiển thị cho admin.
-  name                        String
+  name                     String
   /// Tiền đặt lịch mặc định cho mỗi thiết bị, ví dụ 50.000đ/máy.
-  bookingHoldAmountPerUnit    Decimal @default(50000) @db.Decimal(12, 2)
+  bookingHoldAmountPerUnit Decimal @default(50000) @db.Decimal(12, 2)
   /// Số phút đệm mặc định giữa hai lượt thuê cùng thiết bị.
-  turnaroundMinutes           Int     @default(60)
-  /// Số phút cho phép chờ thanh toán tiền đặt lịch trước khi đơn tự động hủy.
-  holdPaymentExpiresInMinutes Int     @default(30)
+  turnaroundMinutes        Int     @default(60)
 
   /// Các đơn đã áp dụng chính sách này tại thời điểm tạo đơn.
   orders RentalOrder[]
 
-  /// Thời gian tạo chính sách.
-  createdAt DateTime @default(now())
-  /// Thời gian cập nhật chính sách gần nhất.
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  // deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // deletedBy String? @map("deleted_by") @db.Uuid
 }
 
 model StoreBusinessHour {
   /// Mã định danh chính của khung giờ hoạt động trong tuần.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Thứ trong tuần: 0 = Chủ nhật, 1 = Thứ hai, ..., 6 = Thứ bảy.
   dayOfWeek Int
@@ -422,7 +429,7 @@ model StoreBusinessHour {
 
 model StoreClosure {
   /// Mã định danh chính của lịch nghỉ/off/bảo trì.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Thời gian bắt đầu shop nghỉ/off/bảo trì.
   startDate DateTime
@@ -433,12 +440,13 @@ model StoreClosure {
   /// Lý do hiển thị cho admin, ví dụ nghỉ lễ hoặc bảo trì thiết bị.
   reason    String?
 
-  /// Thời gian tạo lịch chặn.
   createdAt DateTime  @default(now())
-  /// Thời gian cập nhật lịch chặn gần nhất.
   updatedAt DateTime  @updatedAt
-  /// Thời gian xóa mềm nếu admin hủy lịch chặn.
   deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([startDate, endDate])
   @@index([type])
@@ -447,7 +455,7 @@ model StoreClosure {
 
 model RentalOrder {
   /// Mã định danh chính của đơn thuê.
-  id            String        @id @default(uuid())
+  id            String        @id @default(uuid(7)) @db.Uuid
   /// Mã đơn dễ đọc để admin tra cứu, ví dụ ORD-000001.
   code          String        @unique
   /// Nguồn tạo đơn; giai đoạn 1 chủ yếu là ADMIN, WEBSITE để dành cho flow khách tự đặt sau này.
@@ -483,8 +491,6 @@ model RentalOrder {
   turnaroundMinutes Int       @default(60)
   /// Thời gian kết thúc chặn lịch, thường bằng endDate + turnaroundMinutes.
   blockedEndDate    DateTime
-  /// Hạn thanh toán tiền đặt lịch của đơn; quá hạn mà chưa thanh toán thì hệ thống có thể tự hủy.
-  holdExpiresAt     DateTime?
   /// Thời gian khách trả máy thực tế do admin nhập.
   actualReturnDate  DateTime?
 
@@ -525,9 +531,6 @@ model RentalOrder {
   /// Lý do hủy đơn nếu đơn bị hủy.
   cancelReason String?
 
-  /// Admin/staff tạo đơn.
-  createdById  String
-  createdBy    User    @relation("CreatedOrders", fields: [createdById], references: [id])
   /// Admin/staff được phân công xử lý đơn.
   assignedToId String?
   assignedTo   User?   @relation("AssignedOrders", fields: [assignedToId], references: [id])
@@ -547,31 +550,28 @@ model RentalOrder {
 
   searchText String @default("")
 
-
-  /// Thời gian tạo đơn.
   createdAt DateTime  @default(now())
-  /// Thời gian cập nhật đơn gần nhất.
   updatedAt DateTime  @updatedAt
-  /// Thời gian xóa mềm đơn, thường ít dùng vì cần giữ lịch sử.
   deletedAt DateTime?
+
+  createdBy String  @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([status])
   @@index([paymentStatus])
   @@index([rentalPolicyId])
   @@index([customerId])
-  @@index([createdById])
+  @@index([createdBy])
   @@index([assignedToId])
   @@index([startDate, endDate])
   @@index([startDate, blockedEndDate])
-  @@index([status, holdExpiresAt])
-
   @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "RentalOrder_searchText_trgm_idx")
-
 }
 
 model RentalOrderItem {
   /// Mã định danh chính của dòng sản phẩm trong đơn thuê.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Đơn thuê cha chứa dòng sản phẩm này.
   orderId String
@@ -584,12 +584,10 @@ model RentalOrderItem {
   assetUnitId String?
   assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
 
-  /// Số lượng sản phẩm trong dòng thuê.
-  quantity                Int     @default(1)
   /// Snapshot tên sản phẩm tại thời điểm tạo đơn để giữ lịch sử giá/đơn.
   productNameSnapshot     String
   /// Snapshot SKU sản phẩm tại thời điểm tạo đơn.
-  skuSnapshot             String?
+  skuSnapshot             String
   /// Giá thuê snapshot cho mỗi đơn vị, ví dụ giá thuê 1 ngày hoặc 1 buổi.
   unitPrice               Decimal @db.Decimal(12, 2)
   /// Snapshot tiền đặt lịch cho mỗi đơn vị, lấy từ RentalPolicy tại thời điểm tạo đơn.
@@ -600,15 +598,18 @@ model RentalOrderItem {
   refundableDepositAmount Decimal @default(0) @db.Decimal(12, 2)
   /// Giữ tương thích với field cũ: tổng tiền cọc/chính sách cọc snapshot trên mỗi đơn vị.
   depositAmount           Decimal @db.Decimal(12, 2)
-  /// Tổng tiền thuê của dòng này, thường bằng unitPrice * quantity.
+  /// Tổng tiền thuê của dòng này. Mỗi dòng đại diện cho một thiết bị/đơn vị thuê.
   lineTotal               Decimal @db.Decimal(12, 2)
   /// Ghi chú riêng cho dòng sản phẩm, ví dụ phụ kiện đi kèm hoặc lưu ý serial.
   note                    String?
 
-  /// Thời gian tạo dòng sản phẩm trong đơn.
-  createdAt DateTime @default(now())
-  /// Thời gian cập nhật dòng sản phẩm gần nhất.
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([orderId])
   @@index([productId])
@@ -617,7 +618,7 @@ model RentalOrderItem {
 
 model PaymentRecord {
   /// Primary payment record id.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order this payment/refund belongs to.
   orderId String
@@ -636,84 +637,87 @@ model PaymentRecord {
   /// Admin note for this payment record.
   note          String?
 
-  /// Admin/staff who recorded this payment.
-  recordedById String
-  recordedBy   User   @relation("RecordedPayments", fields: [recordedById], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  /// Time the payment was actually recorded/received.
-  recordedAt DateTime @default(now())
-  /// Row creation time.
-  createdAt  DateTime @default(now())
-  /// Last row update time.
-  updatedAt  DateTime @updatedAt
+  createdBy String  @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([orderId])
   @@index([kind])
   @@index([method])
   @@index([status])
-  @@index([recordedAt])
+  @@index([createdAt])
+  @@index([createdBy])
 }
 
 model OrderStatusHistory {
   /// Primary status history id.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order whose status changed.
   orderId String
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Previous order status; null when creating the initial status record.
-  fromStatus  OrderStatus?
+  fromStatus OrderStatus?
   /// New order status.
-  toStatus    OrderStatus
-  /// Admin/staff who changed the status.
-  changedById String
-  changedBy   User         @relation("StatusChangedBy", fields: [changedById], references: [id])
-  /// Reason or note for this transition.
-  note        String?
+  toStatus   OrderStatus
 
-  /// Status change time.
-  createdAt DateTime @default(now())
+  /// Reason or note for this transition.
+  note String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String  @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([orderId])
   @@index([toStatus])
-  @@index([changedById])
+  @@index([createdBy])
   @@index([createdAt])
 }
 
 model OrderHandover {
   /// Primary handover id.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order being handed over or received back.
   orderId String
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Handover type: outgoing handover or return handover.
-  type          HandoverType
+  type HandoverType
   /// Admin/staff handling the handover.
-  handledById   String
-  handledBy     User         @relation("HandoverBy", fields: [handledById], references: [id])
+
   /// Actual handover time.
-  handledAt     DateTime     @default(now())
+  handledAt     DateTime @default(now())
   /// Condition/accessory note at handover time.
   conditionNote String?
   /// General handover note.
   note          String?
 
-  /// Row creation time.
-  createdAt DateTime @default(now())
-  /// Last row update time.
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String  @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([orderId])
   @@index([type])
-  @@index([handledById])
+  @@index([createdBy])
 }
 
 model ReturnInspection {
   /// Primary return inspection id.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order being inspected after return.
   orderId String
@@ -733,18 +737,20 @@ model ReturnInspection {
   note             String?
 
   /// Admin/staff who inspected the return.
-  inspectedById String
-  inspectedBy   User     @relation("InspectedBy", fields: [inspectedById], references: [id])
+  inspectedById String   @db.Uuid
   /// Inspection time.
   inspectedAt   DateTime @default(now())
 
   /// Detailed damage/missing reports under this inspection.
   damageReports DamageReport[]
 
-  /// Row creation time.
-  createdAt DateTime @default(now())
-  /// Last row update time.
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([orderId])
   @@index([result])
@@ -753,7 +759,7 @@ model ReturnInspection {
 
 model DamageReport {
   /// Primary damage report id.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Parent return inspection.
   inspectionId String
@@ -775,10 +781,13 @@ model DamageReport {
   /// Whether this damage issue has been settled.
   resolved     Boolean        @default(false)
 
-  /// Row creation time.
-  createdAt DateTime @default(now())
-  /// Last row update time.
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([inspectionId])
   @@index([productId])
@@ -788,7 +797,7 @@ model DamageReport {
 
 model OrderEvent {
   /// Primary order event id.
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order related to this event.
   orderId String
@@ -801,16 +810,17 @@ model OrderEvent {
   /// Extra structured event data.
   metadata Json?
 
-  /// Admin/staff who created the event, if any.
-  createdById String?
-  createdBy   User?   @relation("OrderEventCreatedBy", fields: [createdById], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  /// Event creation time.
-  createdAt DateTime @default(now())
+  createdBy String  @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([orderId])
   @@index([type])
-  @@index([createdById])
+  @@index([createdBy])
   @@index([createdAt])
 }
 

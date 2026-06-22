@@ -13,12 +13,12 @@ export class GetAllRentalOrdersDto extends ApiPagReq {
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   customerId?: string;
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   assignedToId?: string;
 
   @ApiPropertyOptional({ enum: Object.values(OrderStatus) })

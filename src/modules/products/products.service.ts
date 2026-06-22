@@ -15,6 +15,7 @@ import {
   PRODUCT_RENTAL_PRICE_TIER_INVALID,
   PRODUCT_SKU_EXISTED,
 } from '@/libs/constants/error.constants';
+import { DeleteProductsDto } from './dto/delete-products.dto';
 
 type ProductWithRelations = Awaited<ReturnType<ProductsService['findProductById']>>;
 type ExistingProductWithRelations = NonNullable<ProductWithRelations>;
@@ -67,7 +68,7 @@ export class ProductsService {
     return this.toProductOut(product);
   }
 
-  async createProduct(dto: CreateProductDto): Promise<ProductOutDto> {
+  async createProduct(dto: CreateProductDto, userId: string): Promise<ProductOutDto> {
     const {
       name,
       sku,
@@ -115,6 +116,7 @@ export class ProductsService {
         depositAmount,
         replacementValue,
         isActive: isActive ?? true,
+        createdBy: userId,
         searchText: buildProductSearchText({
           name,
           sku,
@@ -129,7 +131,7 @@ export class ProductsService {
     return this.toProductOut(product);
   }
 
-  async updateProduct(id: string, dto: UpdateProductDto): Promise<ProductOutDto> {
+  async updateProduct(id: string, dto: UpdateProductDto, userId: string): Promise<ProductOutDto> {
     const existingProduct = await this.findExistingProductById(id);
 
     if (dto.sku) {
@@ -185,6 +187,7 @@ export class ProductsService {
         depositAmount: dto.depositAmount,
         replacementValue: dto.replacementValue,
         isActive: dto.isActive,
+        updatedBy: userId,
         searchText: buildProductSearchText(nextProduct),
       },
       include: this.productInclude(),
@@ -193,13 +196,14 @@ export class ProductsService {
     return this.toProductOut(product);
   }
 
-  async updateProductStatus(id: string, dto: UpdateProductStatusDto): Promise<ProductOutDto> {
+  async updateProductStatus(id: string, dto: UpdateProductStatusDto, userId: string): Promise<ProductOutDto> {
     await this.findExistingProductById(id);
 
     const product = await this.prisma.product.update({
       where: { id },
       data: {
         isActive: dto.isActive,
+        updatedBy: userId,
       },
       include: this.productInclude(),
     });
@@ -207,13 +211,17 @@ export class ProductsService {
     return this.toProductOut(product);
   }
 
-  async deleteProduct(id: string): Promise<{ success: true }> {
-    await this.findExistingProductById(id);
+  async deleteProducts(dto: DeleteProductsDto, userId: string): Promise<{ success: true }> {
+    const uniqueIds = [...new Set(dto.productIds)];
+    if (uniqueIds.length === 0) {
+      return { success: true };
+    }
 
-    await this.prisma.product.update({
-      where: { id },
+    await this.prisma.product.updateMany({
+      where: { id: { in: uniqueIds } },
       data: {
         deletedAt: new Date(),
+        deletedBy: userId,
       },
     });
 

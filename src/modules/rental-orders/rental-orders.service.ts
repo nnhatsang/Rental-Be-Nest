@@ -18,6 +18,7 @@ import { GetAllRentalOrdersDto } from './dto/get-all-rental-orders.dto';
 import { RentalOrderOutDto } from './dto/rental-order-out.dto';
 import { UpdateRentalOrderDto } from './dto/update-rental-order.dto';
 import { AuthUser } from '@modules/auth/types/auth-user.type';
+import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 import {
   RENTAL_ORDER_ASSET_UNIT_INVALID,
   RENTAL_ORDER_ASSIGNED_USER_INVALID,
@@ -57,12 +58,11 @@ type NormalizedRentalOrderItem = {
   id?: string;
   productId: string;
   assetUnitId?: string | null;
-  quantity: number;
   note?: string | null;
 };
 type PricedRentalOrderItem = NormalizedRentalOrderItem & {
   productNameSnapshot: string;
-  skuSnapshot: string | null;
+  skuSnapshot: string;
   unitPrice: number;
   bookingHoldAmount: number;
   upfrontAmount: number;
@@ -196,7 +196,6 @@ export class RentalOrdersService {
           endDate: dto.endDate,
           turnaroundMinutes: rentalPolicy.turnaroundMinutes,
           blockedEndDate: availability.blockedEndDate,
-          holdExpiresAt: this.addMinutes(new Date(), rentalPolicy.holdPaymentExpiresInMinutes),
           pickupMethod: dto.pickupMethod ?? PickupMethod.PICKUP_AT_STORE,
           deliveryAddress: dto.deliveryAddress,
           deliveryFeeTotal: totals.deliveryFeeTotal,
@@ -211,7 +210,7 @@ export class RentalOrdersService {
           refundTotal: totals.depositTotal,
           note: dto.note,
           internalNote: dto.internalNote,
-          createdById: currentUser.id,
+          createdBy: currentUser.id,
           assignedToId: assignedTo?.id,
           searchText: this.buildOrderSearchText({
             code,
@@ -227,7 +226,7 @@ export class RentalOrdersService {
             create: {
               fromStatus: null,
               toStatus: OrderStatus.DRAFT,
-              changedById: currentUser.id,
+              createdBy: currentUser.id,
               note: 'Order created',
             },
           },
@@ -235,7 +234,7 @@ export class RentalOrdersService {
             create: {
               type: OrderEventType.ORDER_CREATED,
               message: 'Order created',
-              createdById: currentUser.id,
+              createdBy: currentUser.id,
             },
           },
         },
@@ -246,7 +245,7 @@ export class RentalOrdersService {
     return this.toRentalOrderOut(order);
   }
 
-  async updateRentalOrder(id: string, dto: UpdateRentalOrderDto): Promise<RentalOrderOutDto> {
+  async updateRentalOrder(id: string, dto: UpdateRentalOrderDto, currentUser: AuthUser): Promise<RentalOrderOutDto> {
     const existingOrder = await this.findExistingRentalOrderById(id);
     this.assertStatusIn(existingOrder.status, [OrderStatus.DRAFT]);
 
@@ -329,6 +328,7 @@ export class RentalOrdersService {
           assignedToId: assignedTo?.id ?? null,
           note,
           internalNote,
+          updatedBy: currentUser.id,
           searchText: this.buildOrderSearchText({
             code: existingOrder.code,
             customer,
@@ -345,7 +345,7 @@ export class RentalOrdersService {
     return this.toRentalOrderOut(order);
   }
 
-  async assignRentalOrderAssets(id: string, dto: AssignRentalOrderAssetsDto): Promise<RentalOrderOutDto> {
+  async assignRentalOrderAssets(id: string, dto: AssignRentalOrderAssetsDto, currentUser: AuthUser): Promise<RentalOrderOutDto> {
     const existingOrder = await this.findExistingRentalOrderById(id);
     this.assertStatusIn(existingOrder.status, ASSIGN_ASSET_STATUSES);
 
@@ -365,7 +365,7 @@ export class RentalOrdersService {
       const orderItem = itemsById.get(item.itemId);
       const assetUnit = assetUnitsById.get(item.assetUnitId);
 
-      if (!orderItem || orderItem.quantity !== 1 || !assetUnit || orderItem.productId !== assetUnit.productId || bookedAssetUnitIds.has(item.assetUnitId)) {
+      if (!orderItem || !assetUnit || orderItem.productId !== assetUnit.productId || bookedAssetUnitIds.has(item.assetUnitId)) {
         throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
       }
     }
@@ -381,6 +381,13 @@ export class RentalOrdersService {
           },
         });
       }
+
+      await tx.rentalOrder.update({
+        where: { id },
+        data: {
+          updatedBy: currentUser.id,
+        },
+      });
 
       return tx.rentalOrder.findFirst({
         where: {
@@ -433,7 +440,7 @@ export class RentalOrdersService {
           orderId: id,
           fromStatus: existingOrder.status,
           toStatus: OrderStatus.CANCELLED,
-          changedById: currentUser.id,
+          createdBy: currentUser.id,
           note: dto.cancelReason,
         },
       });
@@ -443,7 +450,7 @@ export class RentalOrdersService {
           orderId: id,
           type: OrderEventType.ORDER_CANCELLED,
           message: dto.cancelReason,
-          createdById: currentUser.id,
+          createdBy: currentUser.id,
         },
       });
 
@@ -468,14 +475,26 @@ export class RentalOrdersService {
     return this.toRentalOrderOut(order);
   }
 
-  async deleteRentalOrder(id: string): Promise<{ success: true }> {
-    const existingOrder = await this.findExistingRentalOrderById(id);
-    this.assertStatusIn(existingOrder.status, SOFT_DELETABLE_STATUSES);
+  async deleteRentalOrders(dto: DeleteRentalOrdersDto, userId: string): Promise<{ success: true }> {
+    const uniqueIds = [...new Set(dto.rentalOrderIds)];
+    if (uniqueIds.length === 0) {
+      return { success: true };
+    }
 
-    await this.prisma.rentalOrder.update({
-      where: { id },
+    const orders = await this.prisma.rentalOrder.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, status: true },
+    });
+
+    for (const order of orders) {
+      this.assertStatusIn(order.status, SOFT_DELETABLE_STATUSES);
+    }
+
+    await this.prisma.rentalOrder.updateMany({
+      where: { id: { in: uniqueIds } },
       data: {
         deletedAt: new Date(),
+        deletedBy: userId,
       },
     });
 
@@ -545,7 +564,7 @@ export class RentalOrdersService {
       }
     }
 
-    const requestedQuantityByProduct = this.sumRequestedQuantityByProduct(params.items);
+    const requestedQuantityByProduct = this.countRequestedItemsByProduct(params.items);
     for (const [productId, requestedQuantity] of requestedQuantityByProduct.entries()) {
       const product = productsById.get(productId);
       if (!product) {
@@ -568,7 +587,7 @@ export class RentalOrdersService {
         unavailableItems.push({
           productId,
           assetUnitId: null,
-          reason: 'Product quantity is not enough in this time range',
+          reason: 'Product does not have enough available asset units in this time range',
         });
       }
     }
@@ -597,7 +616,7 @@ export class RentalOrdersService {
           orderId: params.order.id,
           fromStatus: params.order.status,
           toStatus: params.nextStatus,
-          changedById: params.currentUserId,
+          createdBy: params.currentUserId,
           note: params.note,
         },
       });
@@ -607,7 +626,7 @@ export class RentalOrdersService {
           orderId: params.order.id,
           type: params.eventType,
           message: params.eventMessage,
-          createdById: params.currentUserId,
+          createdBy: params.currentUserId,
         },
       });
 
@@ -627,7 +646,6 @@ export class RentalOrdersService {
     return items.map((item) => ({
       productId: item.productId,
       assetUnitId: item.assetUnitId,
-      quantity: item.quantity ?? 1,
       note: item.note,
     }));
   }
@@ -637,7 +655,6 @@ export class RentalOrdersService {
       id: item.id,
       productId: item.productId,
       assetUnitId: item.assetUnitId,
-      quantity: item.quantity,
       note: item.note,
     }));
   }
@@ -652,15 +669,11 @@ export class RentalOrdersService {
     const assetUnitIds = new Set<string>();
 
     for (const item of items) {
-      if (item.quantity < 1) {
-        throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
-      }
-
       if (!item.assetUnitId) {
         continue;
       }
 
-      if (item.quantity !== 1 || assetUnitIds.has(item.assetUnitId)) {
+      if (assetUnitIds.has(item.assetUnitId)) {
         throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
       }
 
@@ -757,7 +770,7 @@ export class RentalOrdersService {
         upfrontAmount: unitPrice + depositAmount,
         refundableDepositAmount: depositAmount,
         depositAmount,
-        lineTotal: unitPrice * item.quantity,
+        lineTotal: unitPrice,
       };
     });
   }
@@ -795,8 +808,8 @@ export class RentalOrdersService {
 
   private calculateTotals(items: PricedRentalOrderItem[], deliveryFeeTotal: number, discountTotal: number) {
     const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
-    const depositTotal = items.reduce((total, item) => total + item.depositAmount * item.quantity, 0);
-    const bookingHoldTotal = items.reduce((total, item) => total + item.bookingHoldAmount * item.quantity, 0);
+    const depositTotal = items.reduce((total, item) => total + item.depositAmount, 0);
+    const bookingHoldTotal = items.reduce((total, item) => total + item.bookingHoldAmount, 0);
     const upfrontTotal = Math.max(subtotal + depositTotal + deliveryFeeTotal - discountTotal, 0);
 
     return {
@@ -824,7 +837,6 @@ export class RentalOrdersService {
             },
           }
         : undefined,
-      quantity: item.quantity,
       productNameSnapshot: item.productNameSnapshot,
       skuSnapshot: item.skuSnapshot,
       unitPrice: item.unitPrice,
@@ -842,7 +854,6 @@ export class RentalOrdersService {
       orderId,
       productId: item.productId,
       assetUnitId: item.assetUnitId,
-      quantity: item.quantity,
       productNameSnapshot: item.productNameSnapshot,
       skuSnapshot: item.skuSnapshot,
       unitPrice: item.unitPrice,
@@ -871,7 +882,6 @@ export class RentalOrdersService {
         : {
             disconnect: true,
           },
-      quantity: item.quantity,
       productNameSnapshot: item.productNameSnapshot,
       skuSnapshot: item.skuSnapshot,
       unitPrice: item.unitPrice,
@@ -921,12 +931,12 @@ export class RentalOrdersService {
         },
         order: this.blockingOrderWhere(startDate, blockedEndDate, excludeOrderId),
       },
-      _sum: {
-        quantity: true,
+      _count: {
+        _all: true,
       },
     });
 
-    return new Map(bookedItems.map((item) => [item.productId, item._sum.quantity ?? 0]));
+    return new Map(bookedItems.map((item) => [item.productId, item._count._all]));
   }
 
   private blockingOrderWhere(startDate: Date, blockedEndDate: Date, excludeOrderId?: string): Prisma.RentalOrderWhereInput {
@@ -949,11 +959,11 @@ export class RentalOrdersService {
     };
   }
 
-  private sumRequestedQuantityByProduct(items: NormalizedRentalOrderItem[]): Map<string, number> {
+  private countRequestedItemsByProduct(items: NormalizedRentalOrderItem[]): Map<string, number> {
     const requestedQuantityByProduct = new Map<string, number>();
 
     for (const item of items) {
-      requestedQuantityByProduct.set(item.productId, (requestedQuantityByProduct.get(item.productId) ?? 0) + item.quantity);
+      requestedQuantityByProduct.set(item.productId, (requestedQuantityByProduct.get(item.productId) ?? 0) + 1);
     }
 
     return requestedQuantityByProduct;
@@ -982,13 +992,6 @@ export class RentalOrdersService {
   private rentalOrderInclude() {
     return {
       customer: true,
-      createdBy: {
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-        },
-      },
       assignedTo: {
         select: {
           id: true,
@@ -1087,7 +1090,6 @@ export class RentalOrdersService {
       endDate: order.endDate,
       turnaroundMinutes: order.turnaroundMinutes,
       blockedEndDate: order.blockedEndDate,
-      holdExpiresAt: order.holdExpiresAt,
       actualReturnDate: order.actualReturnDate,
       pickupMethod: order.pickupMethod,
       deliveryAddress: order.deliveryAddress,
@@ -1121,7 +1123,6 @@ export class RentalOrdersService {
               serialNumber: item.assetUnit.serialNumber,
             }
           : null,
-        quantity: item.quantity,
         productNameSnapshot: item.productNameSnapshot,
         skuSnapshot: item.skuSnapshot,
         unitPrice: item.unitPrice.toString(),

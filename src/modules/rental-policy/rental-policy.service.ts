@@ -29,14 +29,12 @@ export class RentalPolicyService {
         name: dto.name,
         bookingHoldAmountPerUnit: dto.bookingHoldAmountPerUnit,
         turnaroundMinutes: dto.turnaroundMinutes,
-        holdPaymentExpiresInMinutes: dto.holdPaymentExpiresInMinutes,
       },
       create: {
         code: DEFAULT_RENTAL_POLICY_CODE,
         name: dto.name ?? 'Default Rental Policy',
         bookingHoldAmountPerUnit: dto.bookingHoldAmountPerUnit ?? 50000,
         turnaroundMinutes: dto.turnaroundMinutes ?? 60,
-        holdPaymentExpiresInMinutes: dto.holdPaymentExpiresInMinutes ?? 30,
       },
     });
 
@@ -68,9 +66,9 @@ export class RentalPolicyService {
       name: rentalPolicy.name,
       bookingHoldAmountPerUnit: rentalPolicy.bookingHoldAmountPerUnit.toString(),
       turnaroundMinutes: rentalPolicy.turnaroundMinutes,
-      holdPaymentExpiresInMinutes: rentalPolicy.holdPaymentExpiresInMinutes,
       createdAt: rentalPolicy.createdAt,
       updatedAt: rentalPolicy.updatedAt,
+      
     };
   }
 }

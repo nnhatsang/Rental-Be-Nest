@@ -6,7 +6,7 @@ import { INVALID_BOOLEAN, INVALID_STRING, INVALID_UUID } from '@/libs/constants/
 export class UpdateAssetUnitDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   productId?: string;
 
   @ApiPropertyOptional({ example: 'SN-A7IV-001' })

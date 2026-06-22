@@ -19,6 +19,7 @@ import { PermissionCode } from '@/libs/constants/rbac.constant';
 import { SUCCESS } from '@/libs/constants/response.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
+import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 
 @ApiTags('rental-orders')
 @Controller('rental-orders')
@@ -75,11 +76,11 @@ export class RentalOrdersController {
   @RequirePermissions(PermissionCode.OrdersUpdate)
   @ApiOperation({
     summary: 'Gán thiết bị vật lý cho đơn thuê',
-    description: 'Gán asset unit cho từng dòng đơn thuê, chỉ áp dụng khi dòng có quantity = 1.',
+    description: 'Gán asset unit cho từng dòng đơn thuê.',
   })
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async assignRentalOrderAssets(@Param('id', IdValidatePipe) id: string, @Body() dto: AssignRentalOrderAssetsDto) {
-    return new ApiRes(await this.rentalOrdersService.assignRentalOrderAssets(id, dto), 'Gán thiết bị cho đơn thuê thành công');
+  async assignRentalOrderAssets(@Param('id', IdValidatePipe) id: string, @Body() dto: AssignRentalOrderAssetsDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.rentalOrdersService.assignRentalOrderAssets(id, dto, currentUser), 'Gán thiết bị cho đơn thuê thành công');
   }
 
   @Post(':id/confirm')
@@ -111,18 +112,18 @@ export class RentalOrdersController {
     description: 'Cập nhật thông tin đơn DRAFT; nếu truyền items thì thay thế toàn bộ danh sách items.',
   })
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async updateRentalOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateRentalOrderDto) {
-    return new ApiRes(await this.rentalOrdersService.updateRentalOrder(id, dto), 'Cập nhật đơn thuê thành công');
+  async updateRentalOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.rentalOrdersService.updateRentalOrder(id, dto, currentUser), 'Cập nhật đơn thuê thành công');
   }
 
-  @Delete(':id')
+  @Delete()
   @RequirePermissions(PermissionCode.OrdersCancel)
   @ApiOperation({
-    summary: 'Xóa mềm đơn thuê',
+    summary: 'Xóa mềm nhiều đơn thuê',
     description: 'Chỉ xóa mềm đơn DRAFT hoặc CANCELLED.',
   })
   @ApiOkResponse({ type: DeleteRentalOrderResponseDto })
-  async deleteRentalOrder(@Param('id', IdValidatePipe) id: string) {
-    return new ApiRes(await this.rentalOrdersService.deleteRentalOrder(id), 'Xóa đơn thuê thành công');
+  async deleteRentalOrders(@CurrentUser() currentUser: AuthUser, @Body() dto: DeleteRentalOrdersDto) {
+    return new ApiRes(await this.rentalOrdersService.deleteRentalOrders(dto, currentUser.id), 'Xóa đơn thuê thành công');
   }
 }

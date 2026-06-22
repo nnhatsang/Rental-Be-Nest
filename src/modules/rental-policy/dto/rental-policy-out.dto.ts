@@ -16,9 +16,6 @@ export class RentalPolicyOutDto {
   @ApiProperty({ example: 60 })
   turnaroundMinutes!: number;
 
-  @ApiProperty({ example: 30 })
-  holdPaymentExpiresInMinutes!: number;
-
   @ApiProperty({ type: Date, format: 'date-time' })
   createdAt!: Date;
 

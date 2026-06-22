@@ -11,6 +11,9 @@ import { RequirePermissions } from '@modules/auth/decorators/require-permissions
 import { PermissionCode } from '@/libs/constants/rbac.constant';
 import { SUCCESS } from '@/libs/constants/response.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
+import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
+import { AuthUser } from '@modules/auth/types/auth-user.type';
+import { DeleteCustomersDto } from './dto/delete-customers.dto';
 
 @ApiTags('customers')
 @Controller('customers')
@@ -48,8 +51,8 @@ export class CustomersController {
     description: 'ạo hồ sơ khách thuê do admin/staff quản lý.',
   })
   @ApiOkResponse({ type: CustomerResponseDto })
-  async createCustomer(@Body() dto: CreateCustomerDto) {
-    return new ApiRes(await this.customersService.createCustomer(dto), SUCCESS);
+  async createCustomer(@CurrentUser() user: AuthUser, @Body() dto: CreateCustomerDto) {
+    return new ApiRes(await this.customersService.createCustomer(dto, user.id), SUCCESS);
   }
 
   @Patch(':id')
@@ -59,8 +62,8 @@ export class CustomersController {
     description: 'ập nhật thông tin cơ bản của khách hàng.',
   })
   @ApiOkResponse({ type: CustomerResponseDto })
-  async updateCustomer(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateCustomerDto) {
-    return new ApiRes(await this.customersService.updateCustomer(id, dto), SUCCESS);
+  async updateCustomer(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateCustomerDto) {
+    return new ApiRes(await this.customersService.updateCustomer(id, dto, user.id), SUCCESS);
   }
 
   @Patch(':id/status')
@@ -70,18 +73,18 @@ export class CustomersController {
     description: 'Đổi trạng thái khách hàng: ACTIVE, INACTIVE, BLOCKED.',
   })
   @ApiOkResponse({ type: CustomerResponseDto })
-  async updateCustomerStatus(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateCustomerStatusDto) {
-    return new ApiRes(await this.customersService.updateCustomerStatus(id, dto), 'Cập nhật trạng thái khách hàng thành công');
+  async updateCustomerStatus(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateCustomerStatusDto) {
+    return new ApiRes(await this.customersService.updateCustomerStatus(id, dto, user.id), 'Cập nhật trạng thái khách hàng thành công');
   }
 
-  @Delete(':id')
+  @Delete()
   @RequirePermissions(PermissionCode.CustomersDelete)
   @ApiOperation({
-    summary: 'Xóa mềm khách hàng',
+    summary: 'Xóa mềm nhiều khách hàng',
     description: 'Soft delete hồ sơ khách hàng.',
   })
   @ApiOkResponse({ type: DeleteCustomerResponseDto })
-  async deleteCustomer(@Param('id', IdValidatePipe) id: string) {
-    return new ApiRes(await this.customersService.deleteCustomer(id), 'Xoá thành công');
+  async deleteCustomers(@CurrentUser() user: AuthUser, @Body() dto: DeleteCustomersDto) {
+    return new ApiRes(await this.customersService.deleteCustomers(dto, user.id), 'Xoá thành công');
   }
 }

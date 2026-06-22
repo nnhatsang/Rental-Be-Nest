@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '@modules/database/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { DeleteRolesDto } from './dto/delete-roles.dto';
 import { GetAllRolesDto } from './dto/get-all-roles.dto';
 import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 import { AssignRoleUsersDto } from './dto/assign-role-users.dto';
@@ -29,11 +30,7 @@ export class RolesService {
     const where = {
       ...(isSystem !== undefined && { isSystem }),
       ...(search && {
-        OR: [
-          { code: { contains: search } },
-          { name: { contains: search } },
-          { description: { contains: search } },
-        ],
+        OR: [{ code: { contains: search } }, { name: { contains: search } }, { description: { contains: search } }],
       }),
     };
 
@@ -61,7 +58,7 @@ export class RolesService {
     return this.toRoleOut(role);
   }
 
-  async createRole(dto: CreateRoleDto): Promise<RoleOutDto> {
+  async createRole(dto: CreateRoleDto, userId: string): Promise<RoleOutDto> {
     const code = dto.code.trim().toUpperCase();
     await this.ensureRoleCodeAvailable(code);
     const permissions = await this.findPermissionsByCodesOrThrow(dto.permissionCodes);
@@ -73,6 +70,7 @@ export class RolesService {
           name: dto.name,
           description: dto.description,
           isSystem: false,
+          createdBy: userId,
         },
       });
 
@@ -97,23 +95,60 @@ export class RolesService {
     return this.toRoleOut(role);
   }
 
-  async updateRole(id: string, dto: UpdateRoleDto): Promise<RoleOutDto> {
+  async updateRole(id: string, dto: UpdateRoleDto, userId: string): Promise<RoleOutDto> {
     const role = await this.findExistingRoleById(id);
     this.assertCustomRole(role);
 
-    const updatedRole = await this.prisma.role.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        description: dto.description,
-      },
-      include: this.roleInclude(true),
+    const code = dto.code ? dto.code.trim().toUpperCase() : undefined;
+    if (code && code !== role.code) {
+      await this.ensureRoleCodeAvailable(code);
+    }
+
+    const permissions = dto.permissionCodes ? await this.findPermissionsByCodesOrThrow(dto.permissionCodes) : undefined;
+
+    const updatedRole = await this.prisma.$transaction(async (tx) => {
+      const dataToUpdate: any = {
+        updatedBy: userId,
+      };
+      if (code !== undefined) dataToUpdate.code = code;
+      if (dto.name !== undefined) dataToUpdate.name = dto.name;
+      if (dto.description !== undefined) dataToUpdate.description = dto.description;
+
+      await tx.role.update({
+        where: { id },
+        data: dataToUpdate,
+      });
+
+      if (permissions !== undefined) {
+        await tx.rolePermission.deleteMany({
+          where: { roleId: id },
+        });
+
+        if (permissions.length > 0) {
+          await tx.rolePermission.createMany({
+            data: permissions.map((permission) => ({
+              roleId: id,
+              permissionId: permission.id,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return tx.role.findUnique({
+        where: { id },
+        include: this.roleInclude(true),
+      });
     });
+
+    if (!updatedRole) {
+      throw new NotFoundException(ROLE_NOT_FOUND);
+    }
 
     return this.toRoleOut(updatedRole);
   }
 
-  async updateRolePermissions(id: string, dto: UpdateRolePermissionsDto): Promise<RoleOutDto> {
+  async updateRolePermissions(id: string, dto: UpdateRolePermissionsDto, userId: string): Promise<RoleOutDto> {
     const role = await this.findExistingRoleById(id);
     this.assertCustomRole(role);
     const permissions = await this.findPermissionsByCodesOrThrow(dto.permissionCodes);
@@ -129,6 +164,13 @@ export class RolesService {
           permissionId: permission.id,
         })),
         skipDuplicates: true,
+      });
+
+      await tx.role.update({
+        where: { id },
+        data: {
+          updatedBy: userId,
+        },
       });
 
       return tx.role.findUnique({
@@ -196,17 +238,28 @@ export class RolesService {
     return this.toRoleOut(role);
   }
 
-  async deleteRole(id: string): Promise<{ success: true }> {
-    const role = await this.findExistingRoleById(id, true);
-    this.assertCustomRole(role);
+  async multiDelete(dto: DeleteRolesDto, userId?: string): Promise<{ success: true }> {
+    const { roleIds } = dto;
+    const uniqueIds = [...new Set(roleIds)];
 
-    if (role._count.users > 0) {
-      throw new BadRequestException(ROLE_IN_USE);
+    if (uniqueIds.length === 0) {
+      return { success: true };
     }
 
-    await this.prisma.role.delete({
-      where: { id },
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: uniqueIds } },
     });
+
+    for (const role of roles) {
+      this.assertCustomRole(role);
+    }
+
+    const existingIds = roles.map((r) => r.id);
+    if (existingIds.length > 0) {
+      await this.prisma.role.deleteMany({
+        where: { id: { in: existingIds } },
+      });
+    }
 
     return { success: true };
   }
@@ -295,9 +348,7 @@ export class RolesService {
   }
 
   private toRoleOut(role: ExistingRoleWithRelations): RoleOutDto {
-    const users = Array.isArray(role.users)
-      ? (role.users as unknown as Array<{ user: { id: string; email: string; fullName: string } }>)
-      : undefined;
+    const users = Array.isArray(role.users) ? (role.users as unknown as Array<{ user: { id: string; email: string; fullName: string } }>) : undefined;
 
     return {
       id: role.id,

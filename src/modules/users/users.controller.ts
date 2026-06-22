@@ -14,6 +14,7 @@ import { RequirePermissions } from '@modules/auth/decorators/require-permissions
 import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
 import { AuthUser } from '@modules/auth/types/auth-user.type';
 import { PermissionCode } from '@/libs/constants/rbac.constant';
+import { DeleteUsersDto } from './dto/delete-users.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -51,8 +52,8 @@ export class UsersController {
     description: 'Tạo tài khoản admin/staff mới và gán role. Nếu không truyền roleCodes, mặc định gán STAFF.',
   })
   @ApiOkResponse({ type: UserResponseDto })
-  async createUser(@Body() dto: CreateUserDto) {
-    return new ApiRes(await this.usersService.createUser(dto), 'Tạo người dùng thành công');
+  async createUser(@CurrentUser() user: AuthUser, @Body() dto: CreateUserDto) {
+    return new ApiRes(await this.usersService.createUser(dto, user.id), 'Tạo người dùng thành công');
   }
 
   @Patch(':id')
@@ -62,8 +63,8 @@ export class UsersController {
     description: 'Cập nhật thông tin cơ bản của tài khoản nội bộ.',
   })
   @ApiOkResponse({ type: UserResponseDto })
-  async updateUser(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserDto) {
-    return new ApiRes(await this.usersService.updateUser(id, dto), 'Cập nhật người dùng thành công');
+  async updateUser(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserDto) {
+    return new ApiRes(await this.usersService.updateUser(id, dto, user.id), 'Cập nhật người dùng thành công');
   }
 
   @Patch(':id/activity-status')
@@ -73,8 +74,8 @@ export class UsersController {
     description: 'Đổi trạng thái đăng nhập của tài khoản: ACTIVE, BANNED, LOCKED hoặc INACTIVE.',
   })
   @ApiOkResponse({ type: UserResponseDto })
-  async updateUserActivityStatus(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserActivityStatusDto) {
-    return new ApiRes(await this.usersService.updateUserActivityStatus(id, dto), 'Cập nhật trạng thái người dùng thành công');
+  async updateUserActivityStatus(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserActivityStatusDto) {
+    return new ApiRes(await this.usersService.updateUserActivityStatus(id, dto, user.id), 'Cập nhật trạng thái người dùng thành công');
   }
 
   @Patch(':id/roles')
@@ -103,14 +104,14 @@ export class UsersController {
     return new ApiRes(await this.usersService.resetUserPassword(id, currentUser.id, dto), 'Reset mat khau nguoi dung thanh cong');
   }
 
-  @Delete(':id')
+  @Delete()
   @RequirePermissions(PermissionCode.UsersDelete)
   @ApiOperation({
-    summary: 'Xoá mềm người dùng nội bộ',
-    description: 'Soft delete an internal account and revoke active auth sessions.',
+    summary: 'Xoá mềm nhiều người dùng nội bộ',
+    description: 'Soft delete multiple internal accounts and revoke active auth sessions.',
   })
   @ApiOkResponse({ type: DeleteUserResponseDto })
-  async deleteUser(@Param('id', IdValidatePipe) id: string, @CurrentUser() currentUser: AuthUser) {
-    return new ApiNullableRes(await this.usersService.deleteUser(id, currentUser.id), 'Xóa người dùng thành công');
+  async deleteUsers(@CurrentUser() currentUser: AuthUser, @Body() dto: DeleteUsersDto) {
+    return new ApiNullableRes(await this.usersService.deleteUsers(dto, currentUser.id), 'Xóa người dùng thành công');
   }
 }

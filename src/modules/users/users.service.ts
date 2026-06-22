@@ -8,6 +8,7 @@ import { UpdateUserActivityStatusDto } from './dto/update-user-activity-status.d
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UserOutDto } from './dto/user-out.dto';
+import { DeleteUsersDto } from './dto/delete-users.dto';
 import { RoleCode } from '@/libs/constants/rbac.constant';
 import {
   INVALID_USER,
@@ -77,7 +78,7 @@ export class UsersService {
     return this.toUserOut(user);
   }
 
-  async createUser(dto: CreateUserDto): Promise<UserOutDto> {
+  async createUser(dto: CreateUserDto, userId: string): Promise<UserOutDto> {
     await this.ensureEmailAvailable(dto.email);
 
     const roleCodes = dto.roleCodes?.length ? dto.roleCodes : [RoleCode.Staff];
@@ -95,6 +96,7 @@ export class UsersService {
           phone: dto.phone,
         }),
         passwordHash,
+        createdBy: userId,
         roles: {
           createMany: {
             data: roles.map((role) => ({ roleId: role.id })),
@@ -108,7 +110,7 @@ export class UsersService {
     return this.toUserOut(user);
   }
 
-  async updateUser(id: string, dto: UpdateUserDto): Promise<UserOutDto> {
+  async updateUser(id: string, dto: UpdateUserDto, userId: string): Promise<UserOutDto> {
     const { email, fullName, phone } = dto;
     const existingUser = await this.findExistingUserWithRolesById(id);
     const nextEmail = email ?? existingUser.email;
@@ -130,6 +132,7 @@ export class UsersService {
           fullName: nextFullName,
           phone: nextPhone,
         }),
+        updatedBy: userId,
       },
       include: this.userRolesInclude(),
     });
@@ -137,13 +140,14 @@ export class UsersService {
     return this.toUserOut(user);
   }
 
-  async updateUserActivityStatus(id: string, dto: UpdateUserActivityStatusDto): Promise<UserOutDto> {
+  async updateUserActivityStatus(id: string, dto: UpdateUserActivityStatusDto, userId: string): Promise<UserOutDto> {
     await this.ensureUserExists(id);
 
     const user = await this.prisma.user.update({
       where: { id },
       data: {
         activityStatus: dto.activityStatus,
+        updatedBy: userId,
       },
       include: this.userRolesInclude(),
     });
@@ -204,18 +208,19 @@ export class UsersService {
     return { success: true };
   }
 
-  async deleteUser(id: string, currentUserId: string): Promise<{ success: true }> {
-    if (id === currentUserId) {
+  async deleteUsers(dto: DeleteUsersDto, currentUserId: string): Promise<{ success: true }> {
+    const uniqueIds = [...new Set(dto.userIds)];
+
+    if (uniqueIds.includes(currentUserId)) {
       throw new BadRequestException(USER_SELF_DELETE_NOT_ALLOWED);
     }
 
-    await this.ensureUserExists(id);
-
     const deletedAt = new Date();
-    await this.prisma.user.update({
-      where: { id },
+    await this.prisma.user.updateMany({
+      where: { id: { in: uniqueIds } },
       data: {
         deletedAt,
+        deletedBy: currentUserId,
       },
     });
 

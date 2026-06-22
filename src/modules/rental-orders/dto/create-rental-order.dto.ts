@@ -6,20 +6,13 @@ import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRI
 
 export class RentalOrderItemInDto {
   @ApiProperty({ type: String, format: 'uuid' })
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   productId!: string;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Physical asset unit if admin assigns serial at create time.' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   assetUnitId?: string;
-
-  @ApiPropertyOptional({ example: 1, default: 1 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(1)
-  quantity?: number;
 
   @ApiPropertyOptional({ example: 'Body + 1 battery + charger' })
   @IsOptional()
@@ -29,7 +22,7 @@ export class RentalOrderItemInDto {
 
 export class CreateRentalOrderDto {
   @ApiProperty({ type: String, format: 'uuid' })
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   customerId!: string;
 
   @ApiProperty({ example: '2026-06-10T07:00:00.000Z' })
@@ -68,7 +61,7 @@ export class CreateRentalOrderDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   assignedToId?: string;
 
   @ApiPropertyOptional({ example: 'Khach se den lay luc 7h' })

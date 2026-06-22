@@ -13,7 +13,7 @@ export class GetAllAssetUnitsInDto extends ApiPagReq {
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
-  @IsUUID('4', { message: INVALID_UUID })
+  @IsUUID('7', { message: INVALID_UUID })
   productId?: string;
 
   @ApiPropertyOptional({ enum: Object.values(AssetStatus) })

@@ -8,6 +8,7 @@ import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { UpdateCustomerStatusDto } from './dto/update-customer-status.dto';
 import { buildCustomerSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
 import { CUSTOMER_CODE_EXISTED, CUSTOMER_EMAIL_EXISTED, CUSTOMER_NOT_FOUND, CUSTOMER_PHONE_EXISTED } from '@/libs/constants/error.constants';
+import { DeleteCustomersDto } from './dto/delete-customers.dto';
 
 @Injectable()
 export class CustomersService {
@@ -55,7 +56,7 @@ export class CustomersService {
     return this.toCustomerOut(customer);
   }
 
-  async createCustomer(dto: CreateCustomerDto): Promise<CustomerOutDto> {
+  async createCustomer(dto: CreateCustomerDto, userId: string): Promise<CustomerOutDto> {
     const { name, phone, email, address, identityNumber, socialContact, notes } = dto;
 
     await this.ensureCustomerUniqueFieldsAvailable(dto);
@@ -73,6 +74,7 @@ export class CustomersService {
           identityNumber,
           socialContact,
           notes,
+          createdBy: userId,
           searchText: buildCustomerSearchText({
             code,
             name,
@@ -88,7 +90,7 @@ export class CustomersService {
     return this.toCustomerOut(customer);
   }
 
-  async updateCustomer(id: string, dto: UpdateCustomerDto): Promise<CustomerOutDto> {
+  async updateCustomer(id: string, dto: UpdateCustomerDto, userId: string): Promise<CustomerOutDto> {
     const existingCustomer = await this.findExistingCustomerById(id);
     await this.ensureCustomerUniqueFieldsAvailable(dto, id);
 
@@ -111,6 +113,7 @@ export class CustomersService {
         identityNumber: dto.identityNumber,
         socialContact: dto.socialContact,
         notes: dto.notes,
+        updatedBy: userId,
         searchText: buildCustomerSearchText(nextCustomer),
       },
     });
@@ -118,26 +121,31 @@ export class CustomersService {
     return this.toCustomerOut(customer);
   }
 
-  async updateCustomerStatus(id: string, dto: UpdateCustomerStatusDto): Promise<CustomerOutDto> {
+  async updateCustomerStatus(id: string, dto: UpdateCustomerStatusDto, userId: string): Promise<CustomerOutDto> {
     await this.findExistingCustomerById(id);
 
     const customer = await this.prisma.customer.update({
       where: { id },
       data: {
         status: dto.status,
+        updatedBy: userId,
       },
     });
 
     return this.toCustomerOut(customer);
   }
 
-  async deleteCustomer(id: string): Promise<{ success: true }> {
-    await this.findExistingCustomerById(id);
+  async deleteCustomers(dto: DeleteCustomersDto, userId: string): Promise<{ success: true }> {
+    const uniqueIds = [...new Set(dto.customerIds)];
+    if (uniqueIds.length === 0) {
+      return { success: true };
+    }
 
-    await this.prisma.customer.update({
-      where: { id },
+    await this.prisma.customer.updateMany({
+      where: { id: { in: uniqueIds } },
       data: {
         deletedAt: new Date(),
+        deletedBy: userId,
       },
     });
 

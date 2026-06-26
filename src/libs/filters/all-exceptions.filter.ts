@@ -1,6 +1,14 @@
 import { Request, Response } from 'express';
 import { ArgumentsHost, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import { DATABASE_ERROR, ErrorResponse, FORBIDDEN, UNAUTHORIZED, UNKNOWN_ERROR } from '../constants/error.constants';
+import {
+  DATABASE_ERROR,
+  DATABASE_RELATION_ERROR,
+  ErrorResponse,
+  FORBIDDEN,
+  RECORD_NOT_FOUND,
+  UNAUTHORIZED,
+  UNKNOWN_ERROR,
+} from '../constants/error.constants';
 import { Prisma } from '@generated/prisma/client';
 
 export class ErrorException implements ExceptionFilter {
@@ -26,6 +34,7 @@ export class ErrorException implements ExceptionFilter {
 
   private toErrorBody(e: any) {
     if (e instanceof Prisma.PrismaClientKnownRequestError) {
+      // console.log({ e });
       if (e.code === 'P2002') {
         return {
           message: DATABASE_ERROR.message,
@@ -37,8 +46,8 @@ export class ErrorException implements ExceptionFilter {
 
       if (e.code === 'P2025') {
         return {
-          message: 'Không tìm thấy bản ghi yêu cầu hoặc bản ghi đã bị xóa',
-          code: 'RECORD_NOT_FOUND',
+          message: RECORD_NOT_FOUND.message,
+          code: RECORD_NOT_FOUND.code,
           error: e.message,
           status: HttpStatus.NOT_FOUND,
         };
@@ -46,8 +55,8 @@ export class ErrorException implements ExceptionFilter {
 
       if (e.code === 'P2003') {
         return {
-          message: 'Dữ liệu liên kết không hợp lệ hoặc đang được sử dụng ở bảng khác',
-          code: 'DATABASE_RELATION_ERROR',
+          message: DATABASE_RELATION_ERROR.message,
+          code: DATABASE_RELATION_ERROR.code,
           error: e.message,
           status: HttpStatus.BAD_REQUEST,
         };
@@ -61,14 +70,14 @@ export class ErrorException implements ExceptionFilter {
       };
     }
 
-    if (e?.code === 11000) {
-      return {
-        message: DATABASE_ERROR.message,
-        code: DATABASE_ERROR.code,
-        error: e.errorResponse?.errmsg,
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-      };
-    }
+    // if (e?.code === 11000) {
+    //   return {
+    //     message: DATABASE_ERROR.message,
+    //     code: DATABASE_ERROR.code,
+    //     error: e.errorResponse?.errmsg,
+    //     status: HttpStatus.INTERNAL_SERVER_ERROR,
+    //   };
+    // }
 
     if (e instanceof HttpException) {
       const status = e.getStatus();

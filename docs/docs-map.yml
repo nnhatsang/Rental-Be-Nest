@@ -1,0 +1,40 @@
+version: 1
+
+entrypoints:
+  human: README.md
+  ai: CLAUDE.md
+  map: 00-start-here/documentation-map.md
+
+sections:
+  product:
+    path: 01-product/
+    owner: product
+
+  architecture:
+    path: 02-architecture/
+    owner: architecture
+
+  domains:
+    path: 03-domains/
+    owner: backend
+
+  backend:
+    path: 04-applications/backend/
+    source_repo: nnhatsang/Rental-Be-Nest
+    source_branch: main
+
+  frontend:
+    path: 04-applications/frontend/
+    source_repo: nnhatsang/rental-admin-fe
+    source_branch: main
+
+  operations:
+    path: 06-operations/
+    owner: operations
+
+  decisions:
+    path: 08-decisions/
+    owner: architecture
+
+excluded_from_default_ai_context:
+  - 99-archive/

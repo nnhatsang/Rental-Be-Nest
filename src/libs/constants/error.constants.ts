@@ -265,3 +265,15 @@ export const OLD_PASSWORD_NOT_VALID = new ErrorResponse({
   code: 'OLD_PASSWORD_NOT_VALID',
   message: 'Mật khẩu cũ không đúng',
 });
+
+export const RECORD_NOT_FOUND = new ErrorResponse({
+  code: 'RECORD_NOT_FOUND',
+  message: 'Không tìm thấy bản ghi yêu cầu hoặc bản ghi đã bị xóa',
+});
+
+export const DATABASE_RELATION_ERROR = new ErrorResponse({
+  code: 'DATABASE_RELATION_ERROR',
+  message: 'Dữ liệu liên kết không hợp lệ hoặc đang được sử dụng ở bảng khác',
+});
+
+

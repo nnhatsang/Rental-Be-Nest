@@ -12,6 +12,7 @@
 // pnpm prisma migrate dev
 // pnpm prisma generate
 // pnpm db:seed
+// npx prisma migrate reset   // xử lý reset db phía local
 
 // Rental order validation flow:
 // 1. Lấy RentalPolicy DEFAULT
@@ -118,11 +119,11 @@ model Permission {
 
 model UserRole {
   /// User receiving the role.
-  userId String
+  userId String @db.Uuid
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// Role assigned to the user.
-  roleId String
+  roleId String @db.Uuid
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   /// When this role was assigned.
@@ -136,11 +137,11 @@ model UserRole {
 
 model RolePermission {
   /// Role receiving the permission.
-  roleId String
+  roleId String @db.Uuid
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   /// Permission granted to the role.
-  permissionId String
+  permissionId String @db.Uuid
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   /// When this permission was granted to the role.
@@ -261,10 +262,10 @@ model Product {
   usageGuide          String?
 
   /// Optional product category.
-  categoryId String?
+  categoryId String?          @db.Uuid
   category   ProductCategory? @relation(fields: [categoryId], references: [id])
   /// Optional product brand.
-  brandId    String?
+  brandId    String?          @db.Uuid
   brand      Brand?           @relation(fields: [brandId], references: [id])
 
   rentalPriceTiers ProductRentalPriceTier[]
@@ -311,7 +312,7 @@ model ProductRentalPriceTier {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Sản phẩm áp dụng bậc giá này.
-  productId String
+  productId String  @db.Uuid
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   /// Số ngày tối thiểu để áp dụng bậc giá.
@@ -345,7 +346,7 @@ model AssetUnit {
   /// Primary asset unit id; represents one physical device.
   id        String  @id @default(uuid(7)) @db.Uuid
   /// Product model/type this unit belongs to.
-  productId String
+  productId String  @db.Uuid
   product   Product @relation(fields: [productId], references: [id])
 
   /// Optional unique serial number for the physical device.
@@ -466,11 +467,11 @@ model RentalOrder {
   paymentStatus PaymentStatus @default(UNPAID)
 
   /// Chính sách thuê được áp dụng khi tạo đơn; order vẫn lưu snapshot để không bị ảnh hưởng khi policy thay đổi.
-  rentalPolicyId String?
+  rentalPolicyId String?       @db.Uuid
   rentalPolicy   RentalPolicy? @relation(fields: [rentalPolicyId], references: [id])
 
   /// Khách hàng thuê thiết bị.
-  customerId               String
+  customerId               String        @db.Uuid
   customer                 Customer @relation(fields: [customerId], references: [id])
   /// Snapshot tên khách tại thời điểm tạo đơn để giữ lịch sử.
   customerNameSnapshot     String
@@ -532,7 +533,7 @@ model RentalOrder {
   cancelReason String?
 
   /// Admin/staff được phân công xử lý đơn.
-  assignedToId String?
+  assignedToId String? @db.Uuid
   assignedTo   User?   @relation("AssignedOrders", fields: [assignedToId], references: [id])
 
   /// Danh sách sản phẩm/thiết bị trong đơn thuê.
@@ -574,14 +575,14 @@ model RentalOrderItem {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Đơn thuê cha chứa dòng sản phẩm này.
-  orderId String
+  orderId String @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Loại sản phẩm được thuê, ví dụ Sony A7 IV.
-  productId   String
+  productId   String @db.Uuid
   product     Product    @relation(fields: [productId], references: [id])
   /// Thiết bị vật lý/serial cụ thể được gán cho dòng này nếu có quản lý theo máy.
-  assetUnitId String?
+  assetUnitId String? @db.Uuid
   assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
 
   /// Snapshot tên sản phẩm tại thời điểm tạo đơn để giữ lịch sử giá/đơn.
@@ -621,7 +622,7 @@ model PaymentRecord {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order this payment/refund belongs to.
-  orderId String
+  orderId String @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id])
 
   /// Business kind of the payment/refund.
@@ -658,7 +659,7 @@ model OrderStatusHistory {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order whose status changed.
-  orderId String
+  orderId String @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Previous order status; null when creating the initial status record.
@@ -688,7 +689,7 @@ model OrderHandover {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order being handed over or received back.
-  orderId String
+  orderId String @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Handover type: outgoing handover or return handover.
@@ -720,7 +721,7 @@ model ReturnInspection {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order being inspected after return.
-  orderId String
+  orderId String @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id])
 
   /// Overall inspection result.
@@ -762,14 +763,14 @@ model DamageReport {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Parent return inspection.
-  inspectionId String
+  inspectionId String @db.Uuid
   inspection   ReturnInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
 
   /// Product involved in the damage/missing report.
-  productId   String
+  productId   String @db.Uuid
   product     Product    @relation(fields: [productId], references: [id])
   /// Specific physical device involved, if serial-managed.
-  assetUnitId String?
+  assetUnitId String? @db.Uuid
   assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
 
   /// Damage severity.
@@ -800,7 +801,7 @@ model OrderEvent {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order related to this event.
-  orderId String
+  orderId String @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Event type.

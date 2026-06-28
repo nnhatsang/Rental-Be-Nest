@@ -253,7 +253,7 @@ export const PERMISSION_NOT_FOUND = new ErrorResponse({
 
 export const PASSWORD_NOT_MATCH = new ErrorResponse({
   code: 'PASSWORD_NOT_MATCH',
-  message: 'Mật khẩu không chính xác',
+  message: 'Tài khoản hoặc mật khẩu không chính xác',
 });
 
 export const DATA_ERROR = new ErrorResponse({
@@ -275,5 +275,3 @@ export const DATABASE_RELATION_ERROR = new ErrorResponse({
   code: 'DATABASE_RELATION_ERROR',
   message: 'Dữ liệu liên kết không hợp lệ hoặc đang được sử dụng ở bảng khác',
 });
-
-

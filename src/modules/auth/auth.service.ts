@@ -85,16 +85,14 @@ export class AuthService {
   }
 
   logout(): void {}
-
-  async validateAccessUser(userId: string): Promise<AuthUser> {
+  async validateAccessUser(userId: string, isLogout = false): Promise<AuthUser> {
     const user = await this.findAuthUserById(userId);
-
     if (!user || user.deletedAt) {
       throw new UnauthorizedException(INVALID_SESSION);
     }
-
-    this.assertUserCanLogin(user.activityStatus);
-
+    if (!isLogout) {
+      this.assertUserCanLogin(user.activityStatus);
+    }
     return this.toAuthUser(user);
   }
 
@@ -176,6 +174,7 @@ export class AuthService {
     });
 
     if (!user || user.deletedAt || user.activityStatus !== EUserActivityStatus.Active) {
+      this.logger.warn(`Failed to send password reset email because user is not active`);
       return { success: true };
     }
 

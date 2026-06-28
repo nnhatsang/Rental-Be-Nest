@@ -40,3 +40,20 @@ Request gửi lên kèm Cookie
           ↳ 200 OK (Chấp nhận) / 403 Forbidden (Từ chối)
 ```
 - Các lỗi xác thực hoặc thiếu quyền bắt buộc phải trả về mã HTTP tương ứng (`401 Unauthorized` hoặc `403 Forbidden`) kèm mã lỗi nghiệp vụ chuẩn hóa để Frontend hiển thị thông báo toast phù hợp.
+
+---
+
+## 4. Đồng bộ quyền hạn thời gian thực (Real-time Permission Sync UX)
+
+Để tối ưu hóa trải nghiệm người dùng (UX) và bảo mật vận hành, khi admin thay đổi quyền hạn hoặc trạng thái tài khoản của nhân viên, hệ thống cần đáp ứng các tiêu chí sau:
+
+### 4.1 Thông báo nhẹ trong ứng dụng (Toast Alerts)
+- Khi nhân viên đang mở ứng dụng và bị thay đổi vai trò/quyền hạn, hệ thống sẽ hiện một thông báo toast loại `info` ở góc màn hình: `"Quyền hạn của bạn đã được cập nhật bởi quản trị viên."`
+- Hệ thống ngầm gửi API cập nhật quyền mà không ngắt quãng công việc hiện tại của nhân viên (không ép buộc tải lại trang gây mất dữ liệu form đang nhập dở).
+
+### 4.2 Đăng xuất cưỡng bức (Forced Logout)
+- Trong trường hợp nhân viên bị admin khóa tài khoản (`BANNED`, `LOCKED` hoặc chuyển sang `INACTIVE`):
+  - Phía Frontend nhận tín hiệu socket sẽ lập tức xóa sạch token trong cookie, xóa cache session.
+  - Ép buộc chuyển hướng nhân viên ra màn hình đăng nhập `/auth/login` ngay lập tức.
+  - Hiển thị thông báo toast loại `error` lỗi bảo mật: `"Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ Admin."`
+

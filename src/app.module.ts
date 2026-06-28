@@ -16,6 +16,7 @@ import { RedisModule } from '@liaoliaots/nestjs-redis';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { SocketModule } from './modules/socket/socket.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
     RentalOrdersModule,
     RolesModule,
     PermissionsModule,
+    SocketModule,
   ],
   controllers: [AppController],
   providers: [AppService],

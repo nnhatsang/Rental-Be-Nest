@@ -16,13 +16,18 @@ import {
   ROLE_USER_INVALID,
 } from '@/libs/constants/error.constants';
 import { RoleCode } from '@/libs/constants/rbac.constant';
+import { SocketService } from '../socket/socket.service';
+import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
 
 type RoleWithRelations = Awaited<ReturnType<RolesService['findRoleById']>>;
 type ExistingRoleWithRelations = NonNullable<RoleWithRelations>;
 
 @Injectable()
 export class RolesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly socketService: SocketService,
+  ) {}
 
   async getAllRoles(query: GetAllRolesDto) {
     const { page, perPage, search, isSystem } = query;
@@ -145,6 +150,23 @@ export class RolesService {
       throw new NotFoundException(ROLE_NOT_FOUND);
     }
 
+    if (permissions !== undefined) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { roleId: id },
+        select: { userId: true },
+      });
+      const userIds = userRoles.map((ur) => ur.userId);
+      if (userIds.length > 0) {
+        this.socketService.sendToUsers({
+          userIds,
+          eventName: ESocketEmit.PERMISSIONS_UPDATED,
+          data: {
+            reason: ESocketReason.ROLE_PERMISSIONS_UPDATED,
+          },
+        });
+      }
+    }
+
     return this.toRoleOut(updatedRole);
   }
 
@@ -183,6 +205,21 @@ export class RolesService {
       throw new NotFoundException(ROLE_NOT_FOUND);
     }
 
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { roleId: id },
+      select: { userId: true },
+    });
+    const userIds = userRoles.map((ur) => ur.userId);
+    if (userIds.length > 0) {
+      this.socketService.sendToUsers({
+        userIds,
+        eventName: ESocketEmit.PERMISSIONS_UPDATED,
+        data: {
+          reason: ESocketReason.ROLE_PERMISSIONS_UPDATED,
+        },
+      });
+    }
+
     return this.toRoleOut(updatedRole);
   }
 
@@ -209,7 +246,23 @@ export class RolesService {
       }
     }
 
+    const affectedUserIds = new Set<string>();
+    const prevUsers = await this.prisma.userRole.findMany({
+      where: { roleId },
+      select: { userId: true },
+    });
+    prevUsers.forEach((u) => affectedUserIds.add(u.userId));
+    uniqueUserIds.forEach((id) => affectedUserIds.add(id));
+
     const role = await this.prisma.$transaction(async (tx) => {
+      if (uniqueUserIds.length) {
+        await tx.userRole.deleteMany({
+          where: {
+            userId: { in: uniqueUserIds },
+          },
+        });
+      }
+
       await tx.userRole.deleteMany({
         where: { roleId },
       });
@@ -233,6 +286,16 @@ export class RolesService {
 
     if (!role) {
       throw new NotFoundException(ROLE_NOT_FOUND);
+    }
+
+    if (affectedUserIds.size > 0) {
+      this.socketService.sendToUsers({
+        userIds: Array.from(affectedUserIds),
+        eventName: ESocketEmit.PERMISSIONS_UPDATED,
+        data: {
+          reason: ESocketReason.ROLE_ASSIGNMENTS_UPDATED,
+        },
+      });
     }
 
     return this.toRoleOut(role);

@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy, StrategyOptionsWithoutRequest } from 'passport-jwt';
+import { ExtractJwt, Strategy, StrategyOptionsWithoutRequest, StrategyOptionsWithRequest } from 'passport-jwt';
 import { Request } from 'express';
 import { AUTH_ACCESS_COOKIE } from '../auth.constants';
 import { AuthService } from '../auth.service';
@@ -15,19 +15,34 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
     private readonly authService: AuthService,
     configService: ConfigService,
   ) {
-    const options: StrategyOptionsWithoutRequest = {
+    // const options: StrategyOptionsWithoutRequest = {
+    //   jwtFromRequest: ExtractJwt.fromExtractors([(request: Request) => getCookieValue(request, AUTH_ACCESS_COOKIE) ?? null]),
+    //   secretOrKey: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+    // };
+
+    const options: StrategyOptionsWithRequest = {
       jwtFromRequest: ExtractJwt.fromExtractors([(request: Request) => getCookieValue(request, AUTH_ACCESS_COOKIE) ?? null]),
       secretOrKey: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      passReqToCallback: true,
     };
 
     super(options);
   }
 
-  async validate(payload: JwtAccessPayload) {
+  // async validate(payload: JwtAccessPayload) {
+  //   if (payload.type !== 'access') {
+  //     throw new UnauthorizedException(UNAUTHORIZED);
+  //   }
+
+  //   return this.authService.validateAccessUser(payload.sub);
+  // }
+
+  async validate(request: Request, payload: JwtAccessPayload) {
     if (payload.type !== 'access') {
       throw new UnauthorizedException(UNAUTHORIZED);
     }
 
-    return this.authService.validateAccessUser(payload.sub);
+    const isLogout = request.url.includes('/auth/logout');
+    return this.authService.validateAccessUser(payload.sub, isLogout);
   }
 }

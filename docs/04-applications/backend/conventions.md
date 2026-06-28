@@ -84,3 +84,35 @@ Như đã mô tả trong cấu trúc DB, để tối ưu hóa hiệu năng tìm 
   }
   ```
   *(Truy vấn này sẽ tự động tận dụng Index trigram GIN của PostgreSQL đã khai báo trong Prisma).*
+
+---
+
+## 6. Quy chuẩn WebSocket (WebSocket Gateways)
+
+Khi triển khai các mô-đun kết nối thời gian thực bằng WebSockets, backend phải tuân thủ các quy tắc sau:
+
+### 6.1 Tổ chức thư mục
+Các file liên quan đến WebSocket nằm tại một mô-đun chung:
+```text
+src/modules/socket/
+  socket.gateway.ts       ← Định nghĩa WebSocket Gateway, xử lý connect/disconnect/handshake
+  socket.service.ts       ← Cung cấp helper gửi message từ các module HTTP khác qua socket
+  socket.module.ts        ← Khai báo Provider và xuất bản SocketService
+```
+
+### 6.2 Trách nhiệm của Gateway & Service
+- **`SocketGateway`**:
+  - Lắng nghe kết nối và xử lý xác thực token JWT lúc handshake.
+  - Quản lý Client Connection, đăng ký người dùng vào room `user:<userId>`.
+  - Sử dụng `@WebSocketGateway({ cors: { origin: ... } })` và cấu hình CORS chặt chẽ.
+- **`SocketService`**:
+  - Đóng vai trò là cầu nối (Bridge). Các mô-đun khác (ví dụ: `UsersService`, `RolesService`) tuyệt đối không được inject trực tiếp `SocketGateway` để tránh lỗi phụ thuộc vòng (Circular Dependency).
+  - Các service nghiệp vụ sẽ gọi `SocketService.sendToUser(userId, eventName, data)` hoặc `SocketService.sendToUsers(userIds, eventName, data)`.
+
+### 6.3 Xử lý Ngoại lệ (Exception Handling)
+- Không ném lỗi Http (`HttpException`, `BadRequestException`) trực tiếp trong Gateway vì client socket không nhận được mã lỗi HTTP chuẩn.
+- Bắt buộc dùng `WsException` từ `@nestjs/websockets` để ném lỗi socket:
+  ```typescript
+  throw new WsException(ERROR_CODES.UNAUTHORIZED);
+  ```
+

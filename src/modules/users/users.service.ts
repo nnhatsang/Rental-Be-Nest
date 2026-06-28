@@ -19,13 +19,18 @@ import {
   USER_SELF_PASSWORD_RESET_NOT_ALLOWED,
 } from '@/libs/constants/error.constants';
 import { buildUserSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
+import { SocketService } from '../socket/socket.service';
+import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
 
 type UserWithRoles = Awaited<ReturnType<UsersService['findUserWithRolesById']>>;
 type ExistingUserWithRoles = NonNullable<UserWithRoles>;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly socketService: SocketService,
+  ) {}
 
   async getAllUsers(query: GetAllUsersInDto) {
     const { page, perPage, roleCode, search, status } = query;
@@ -152,6 +157,15 @@ export class UsersService {
       include: this.userRolesInclude(),
     });
 
+    // Push socket
+    this.socketService.sendToUser({
+      userId: id,
+      eventName: ESocketEmit.PERMISSIONS_UPDATED,
+      data: {
+        reason: ESocketReason.USER_ACTIVITY_STATUS_UPDATED,
+        activityStatus: dto.activityStatus,
+      },
+    });
     return this.toUserOut(user);
   }
 
@@ -183,6 +197,15 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(INVALID_USER);
     }
+
+    // Push socket
+    this.socketService.sendToUser({
+      userId: id,
+      eventName: ESocketEmit.PERMISSIONS_UPDATED,
+      data: {
+        reason: ESocketReason.USER_ROLES_UPDATED,
+      },
+    });
 
     return this.toUserOut(user);
   }
@@ -221,6 +244,14 @@ export class UsersService {
       data: {
         deletedAt,
         deletedBy: currentUserId,
+      },
+    });
+    // Phát tín hiệu logout cưỡng bức cho danh sách user bị xóa:
+    this.socketService.sendToUsers({
+      userIds: uniqueIds,
+      eventName: ESocketEmit.PERMISSIONS_UPDATED,
+      data: {
+        reason: ESocketReason.USER_DELETED,
       },
     });
 

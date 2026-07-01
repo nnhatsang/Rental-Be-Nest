@@ -6,11 +6,6 @@ import { INVALID_BOOLEAN, INVALID_STRING, INVALID_UUID } from '@/libs/constants/
 import { ApiPagReq } from '@/libs/types/custom-response.type';
 
 export class GetAllAssetUnitsInDto extends ApiPagReq {
-  @ApiPropertyOptional({ description: 'Search by serial number, product name, SKU, or note' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  search?: string;
-
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })

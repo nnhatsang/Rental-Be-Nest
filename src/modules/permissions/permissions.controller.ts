@@ -17,6 +17,6 @@ export class PermissionsController {
   @ApiOperation({ summary: 'Lay danh sach permission catalog' })
   @ApiOkResponse({ type: PermissionsResponseDto })
   async getAllPermissions(@Query() query: GetAllPermissionsDto) {
-    return new ApiRes(await this.permissionsService.getAllPermissions(query), 'Lay danh sach quyen thanh cong');
+    return new ApiRes(await this.permissionsService.getAllPermissions(query), 'Lấy danh sách quyền thành công');
   }
 }

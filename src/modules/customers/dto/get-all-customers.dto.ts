@@ -5,11 +5,6 @@ import { INVALID_STRING } from '@/libs/constants/invalid.constant';
 import { ApiPagReq } from '@/libs/types/custom-response.type';
 
 export class GetAllCustomersInDto extends ApiPagReq {
-  @ApiPropertyOptional({ description: 'Search by customer code, name, phone, email, or social contact' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  search?: string;
-
   @ApiPropertyOptional({ enum: Object.values(CustomerStatus) })
   @IsIn(Object.values(CustomerStatus))
   @IsOptional()

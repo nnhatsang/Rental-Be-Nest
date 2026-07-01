@@ -6,11 +6,6 @@ import { ApiPagReq } from '@/libs/types/custom-response.type';
 import { INVALID_DATE, INVALID_ENUM, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export class GetAllRentalOrdersDto extends ApiPagReq {
-  @ApiPropertyOptional({ example: 'ORD-000001, customer name, phone, or email' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  search?: string;
-
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })

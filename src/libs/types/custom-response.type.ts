@@ -1,8 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { DEFAULT_PAGE, DEFAULT_PER_PAGE } from '../constants/common.constant';
-import { INVALID_NUMBER } from '../constants/invalid.constant';
+import { INVALID_NUMBER, INVALID_STRING } from '../constants/invalid.constant';
 import { SUCCESS } from '../constants/response.constant';
 
 export class ApiError<T = unknown> {
@@ -107,21 +107,31 @@ export class ApiPaginatedResponseDto<T = unknown> {
 }
 
 export class ApiPagReq {
-  @ApiProperty({ type: Number, required: false, default: DEFAULT_PAGE })
+  @ApiPropertyOptional({ type: Number, required: false, default: DEFAULT_PAGE })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(1)
   @IsOptional()
   page: number = DEFAULT_PAGE;
 
-  @ApiProperty({ type: Number, required: false, default: DEFAULT_PER_PAGE })
+  @ApiPropertyOptional({ type: Number, required: false, default: DEFAULT_PER_PAGE })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(1)
   @IsOptional()
   perPage: number = DEFAULT_PER_PAGE;
 
-  @ApiProperty({ type: Number, required: false })
+  @ApiPropertyOptional({ type: Number, required: false })
   @IsOptional()
   sort?: number;
+
+  @ApiPropertyOptional({ type: String, required: false })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  search?: string;
+
+  @ApiPropertyOptional({ type: String, required: false })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  sortBy?: string;
 }

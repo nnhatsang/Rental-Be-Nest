@@ -5,11 +5,6 @@ import { ApiPagReq } from '@/libs/types/custom-response.type';
 import { INVALID_BOOLEAN, INVALID_STRING } from '@/libs/constants/invalid.constant';
 
 export class GetAllRolesDto extends ApiPagReq {
-  @ApiPropertyOptional({ example: 'admin, staff, orders' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  search?: string;
-
   @ApiPropertyOptional({ example: false })
   @Type(() => Boolean)
   @IsOptional()

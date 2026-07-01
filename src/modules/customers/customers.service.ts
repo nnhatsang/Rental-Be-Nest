@@ -270,6 +270,8 @@ export class CustomersService {
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
       deletedAt: customer.deletedAt,
+      createdBy: customer.createdBy,
+      updatedBy: customer.updatedBy,
     };
   }
 }

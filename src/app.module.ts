@@ -16,7 +16,8 @@ import { RedisModule } from '@liaoliaots/nestjs-redis';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
-import { SocketModule } from './modules/socket/socket.module';
+import { SocketModule } from './libs/socket/socket.module';
+import { RedisWrapperModule } from './libs/redis/redis.module';
 
 @Module({
   imports: [
@@ -34,6 +35,8 @@ import { SocketModule } from './modules/socket/socket.module';
         JWT_REFRESH_SECRET: Joi.string().required(),
         JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
         JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+        AUTH_MAX_LOGIN_FAILURES: Joi.number().default(5),
+        AUTH_PASSWORD_RESET_RATE_LIMIT: Joi.number().default(3),
 
         AUTH_COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
         AUTH_COOKIE_SAME_SITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
@@ -63,7 +66,7 @@ import { SocketModule } from './modules/socket/socket.module';
           config: {
             host: configService.get<string>('REDIS_HOST', 'localhost'),
             port: configService.get<number>('REDIS_PORT', 6379),
-            password: configService.get<string>('REDIS_PASSWORD') || undefined,
+            // password: configService.get<string>('REDIS_PASSWORD') || undefined,
           },
         }),
       },
@@ -82,6 +85,7 @@ import { SocketModule } from './modules/socket/socket.module';
     RolesModule,
     PermissionsModule,
     SocketModule,
+    RedisWrapperModule,
   ],
   controllers: [AppController],
   providers: [AppService],

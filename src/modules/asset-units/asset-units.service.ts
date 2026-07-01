@@ -311,6 +311,8 @@ export class AssetUnitsService {
       createdAt: assetUnit.createdAt,
       updatedAt: assetUnit.updatedAt,
       deletedAt: assetUnit.deletedAt,
+      createdBy: assetUnit.createdBy,
+      updatedBy: assetUnit.updatedBy,
     };
   }
 }

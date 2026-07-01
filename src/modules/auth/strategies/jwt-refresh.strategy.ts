@@ -23,10 +23,15 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
   }
 
   validate(request: Request, payload: JwtRefreshPayload) {
-    if (payload.type !== 'refresh' || !getCookieValue(request, AUTH_REFRESH_COOKIE)) {
+    const refreshToken = getCookieValue(request, AUTH_REFRESH_COOKIE);
+
+    if (payload.type !== 'refresh' || !payload.sid || !refreshToken) {
       throw new UnauthorizedException(UNAUTHORIZED);
     }
 
-    return payload;
+    return {
+      ...payload,
+      refreshToken,
+    };
   }
 }

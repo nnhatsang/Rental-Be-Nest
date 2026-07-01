@@ -39,4 +39,11 @@ export class UserOutDto {
 
   @ApiProperty({ type: Date, format: 'date-time', nullable: true })
   deletedAt!: Date | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  createdBy!: string | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  updatedBy!: string | null;
+
 }

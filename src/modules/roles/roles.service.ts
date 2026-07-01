@@ -16,7 +16,7 @@ import {
   ROLE_USER_INVALID,
 } from '@/libs/constants/error.constants';
 import { RoleCode } from '@/libs/constants/rbac.constant';
-import { SocketService } from '../socket/socket.service';
+import { SocketService } from '@/libs/socket/socket.service';
 import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
 
 type RoleWithRelations = Awaited<ReturnType<RolesService['findRoleById']>>;

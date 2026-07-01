@@ -1,3 +1,4 @@
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -10,6 +11,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import {
   AuthCookiePayload,
+  AuthSession,
   AuthUser,
   JwtAccessPayload,
   JwtRefreshPayload,
@@ -33,6 +35,9 @@ import { buildUserSearchText } from '@/libs/utils/search-text.util';
 import { User } from '@generated/prisma/browser';
 import { MailService } from '@modules/mail/mail.service';
 import { PasswordResetTokenService } from './services/password-reset-token.service';
+import { RedisService } from '@/libs/redis/redis.service';
+import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
+import { REDIS_EXPIRE } from '@/libs/redis/constant/prefix.constant';
 
 type UserWithAuth = User & {
   roles: {
@@ -57,11 +62,12 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
     private readonly passwordResetTokenService: PasswordResetTokenService,
+    private readonly redis: RedisService,
   ) {}
 
   async login(dto: LoginDto): Promise<LoginResult> {
     const user = await this.validateLoginCredentials(dto.email, dto.password);
-    const cookies = await this.createCookiePayload(user.id, user.email);
+    const cookies = await this.createLoginSession(user.id, user.email, dto);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -69,23 +75,33 @@ export class AuthService {
     });
 
     return {
-      user: this.toAuthUser(user),
+      user: this.toAuthUser(user, cookies.sessionId),
       cookies,
     };
   }
 
   async refresh(refreshUser: RefreshRequestUser): Promise<RefreshResult> {
+    const session = await this.validateRefreshSession(refreshUser);
     const user = await this.validateRefreshUser(refreshUser);
-    const cookies = await this.createCookiePayload(user.id, user.email);
+    const cookies = await this.rotateRefreshSession(user.id, user.email, session);
 
     return {
-      user: this.toAuthUser(user),
+      user: this.toAuthUser(user, session.sessionId),
       cookies,
     };
   }
 
-  logout(): void {}
-  async validateAccessUser(userId: string, isLogout = false): Promise<AuthUser> {
+  async logout(user: AuthUser): Promise<void> {
+    await this.revokeSession(user.id, user.sessionId);
+  }
+
+  async validateAccessUser(userId: string, sessionId: string, isLogout = false): Promise<AuthUser> {
+    const session = await this.getAuthSession(sessionId);
+
+    if (!session || session.userId !== userId) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
     const user = await this.findAuthUserById(userId);
     if (!user || user.deletedAt) {
       throw new UnauthorizedException(INVALID_SESSION);
@@ -93,7 +109,7 @@ export class AuthService {
     if (!isLogout) {
       this.assertUserCanLogin(user.activityStatus);
     }
-    return this.toAuthUser(user);
+    return this.toAuthUser(user, sessionId);
   }
 
   getMe(user: AuthUser): AuthUser {
@@ -103,22 +119,15 @@ export class AuthService {
   async updateMe(currentUser: AuthUser, dto: UpdateMeDto): Promise<AuthUser> {
     const { fullName, phone } = dto;
     const existingUser = await this.findExistingAuthUserById(currentUser.id);
-    // const nextEmail = dto.email ?? existingUser.email;
     const nextFullName = fullName ?? existingUser.fullName;
     const nextPhone = phone ?? existingUser.phone;
-
-    // if (dto.email) {
-    //   await this.ensureEmailAvailable(dto.email, currentUser.id);
-    // }
 
     const user = await this.prisma.user.update({
       where: { id: currentUser.id },
       data: {
-        // email: dto.email,
         fullName: nextFullName,
         phone: nextPhone,
         searchText: buildUserSearchText({
-          // email: nextEmail,
           fullName: nextFullName,
           phone: nextPhone,
         }),
@@ -126,7 +135,7 @@ export class AuthService {
       include: this.userAuthInclude(),
     });
 
-    return this.toAuthUser(user);
+    return this.toAuthUser(user, currentUser.sessionId);
   }
 
   async changePassword(currentUser: AuthUser, dto: ChangePasswordDto): Promise<{ success: true }> {
@@ -158,12 +167,22 @@ export class AuthService {
       data: { passwordHash },
     });
 
+    await this.revokeAllUserSessions(currentUser.id);
+
     return { success: true };
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ success: true }> {
+    const normalizedEmail = dto.email.toLowerCase().trim();
+    const canRequestReset = await this.checkPasswordResetRateLimit(normalizedEmail);
+
+    if (!canRequestReset) {
+      this.logger.warn(`Password reset request rate-limited for email ${normalizedEmail}`);
+      return { success: true };
+    }
+
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email: normalizedEmail },
       select: {
         id: true,
         email: true,
@@ -223,7 +242,7 @@ export class AuthService {
       data: { passwordHash },
     });
 
-    await this.passwordResetTokenService.consume(resetToken);
+    await Promise.all([this.passwordResetTokenService.consume(resetToken), this.revokeAllUserSessions(user.id)]);
 
     return { success: true };
   }
@@ -243,24 +262,44 @@ export class AuthService {
   }
 
   private async validateLoginCredentials(email: string, password: string): Promise<UserWithAuth> {
+    const normalizedEmail = email.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
       include: this.userAuthInclude(),
     });
 
     if (!user || user.deletedAt) {
+      await this.recordUnknownLoginFailure(normalizedEmail);
       throw new HttpException(USER_NOT_FOUND, HttpStatus.NOT_FOUND);
     }
 
     this.assertUserCanLogin(user.activityStatus);
+    await this.assertUserNotTemporarilyLocked(user.id);
 
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!passwordValid) {
+      await this.recordUserLoginFailure(user.id, normalizedEmail);
       throw new BadRequestException(PASSWORD_NOT_MATCH);
     }
 
+    await this.clearLoginFailureCounters(user.id, normalizedEmail);
+
     return user;
+  }
+
+  private async validateRefreshSession(refreshUser: RefreshRequestUser): Promise<AuthSession> {
+    const session = await this.getAuthSession(refreshUser.sid);
+
+    if (!session || session.userId !== refreshUser.sub) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
+    if (!this.isRefreshTokenHashValid(refreshUser.refreshToken, session.refreshTokenHash)) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
+    return session;
   }
 
   private async validateRefreshUser(refreshUser: RefreshRequestUser): Promise<UserWithAuth> {
@@ -275,14 +314,113 @@ export class AuthService {
     return user;
   }
 
-  private async createCookiePayload(userId: string, email: string): Promise<AuthCookiePayload> {
-    const tokens = await this.issueTokens(userId, email);
+  private async createLoginSession(userId: string, email: string, dto: LoginDto): Promise<AuthCookiePayload> {
+    const sessionId = randomUUID();
+    const cookies = await this.createCookiePayload(userId, email, sessionId);
+    const session = this.buildAuthSession({
+      sessionId,
+      userId,
+      refreshToken: cookies.refreshToken,
+      ipAddress: dto.ipAddress,
+      userAgent: dto.userAgent,
+      deviceId: dto.deviceId,
+      fcmToken: dto.fcmToken,
+    });
+
+    await this.saveAuthSession(session);
+
+    return {
+      ...cookies,
+      sessionId,
+    };
+  }
+
+  private async rotateRefreshSession(userId: string, email: string, session: AuthSession): Promise<AuthCookiePayload> {
+    const cookies = await this.createCookiePayload(userId, email, session.sessionId);
+    const nextSession = this.buildAuthSession({
+      ...session,
+      refreshToken: cookies.refreshToken,
+      lastUsedAt: new Date(),
+    });
+
+    await this.saveAuthSession(nextSession);
+
+    return {
+      ...cookies,
+      sessionId: session.sessionId,
+    };
+  }
+
+  private async createCookiePayload(userId: string, email: string, sessionId: string): Promise<Omit<AuthCookiePayload, 'sessionId'>> {
+    const tokens = await this.issueTokens(userId, email, sessionId);
 
     return {
       ...tokens,
       accessMaxAge: this.getAccessMaxAge(),
       refreshMaxAge: this.getRefreshMaxAge(),
     };
+  }
+
+  private buildAuthSession(input: {
+    sessionId: string;
+    userId: string;
+    refreshToken: string;
+    createdAt?: string;
+    lastUsedAt?: string | Date;
+    ipAddress?: string;
+    userAgent?: string;
+    deviceId?: string;
+    fcmToken?: string;
+  }): AuthSession {
+    const now = new Date();
+    const createdAt = input.createdAt ?? now.toISOString();
+    const lastUsedAt =
+      input.lastUsedAt instanceof Date ? input.lastUsedAt.toISOString() : input.lastUsedAt ?? now.toISOString();
+    const expiresAt = new Date(now.getTime() + this.getRefreshMaxAge()).toISOString();
+
+    return {
+      sessionId: input.sessionId,
+      userId: input.userId,
+      refreshTokenHash: this.hashRefreshToken(input.refreshToken),
+      createdAt,
+      lastUsedAt,
+      expiresAt,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      deviceId: input.deviceId,
+      fcmToken: input.fcmToken,
+    };
+  }
+
+  private async saveAuthSession(session: AuthSession): Promise<void> {
+    const ttlSeconds = this.getRefreshTTLSeconds();
+    const sessionKey = REDIS_KEYS.auth.session(session.sessionId);
+    const userSessionsKey = REDIS_KEYS.auth.userSessions(session.userId);
+
+    await Promise.all([
+      this.redis.setJson(sessionKey, session, ttlSeconds),
+      this.redis.sadd(userSessionsKey, session.sessionId),
+      this.redis.expire(userSessionsKey, ttlSeconds),
+    ]);
+  }
+
+  private async getAuthSession(sessionId: string): Promise<AuthSession | null> {
+    return this.redis.getJson<AuthSession>(REDIS_KEYS.auth.session(sessionId));
+  }
+
+  private async revokeSession(userId: string, sessionId: string): Promise<void> {
+    await Promise.all([
+      this.redis.del(REDIS_KEYS.auth.session(sessionId)),
+      this.redis.srem(REDIS_KEYS.auth.userSessions(userId), sessionId),
+    ]);
+  }
+
+  private async revokeAllUserSessions(userId: string): Promise<void> {
+    const userSessionsKey = REDIS_KEYS.auth.userSessions(userId);
+    const sessionIds = await this.redis.smembers(userSessionsKey);
+    const sessionKeys = sessionIds.map((sessionId) => REDIS_KEYS.auth.session(sessionId));
+
+    await this.redis.del(...sessionKeys, userSessionsKey);
   }
 
   private async findAuthUserById(userId: string): Promise<UserWithAuth | null> {
@@ -315,14 +453,16 @@ export class AuthService {
     }
   }
 
-  private async issueTokens(userId: string, email: string) {
+  private async issueTokens(userId: string, email: string, sessionId: string) {
     const accessPayload: JwtAccessPayload = {
       sub: userId,
       email,
+      sid: sessionId,
       type: 'access',
     };
     const refreshPayload: JwtRefreshPayload = {
       sub: userId,
+      sid: sessionId,
       type: 'refresh',
     };
 
@@ -343,6 +483,24 @@ export class AuthService {
     };
   }
 
+  private hashRefreshToken(refreshToken: string): string {
+    return createHmac('sha256', this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'))
+      .update(refreshToken)
+      .digest('hex');
+  }
+
+  private isRefreshTokenHashValid(refreshToken: string, expectedHash: string): boolean {
+    const actualHash = this.hashRefreshToken(refreshToken);
+    const actual = Buffer.from(actualHash, 'hex');
+    const expected = Buffer.from(expectedHash, 'hex');
+
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  }
+
+  private getRefreshTTLSeconds(): number {
+    return Math.ceil(this.getRefreshMaxAge() / 1000);
+  }
+
   private buildPasswordResetUrl(token: string): string {
     const adminOrigin = this.configService.get<string>('ADMIN_WEB_ORIGIN', 'http://localhost:3001').replace(/\/$/, '');
     return `${adminOrigin}/auth/reset-password?token=${encodeURIComponent(token)}`;
@@ -357,18 +515,79 @@ export class AuthService {
     throw new UnauthorizedException(error ?? INVALID_SESSION);
   }
 
-  private toAuthUser(user: UserWithAuth): AuthUser {
+  private async assertUserNotTemporarilyLocked(userId: string): Promise<void> {
+    const isLocked = await this.redis.exists(REDIS_KEYS.auth.userLock(userId));
+
+    if (isLocked) {
+      throw new UnauthorizedException(USER_ACTIVITY_ERRORS[EUserActivityStatus.Locked]);
+    }
+  }
+
+  private async recordUnknownLoginFailure(normalizedEmail: string): Promise<void> {
+    await this.redis.incrWithTTL(REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail), REDIS_EXPIRE.LOGIN_ATTEMPT);
+  }
+
+  private async checkPasswordResetRateLimit(normalizedEmail: string): Promise<boolean> {
+    const requests = await this.redis.incrWithTTL(
+      REDIS_KEYS.auth.resetPasswordRateLimit(normalizedEmail),
+      REDIS_EXPIRE.RESET_PASSWORD_RATE_LIMIT,
+    );
+
+    return requests <= this.getPasswordResetRateLimit();
+  }
+
+  private async recordUserLoginFailure(userId: string, normalizedEmail: string): Promise<void> {
+    const maxFailures = this.getMaxLoginFailures();
+    const [userFailures] = await Promise.all([
+      this.redis.incrWithTTL(REDIS_KEYS.auth.loginAttemptUser(userId), REDIS_EXPIRE.LOGIN_ATTEMPT),
+      this.redis.incrWithTTL(REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail), REDIS_EXPIRE.LOGIN_ATTEMPT),
+    ]);
+
+    if (userFailures < maxFailures) {
+      return;
+    }
+
+    await Promise.all([
+      this.redis.set(REDIS_KEYS.auth.userLock(userId), '1', REDIS_EXPIRE.AUTH_LOCK),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { activityStatus: EUserActivityStatus.Locked },
+      }),
+    ]);
+  }
+
+  private async clearLoginFailureCounters(userId: string, normalizedEmail: string): Promise<void> {
+    await this.redis.del(REDIS_KEYS.auth.loginAttemptUser(userId), REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail));
+  }
+
+  private getMaxLoginFailures(): number {
+    return this.configService.get<number>('AUTH_MAX_LOGIN_FAILURES', 5);
+  }
+
+  private getPasswordResetRateLimit(): number {
+    return this.configService.get<number>('AUTH_PASSWORD_RESET_RATE_LIMIT', 3);
+  }
+
+  private toAuthUser(user: UserWithAuth, sessionId: string): AuthUser {
     const roles = user.roles.map(({ role }) => role.code);
     const permissions = [...new Set(user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.code)))];
 
-    return {
+    const authUser = {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       phone: user.phone,
       roles,
       permissions,
-    };
+    } as AuthUser;
+
+    Object.defineProperty(authUser, 'sessionId', {
+      value: sessionId,
+      enumerable: false,
+      writable: false,
+    });
+
+    return authUser;
   }
 
   private userAuthInclude() {

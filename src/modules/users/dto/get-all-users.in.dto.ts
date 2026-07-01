@@ -20,6 +20,11 @@ export class GetAllUsersInDto extends ApiPagReq {
   @IsString()
   @IsOptional()
   roleCode?: string;
+
+  @ApiPropertyOptional({ enum: Object.values(RoleCode), description: 'Loại trừ users đang có role này' })
+  @IsString()
+  @IsOptional()
+  excludeRoleCode?: string;
 }
 
 export class GetListUsersByIdInDto {

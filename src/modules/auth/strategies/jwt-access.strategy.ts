@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy, StrategyOptionsWithoutRequest, StrategyOptionsWithRequest } from 'passport-jwt';
+import { ExtractJwt, Strategy, StrategyOptionsWithRequest } from 'passport-jwt';
 import { Request } from 'express';
 import { AUTH_ACCESS_COOKIE } from '../auth.constants';
 import { AuthService } from '../auth.service';
@@ -38,11 +38,11 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
   // }
 
   async validate(request: Request, payload: JwtAccessPayload) {
-    if (payload.type !== 'access') {
+    if (payload.type !== 'access' || !payload.sid) {
       throw new UnauthorizedException(UNAUTHORIZED);
     }
 
     const isLogout = request.url.includes('/auth/logout');
-    return this.authService.validateAccessUser(payload.sub, isLogout);
+    return this.authService.validateAccessUser(payload.sub, payload.sid, isLogout);
   }
 }

@@ -30,9 +30,10 @@ graph TD
 ### 1. Backend Developer (NestJS / Prisma)
 Nếu bạn là lập trình viên backend hoặc cần tìm hiểu cách cơ sở dữ liệu và API vận hành:
 1. **Tổng quan DB**: Đọc [database-schema.md](file:///d:/Admin%20Rental/rental-admin-be/docs/02-architecture/database-schema.md) để nắm cấu trúc bảng PostgreSQL và Prisma.
-2. **Quy chuẩn lập trình**: Đọc [conventions.md](file:///d:/Admin%20Rental/rental-admin-be/docs/04-applications/backend/conventions.md) để biết cách viết Service, Controller, DTO và accent-insensitive search.
-3. **Danh sách API**: Tra cứu tại [endpoints.md](file:///d:/Admin%20Rental/rental-admin-be/docs/04-applications/backend/endpoints.md).
-4. **Quy tắc Nghiệp vụ**: Đọc [status-flow-rules.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/rental-orders/status-flow-rules.md) (luồng đơn thuê) và [availability-rules.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/availability/availability-rules.md) (luật kiểm tra trùng lịch thiết bị).
+2. **Redis/cache/lock**: Đọc [redis-usage-plan.md](file:///d:/Admin%20Rental/rental-admin-be/docs/02-architecture/redis-usage-plan.md) để nắm Redis key pattern, cache, rate-limit, distributed lock và realtime event.
+3. **Quy chuẩn lập trình**: Đọc [conventions.md](file:///d:/Admin%20Rental/rental-admin-be/docs/04-applications/backend/conventions.md) để biết cách viết Service, Controller, DTO và accent-insensitive search.
+4. **Danh sách API**: Tra cứu tại [endpoints.md](file:///d:/Admin%20Rental/rental-admin-be/docs/04-applications/backend/endpoints.md).
+5. **Quy tắc Nghiệp vụ**: Đọc [status-flow-rules.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/rental-orders/status-flow-rules.md) (luồng đơn thuê) và [availability-rules.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/availability/availability-rules.md) (luật kiểm tra trùng lịch thiết bị).
 
 ### 2. Frontend Developer (Next.js App Router)
 Nếu bạn chịu trách nhiệm xây dựng giao diện Admin Dashboard và các flow xử lý:

@@ -8,24 +8,20 @@ export class SocketService {
 
   constructor(private readonly socketGateway: SocketGateway) {}
 
-  /**
-   * Gửi sự kiện thời gian thực tới một người dùng cụ thể (tất cả các socket connection của họ)
-   */
   sendToUser(payload: IEmitToUserIdDto): void {
-    if (!this.socketGateway.server) {
-      this.logger.warn(`Không thể gửi sự kiện socket: Socket.io server chưa khởi động.`);
+    const server = this.socketGateway.getServer();
+
+    if (!server) {
+      this.logger.warn('Cannot emit socket event: Socket.io server has not started.');
       return;
     }
 
     const { userId, eventName, data } = payload;
     const roomName = `user:${userId}`;
-    this.socketGateway.server.to(roomName).emit(eventName, data);
-    this.logger.log(`Đã gửi sự kiện "${eventName}" tới phòng: ${roomName}`);
+    server.to(roomName).emit(eventName, data);
+    this.logger.log(`Emitted "${eventName}" to room: ${roomName}`);
   }
 
-  /**
-   * Gửi sự kiện thời gian thực tới danh sách nhiều người dùng
-   */
   sendToUsers(payload: IEmitToListUserIdDto): void {
     const { userIds, eventName, data } = payload;
     userIds.forEach((userId) => {

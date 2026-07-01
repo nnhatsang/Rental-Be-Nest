@@ -19,7 +19,7 @@ import {
   USER_SELF_PASSWORD_RESET_NOT_ALLOWED,
 } from '@/libs/constants/error.constants';
 import { buildUserSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
-import { SocketService } from '../socket/socket.service';
+import { SocketService } from '@/libs/socket/socket.service';
 import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
 
 type UserWithRoles = Awaited<ReturnType<UsersService['findUserWithRolesById']>>;
@@ -33,7 +33,7 @@ export class UsersService {
   ) {}
 
   async getAllUsers(query: GetAllUsersInDto) {
-    const { page, perPage, roleCode, search, status } = query;
+    const { page, perPage, roleCode, excludeRoleCode, search, status } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
     const where = {
@@ -49,9 +49,14 @@ export class UsersService {
       ...(roleCode && {
         roles: {
           some: {
-            role: {
-              code: roleCode,
-            },
+            role: { code: roleCode },
+          },
+        },
+      }),
+      ...(excludeRoleCode && {
+        roles: {
+          none: {
+            role: { code: excludeRoleCode },
           },
         },
       }),
@@ -339,6 +344,8 @@ export class UsersService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       deletedAt: user.deletedAt,
+      createdBy: user.createdBy,
+      updatedBy: user.updatedBy,
     };
   }
 

@@ -410,6 +410,8 @@ export class ProductsService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       deletedAt: product.deletedAt,
+      createdBy: product.createdBy,
+      updatedBy: product.updatedBy,
     };
   }
 }

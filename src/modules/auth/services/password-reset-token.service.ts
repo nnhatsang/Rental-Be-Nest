@@ -1,9 +1,10 @@
 import { createHmac, randomBytes } from 'crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RedisService } from '@liaoliaots/nestjs-redis';
-import type { Redis } from 'ioredis';
+
 import { PASSWORD_RESET_TOKEN_INVALID } from '@/libs/constants/error.constants';
+import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
+import { RedisService } from '@/libs/redis/redis.service';
 
 type PasswordResetPayload = {
   userId: string;
@@ -16,22 +17,29 @@ export type VerifiedPasswordResetToken = PasswordResetPayload & {
 @Injectable()
 export class PasswordResetTokenService {
   constructor(
-    private readonly redisService: RedisService,
+    private readonly redis: RedisService,
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Tạo token reset password cho user.
+   * Nếu user đã có token cũ → tự động xóa trước khi tạo mới.
+   * Trả về raw token (gửi qua email), không lưu raw token vào Redis.
+   */
   async createForUser(userId: string): Promise<string> {
     const rawToken = this.generateToken();
     const tokenHash = this.hashToken(rawToken);
     const ttlSeconds = this.getExpiresInSeconds();
-    const redis = this.getRedisClient();
-    const tokenKey = this.getTokenKey(tokenHash);
-    const userKey = this.getUserKey(userId);
-    const existingTokenHash = await redis.get(userKey);
-    const pipeline = redis.multi();
+
+    const tokenKey = REDIS_KEYS.auth.passwordResetToken(tokenHash);
+    const userKey = REDIS_KEYS.auth.passwordResetUser(userId);
+
+    // Xóa token cũ nếu tồn tại để tránh rác trong Redis
+    const existingTokenHash = await this.redis.get(userKey);
+    const pipeline = this.redis.pipeline();
 
     if (existingTokenHash) {
-      pipeline.del(this.getTokenKey(existingTokenHash));
+      pipeline.del(REDIS_KEYS.auth.passwordResetToken(existingTokenHash));
     }
 
     pipeline.set(tokenKey, JSON.stringify({ userId } satisfies PasswordResetPayload), 'EX', ttlSeconds);
@@ -41,35 +49,42 @@ export class PasswordResetTokenService {
     return rawToken;
   }
 
+  /**
+   * Xác minh token còn hiệu lực và khớp với userId.
+   * Trả về payload + tokenHash để dùng trong bước consume.
+   */
   async verify(token: string): Promise<VerifiedPasswordResetToken> {
     const tokenHash = this.hashToken(token);
-    const redis = this.getRedisClient();
-    const tokenKey = this.getTokenKey(tokenHash);
-    const rawPayload = await redis.get(tokenKey);
+    const tokenKey = REDIS_KEYS.auth.passwordResetToken(tokenHash);
+    const rawPayload = await this.redis.get(tokenKey);
 
     if (!rawPayload) {
       throw new BadRequestException(PASSWORD_RESET_TOKEN_INVALID);
     }
 
     const payload = this.parsePayload(rawPayload);
-    const activeTokenHash = await redis.get(this.getUserKey(payload.userId));
+    const activeTokenHash = await this.redis.get(REDIS_KEYS.auth.passwordResetUser(payload.userId));
 
+    // Token đã bị thay thế bởi token mới hơn của cùng user
     if (activeTokenHash !== tokenHash) {
-      await redis.del(tokenKey);
+      await this.redis.del(tokenKey);
       throw new BadRequestException(PASSWORD_RESET_TOKEN_INVALID);
     }
 
     return { ...payload, tokenHash };
   }
 
+  /**
+   * Xóa token sau khi đã dùng để đặt lại mật khẩu thành công.
+   */
   async consume(token: VerifiedPasswordResetToken): Promise<void> {
-    const redis = this.getRedisClient();
-    await redis.del(this.getTokenKey(token.tokenHash), this.getUserKey(token.userId));
+    await this.redis.del(
+      REDIS_KEYS.auth.passwordResetToken(token.tokenHash),
+      REDIS_KEYS.auth.passwordResetUser(token.userId),
+    );
   }
 
-  private getRedisClient(): Redis {
-    return this.redisService.getOrThrow();
-  }
+  // ─── Private helpers ──────────────────────────────────────────────────────
 
   private getExpiresInSeconds(): number {
     return this.configService.get<number>('RESET_PASSWORD_EXPIRES_IN_SECONDS', 1800);
@@ -80,15 +95,9 @@ export class PasswordResetTokenService {
   }
 
   private hashToken(token: string): string {
-    return createHmac('sha256', this.configService.getOrThrow<string>('RESET_PASSWORD_SECRET')).update(token).digest('hex');
-  }
-
-  private getTokenKey(tokenHash: string): string {
-    return `auth:password-reset:token:${tokenHash}`;
-  }
-
-  private getUserKey(userId: string): string {
-    return `auth:password-reset:user:${userId}`;
+    return createHmac('sha256', this.configService.getOrThrow<string>('RESET_PASSWORD_SECRET'))
+      .update(token)
+      .digest('hex');
   }
 
   private parsePayload(rawPayload: string): PasswordResetPayload {

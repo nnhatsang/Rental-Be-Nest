@@ -1,10 +1,13 @@
+
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
-import { AUTH_ACCESS_COOKIE } from '../auth/auth.constants';
-import { JwtAccessPayload } from '../auth/types/auth-user.type';
+import { AUTH_ACCESS_COOKIE } from '@modules/auth/auth.constants';
+import { AuthSession, JwtAccessPayload } from '@modules/auth/types/auth-user.type';
+import { RedisService } from '@/libs/redis/redis.service';
+import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
 
 @WebSocketGateway({
   cors: {
@@ -13,15 +16,19 @@ import { JwtAccessPayload } from '../auth/types/auth-user.type';
   },
 })
 export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer()
-  server: Server;
+  @WebSocketServer() server!: Server;
 
   private readonly logger = new Logger(SocketGateway.name);
 
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly redis: RedisService,
   ) {}
+
+  getServer(): Server | undefined {
+    return this.server;
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -53,8 +60,15 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret,
       });
 
-      if (!payload || payload.type !== 'access') {
+      if (!payload || payload.type !== 'access' || !payload.sid) {
         this.logger.warn(`Kết nối bị từ chối: Token không hợp lệ hoặc sai loại (type).`);
+        client.disconnect(true);
+        return;
+      }
+
+      const session = await this.redis.getJson<AuthSession>(REDIS_KEYS.auth.session(payload.sid));
+      if (!session || session.userId !== payload.sub) {
+        this.logger.warn(`Kết nối bị từ chối: Phiên đăng nhập không hợp lệ.`);
         client.disconnect(true);
         return;
       }
@@ -68,7 +82,7 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       this.logger.log(`Client kết nối thành công: ${client.id} (User: ${userId})`);
     } catch (err) {
-      this.logger.error(`Lỗi trong quá trình handshake connection: ${err.message}`);
+      this.logger.error(`Lỗi trong quá trình handshake connection: ${err}`);
       client.disconnect(true);
     }
   }

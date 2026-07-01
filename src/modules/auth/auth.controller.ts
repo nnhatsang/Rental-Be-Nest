@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
@@ -17,6 +17,7 @@ import { clearAuthCookies, setAuthCookies } from './utils/cookie.util';
 import { ConfigService } from '@nestjs/config';
 import { LoginResponseDto, MeResponseDto, SuccessResponseDto } from './dto/auth-response.dto';
 import { SUCCESS } from '@/libs/constants/response.constant';
+import { getIp } from '@/libs/utils/ip.utils';
 
 @ApiTags('admin/auth')
 @Controller('admin/auth')
@@ -50,7 +51,10 @@ export class AuthController {
     description: 'Đăng nhập thành công và gán auth cookies.',
     type: LoginResponseDto,
   })
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response): Promise<ApiRes> {
+  async login(@Body() dto: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<ApiRes> {
+    dto.userAgent = dto.userAgent || request.headers['user-agent']?.toString() || '';
+    dto.ipAddress = getIp(request) || dto.ipAddress;
+
     const result = await this.authService.login(dto);
     setAuthCookies(response, this.configService, result.cookies);
 
@@ -128,8 +132,8 @@ export class AuthController {
     description: 'Đăng xuất thành công.',
     type: SuccessResponseDto,
   })
-  async logout(@Res({ passthrough: true }) response: Response): Promise<ApiNullableRes> {
-    this.authService.logout();
+  async logout(@CurrentUser() user: AuthUser, @Res({ passthrough: true }) response: Response): Promise<ApiNullableRes> {
+    await this.authService.logout(user);
     clearAuthCookies(response, this.configService);
 
     return new ApiNullableRes({ success: true }, 'Đăng xuất thành công');

@@ -351,7 +351,41 @@ Ghi chu:
 - Redis chi luu hash refresh token, khong luu raw token.
 - Nhieu thiet bi duoc dang nhap cung luc; moi thiet bi co session rieng.
 
-### 8.4 Confirm rental order
+### 8.4 RBAC permission cache
+
+Trang thai: de phase sau, chua nen bat ngay neu chua co invalidate day du.
+
+Hien tai `validateAccessUser` nen tiep tuc doc roles/permissions tu DB de dam bao quyen la source of truth moi nhat. Redis chi dang dung cho auth session, refresh token hash, login counter va rate limit.
+
+Khi can toi uu RBAC, co the cache:
+
+```ts
+REDIS_KEYS.rbac.userPermissions(userId)
+REDIS_KEYS.rbac.rolePermissions(roleId)
+```
+
+Payload de xuat:
+
+```json
+{
+  "userId": "uuid",
+  "roles": ["ADMIN"],
+  "permissions": ["orders.read", "orders.create"],
+  "cachedAt": "2026-07-02T00:00:00.000Z"
+}
+```
+
+Yeu cau truoc khi bat cache:
+
+1. Invalidate `rbac:user-permissions:<userId>` khi gan/xoa role cua user.
+2. Invalidate user permission cache cua tat ca user thuoc role khi role permission thay doi.
+3. Invalidate khi user bi `BANNED`, `LOCKED`, `INACTIVE` hoac bi xoa.
+4. TTL ngan, de xuat 5-15 phut.
+5. DB van la source of truth khi cache miss.
+
+Rui ro can tranh: permission cache stale lam user tiep tuc dung quyen cu sau khi admin da thu hoi quyen.
+
+### 8.5 Confirm rental order
 
 Flow de xuat:
 
@@ -364,7 +398,7 @@ Flow de xuat:
 
 Redis lock khong thay the DB transaction. No chi giam rui ro 2 request cung chay qua check cung luc.
 
-### 8.5 Assign asset unit
+### 8.6 Assign asset unit
 
 Flow de xuat:
 
@@ -377,7 +411,7 @@ Flow de xuat:
 7. Publish event `events:rental-order`.
 8. Release lock.
 
-### 8.6 Dashboard metrics
+### 8.7 Dashboard metrics
 
 Flow de xuat:
 
@@ -386,7 +420,7 @@ Flow de xuat:
 3. Khi order/product/asset unit thay doi, xoa cac key dashboard lien quan.
 4. Neu co socket, publish `events:dashboard` de frontend reload data.
 
-### 8.7 Realtime dashboard/socket
+### 8.8 Realtime dashboard/socket
 
 Khi can realtime:
 

@@ -19,7 +19,7 @@ export class AssetUnitsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAllAssetUnits(query: GetAllAssetUnitsInDto) {
-    const { page, perPage, condition, isActive, productId, search, status } = query;
+    const { page, perPage, condition, isActive, productId, search, status, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
 
@@ -41,9 +41,7 @@ export class AssetUnitsService {
         where,
         skip,
         take: perPage,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
         include: this.assetUnitInclude(),
       }),
       this.prisma.assetUnit.count({ where }),

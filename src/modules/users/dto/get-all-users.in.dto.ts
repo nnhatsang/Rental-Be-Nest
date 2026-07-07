@@ -5,6 +5,13 @@ import { ApiPagReq } from '@/libs/types/custom-response.type';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
 
+export enum UserSortBy {
+  CREATED_AT = 'createdAt',
+  FULL_NAME = 'fullName',
+  EMAIL = 'email',
+  ACTIVITY_STATUS = 'activityStatus',
+}
+
 export class GetAllUsersInDto extends ApiPagReq {
   @ApiPropertyOptional({ enum: Object.values(EUserActivityStatus) })
   @IsIn(Object.values(EUserActivityStatus))
@@ -20,6 +27,14 @@ export class GetAllUsersInDto extends ApiPagReq {
   @IsString()
   @IsOptional()
   excludeRoleCode?: string;
+
+  @ApiPropertyOptional({
+    enum: UserSortBy,
+    default: UserSortBy.CREATED_AT,
+  })
+  @IsEnum(UserSortBy)
+  @IsOptional()
+  sortBy: UserSortBy = UserSortBy.CREATED_AT;
 }
 
 export class GetListUsersByIdInDto {

@@ -1,118 +1,392 @@
 # Quy chuẩn phát triển Backend (NestJS Conventions)
 
-> Tài liệu hướng dẫn lập trình, tổ chức thư mục, và các nguyên tắc phát triển code ở phía Backend NestJS.
+> Tài liệu hướng dẫn tổ chức module, DTO, service, auth/session, Redis, Prisma và các nguyên tắc phát triển backend NestJS cho Rental Admin.
 
 ---
 
-## 1. Cấu trúc Mô-đun (Module Structure)
+## 1. Cấu trúc module
 
-Mỗi mô-đun nghiệp vụ (Business Module) phải được đặt trong thư mục `src/modules/<resource_plural>/` (tên thư mục ở số nhiều) và tuân thủ cấu trúc phân cấp sau:
+Mỗi module nghiệp vụ đặt trong `src/modules/<resource_plural>/` và tuân thủ cấu trúc cơ bản:
 
 ```text
 src/modules/<resource>/
   dto/
-    create-<resource>.dto.ts      ← DTO nhận dữ liệu đầu vào khi tạo mới
-    update-<resource>.dto.ts      ← DTO nhận dữ liệu đầu vào khi cập nhật
-    <resource>-out.dto.ts         ← DTO định nghĩa cấu trúc dữ liệu thô xuất ra
-    <resource>-response.dto.ts    ← DTO wrapper chứa ApiRes định dạng trả về Swagger
-  <resource>.controller.ts        ← Xử lý luồng HTTP và request/response
-  <resource>.service.ts           ← Xử lý logic nghiệp vụ và truy vấn DB
-  <resource>.module.ts            ← Khai báo NestJS Module và các dependency injection
+    create-<resource>.dto.ts
+    update-<resource>.dto.ts
+    <resource>-out.dto.ts
+    <resource>-response.dto.ts
+  <resource>.controller.ts
+  <resource>.service.ts
+  <resource>.module.ts
+```
+
+Quy ước:
+
+- Controller xử lý HTTP, guard, Swagger, cookie, request/response mapping.
+- Service xử lý nghiệp vụ, Prisma query, Redis/session/cache và transaction.
+- DTO không chứa logic nghiệp vụ.
+- Không gọi Prisma trực tiếp từ controller.
+
+---
+
+## 2. Controller và Service
+
+### 2.1 Controller
+
+Controller chỉ xử lý tầng HTTP:
+
+- Định nghĩa route, method, status code.
+- Gắn Swagger decorators.
+- Gắn guards và permission decorators.
+- Nhận input DTO và current user/request metadata.
+- Set/clear cookie nếu endpoint liên quan auth.
+- Trả dữ liệu qua response DTO/wrapper chuẩn.
+
+Controller không chứa logic nghiệp vụ và không gọi Prisma trực tiếp.
+
+### 2.2 Service
+
+Service xử lý nghiệp vụ:
+
+- Query/update database qua `PrismaService`.
+- Kiểm tra dữ liệu phụ thuộc DB.
+- Chạy transaction khi có nhiều write liên quan nhau.
+- Gọi Redis/session/cache helper khi cần.
+- Map Prisma entity sang output DTO trước khi trả về controller.
+
+Service không thao tác trực tiếp `Request`/`Response`, không set cookie, không hard-code message tiếng Việt.
+
+---
+
+## 3. DTO và response
+
+### 3.1 Input DTO
+
+Input DTO chỉ mô tả field client được phép gửi.
+
+Không đưa field server-generated hoặc nhạy cảm vào input DTO:
+
+- `id`
+- `createdAt`
+- `updatedAt`
+- `deletedAt`
+- `passwordHash`
+- `refreshTokenHash`
+
+Mỗi field public trong DTO cần có:
+
+- `@ApiProperty` hoặc `@ApiPropertyOptional`
+- validator từ `class-validator`
+- message lỗi dùng constants nếu dự án đã có constant tương ứng
+
+Ví dụ login metadata optional:
+
+```ts
+@ApiProperty({ type: String, example: '192.168.0.1', required: false })
+@IsOptional()
+@IsString({ message: INVALID_STRING })
+ipAddress?: string;
+
+@ApiProperty({ type: String, example: 'Iphone 15', required: false })
+@IsOptional()
+@IsString({ message: INVALID_STRING })
+userAgent?: string;
+
+@ApiProperty({ type: String, example: 'device-id', required: false })
+@IsOptional()
+@IsString({ message: INVALID_STRING })
+deviceId?: string;
+```
+
+### 3.2 Output DTO
+
+Output DTO định nghĩa đúng dữ liệu trả về client.
+
+Không trả raw Prisma model ra client. Không trả field nhạy cảm như password hash, refresh token hash, internal lock fields nếu client không cần.
+
+### 3.3 Response wrapper
+
+Controller trả response qua wrapper/DTO chuẩn của dự án, ví dụ:
+
+- `ApiRes`
+- `ApiNullableRes`
+- `ApiPaginatedResponseDto`
+
+Service chỉ trả data nghiệp vụ, controller chịu trách nhiệm đóng gói response nếu pattern module đang làm như vậy.
+
+---
+
+## 4. Error handling
+
+Không hard-code message lỗi tiếng Việt trong service.
+
+Mã lỗi nghiệp vụ phải định nghĩa tập trung tại:
+
+```text
+src/libs/constants/error.constants.ts
+```
+
+Ví dụ:
+
+```ts
+throw new BadRequestException(ERROR_CODES.USER_BANNED);
+```
+
+Quy ước:
+
+- Thêm error code trước khi dùng ở service/guard/strategy.
+- Dùng exception phù hợp ngữ cảnh: `BadRequestException`, `UnauthorizedException`, `ForbiddenException`, `NotFoundException`.
+- Không dùng `InternalServerErrorException` cho lỗi nghiệp vụ có thể dự đoán.
+
+---
+
+## 5. Auth JWT cookie và Redis session
+
+Auth dùng mô hình:
+
+```text
+JWT HttpOnly cookies + Redis session store + PostgreSQL user/RBAC source of truth
+```
+
+Quy ước bắt buộc:
+
+- Access token và refresh token nằm trong HttpOnly cookie.
+- JWT payload phải có `sub` và `sid`.
+- `sub` là `userId`.
+- `sid` là session id của một phiên đăng nhập cụ thể.
+- Redis lưu session, refresh token hash và metadata thiết bị.
+- Không lưu raw refresh token trong Redis hoặc database.
+
+Payload chuẩn:
+
+```ts
+type JwtAccessPayload = {
+  sub: string;
+  email: string;
+  sid: string;
+  type: 'access';
+};
+
+type JwtRefreshPayload = {
+  sub: string;
+  sid: string;
+  type: 'refresh';
+};
+```
+
+Login flow:
+
+- Controller resolve `ipAddress` và `userAgent` từ request nếu body không truyền.
+- Service validate credentials.
+- Service tạo `sessionId`.
+- Issue access/refresh token có `sid`.
+- Hash refresh token bằng HMAC SHA-256.
+- Lưu session vào Redis.
+- Set cookies ở controller.
+
+Refresh flow:
+
+- Strategy lấy raw refresh token từ cookie.
+- Service load Redis session theo `sid`.
+- Compare refresh token hash.
+- Rotate refresh token và update hash/TTL.
+
+Logout/revoke:
+
+- Logout chỉ xóa session hiện tại.
+- Reset password/change password phải revoke toàn bộ sessions của user.
+
+Chi tiết auth session nằm tại:
+
+```text
+docs/03-domains/rbac/auth-session-and-permission-cache.md
 ```
 
 ---
 
-## 2. Quy định Trách nhiệm (Separation of Concerns)
+## 6. Redis conventions
 
-### 2.1 Controller (Tầng HTTP)
-Controller **chỉ xử lý các vấn đề liên quan đến HTTP**:
-- Định nghĩa Route path, Swagger Decorator (`@ApiTags`, `@ApiOkResponse`,...).
-- Áp dụng các Guard bảo mật và phân quyền (`@UseGuards(JwtAuthGuard)`, `@RequirePermissions(...)`).
-- Ràng buộc kiểu dữ liệu đầu vào (Request DTOs).
-- Định dạng dữ liệu trả về thông qua các DTO phản hồi chung (`ApiRes`, `ApiNullableRes`, `ApiPaginatedResponseDto`).
-- Đọc/ghi cookie (ví dụ: set auth token cookie tại endpoint đăng nhập).
+Mọi Redis key phải tạo qua Redis key constants/helper của dự án. Không hard-code key trong service.
 
-*Controller KHÔNG chứa bất kỳ logic nghiệp vụ hoặc gọi trực tiếp Prisma Client.*
+Quy ước prefix:
 
-### 2.2 Service (Tầng Nghiệp vụ)
-Service **chỉ xử lý logic nghiệp vụ và giao tiếp database**:
-- Truy vấn PostgreSQL thông qua Prisma Service (`PrismaService`).
-- Kiểm tra tính hợp lệ dữ liệu phụ thuộc vào database (ví dụ: email đã tồn tại chưa, thiết bị có bị trùng lịch thuê không).
-- Thực thi các transaction phức tạp (`prisma.$transaction`).
-- Thực hiện chuyển trạng thái đơn hàng và kích hoạt cập nhật trạng thái thiết bị.
-- Áp dụng các công thức tính toán giá thuê.
-- Map các Prisma Entity sang Output DTO trước khi trả về Controller.
+- `auth:*` cho auth session, login attempt, lock, reset password rate limit.
+- `rbac:*` cho permission/role cache phase sau.
+- `cache:*` cho cache dữ liệu nghiệp vụ.
+- `rate-limit:*` cho rate limit tổng quát nếu có.
 
-*Service KHÔNG được thao tác với request/response object, không set cookie, không tự động đóng gói dữ liệu trong `ApiRes`, và không hardcode mã lỗi tiếng Việt (phải dùng hệ thống mã lỗi chung).*
+Mỗi Redis value cần xác định rõ:
 
----
+- Key pattern.
+- Value shape.
+- TTL.
+- Khi nào set/update/delete.
+- Ai chịu trách nhiệm cleanup.
 
-## 3. Quy chuẩn viết DTO (Data Transfer Objects)
+Auth session keys:
 
-- **Input DTOs**: Chỉ mô tả các trường do Client gửi lên. Tuyệt đối không chứa các trường tự sinh ở Server hoặc nhạy cảm như: `id`, `createdAt`, `updatedAt`, `deletedAt`, `passwordHash`, `refreshTokenHash`.
-- **Output DTOs**: Định nghĩa chính xác định dạng dữ liệu trả về cho client. Tuyệt đối không trả nguyên bản Prisma Model (Entity) ra client để tránh lộ thông tin nhạy cảm.
-- **Swagger Properties**: Sử dụng toán tử `!` hoặc `declare` để tránh cảnh báo strict property initialization trong TypeScript:
-  ```typescript
-  id!: string;
-  declare email: string;
-  ```
+```ts
+REDIS_KEYS.auth.session(sessionId)
+REDIS_KEYS.auth.userSessions(userId)
+```
+
+Không lưu permission vào Redis trong phase hiện tại nếu chưa có invalidation strategy rõ ràng.
 
 ---
 
-## 4. Quản lý lỗi hệ thống (System Error Handling)
+## 7. Pagination, filter, sort và search
 
-- Không tự viết thông báo lỗi thô (String) hoặc ném lỗi trực tiếp bằng `InternalServerErrorException('Lỗi...')` trong Service.
-- Mọi mã lỗi nghiệp vụ phải được định nghĩa tập trung tại file [src/libs/constants/error.constants.ts](file:///d:/Admin%20Rental/rental-admin-be/src/libs/constants/error.constants.ts).
-- Ví dụ ném lỗi trong Service:
-  ```typescript
-  throw new BadRequestException(ERROR_CODES.USER_BANNED);
-  ```
+List endpoint nên dùng params chuẩn:
+
+```ts
+page?: number;
+perPage?: number;
+search?: string;
+sortBy?: string;
+sort?: 'asc' | 'desc';
+```
+
+Filter theo domain thêm field riêng, ví dụ:
+
+```ts
+status?: UserActivityStatus;
+roleCode?: string;
+```
+
+Quy ước:
+
+- `page` ở API là base 1.
+- `perPage` có default và giới hạn max.
+- `sortBy` phải whitelist theo field cho phép sort.
+- `sort` dùng `asc` cho ascending và `desc` cho descending.
+- Default chung là `sort=desc`; từng module đặt default `sortBy` để giữ hành vi list hiện tại.
+- Không truyền trực tiếp `sortBy` từ client vào Prisma nếu chưa validate whitelist.
+
+Danh sách `sortBy` đang hỗ trợ cho các endpoint phân trang:
+
+| Endpoint | Default | `sortBy` hỗ trợ |
+|---|---|---|
+| `GET /users` | `createdAt` | `createdAt`, `fullName`, `email`, `activityStatus` |
+| `GET /products` | `createdAt` | `createdAt`, `updatedAt`, `name`, `sku`, `dailyPrice`, `depositAmount`, `isActive` |
+| `GET /customers` | `createdAt` | `createdAt`, `updatedAt`, `code`, `name`, `phone`, `email`, `status` |
+| `GET /asset-units` | `createdAt` | `createdAt`, `updatedAt`, `serialNumber`, `status`, `condition`, `isActive` |
+| `GET /rental-orders` | `createdAt` | `createdAt`, `updatedAt`, `code`, `startDate`, `endDate`, `status`, `paymentStatus`, `upfrontTotal`, `remainingTotal` |
+| `GET /roles` | `isSystem` | `isSystem`, `code`, `name`, `createdAt`, `updatedAt` |
+| `GET /store-closures` | `startDate` | `startDate`, `endDate`, `type`, `createdAt`, `updatedAt` |
+
+Ví dụ:
+
+```http
+GET /users?page=1&perPage=20&sortBy=email&sort=asc
+GET /rental-orders?sortBy=startDate&sort=desc
+```
+
+Search tiếng Việt không dấu:
+
+- Entity có nhu cầu search nên có field `searchText` nếu schema đã hỗ trợ.
+- Khi create/update dữ liệu liên quan, service chuẩn hóa và lưu `searchText`.
+- Khi search, normalize keyword rồi query theo `contains`.
+
+Ví dụ:
+
+```ts
+where: {
+  searchText: {
+    contains: normalizedKeyword,
+  },
+}
+```
 
 ---
 
-## 5. Quy tắc tìm kiếm tiếng Việt không dấu (Accent-Insensitive Search)
+## 8. Prisma query và transaction
 
-Như đã mô tả trong cấu trúc DB, để tối ưu hóa hiệu năng tìm kiếm tiếng Việt (accent-insensitive):
-- Backend cung cấp hàm tiện ích chuẩn hóa chuỗi tại `src/libs/utils/search-text.util.ts`.
-- Khi nhân viên tạo mới hoặc cập nhật thông tin (ví dụ: cập nhật tên khách hàng `Customer`), Service phải chuẩn hóa thông tin này và lưu vào cột `searchText`.
-- Khi thực hiện tìm kiếm, Service sẽ truy vấn bằng cú pháp:
-  ```typescript
-  where: {
-    searchText: {
-      contains: normalizedKeyword,
-    }
-  }
-  ```
-  *(Truy vấn này sẽ tự động tận dụng Index trigram GIN của PostgreSQL đã khai báo trong Prisma).*
+Prisma query cần rõ ràng và tránh leak dữ liệu:
+
+- Dùng `select` cho list/detail khi có field nhạy cảm.
+- Chỉ dùng `include` khi thật sự cần quan hệ đầy đủ.
+- Không trả Prisma entity trực tiếp ra controller/client.
+- Mapping entity sang DTO đặt ở service/helper.
+
+Transaction:
+
+- Dùng `prisma.$transaction` cho flow có nhiều write phụ thuộc nhau.
+- Ví dụ: reset password + revoke sessions, change password + revoke sessions, update status + side effect liên quan.
+- Không gọi external service khó rollback bên trong transaction nếu không cần thiết.
 
 ---
 
-## 6. Quy chuẩn WebSocket (WebSocket Gateways)
+## 9. Guards, permissions và RBAC
 
-Khi triển khai các mô-đun kết nối thời gian thực bằng WebSockets, backend phải tuân thủ các quy tắc sau:
+Protected endpoint phải dùng JWT guard.
 
-### 6.1 Tổ chức thư mục
-Các file liên quan đến WebSocket nằm tại một mô-đun chung:
+Endpoint yêu cầu quyền phải dùng permission decorator/guard của dự án, ví dụ:
+
+```ts
+@RequirePermissions(...)
+```
+
+Quy ước:
+
+- Không check permission thủ công rải rác trong service nếu guard/decorator xử lý được.
+- Service vẫn có thể kiểm tra ownership/business rule nếu đó là rule nghiệp vụ, không phải permission tĩnh.
+- User bị `LOCKED`, `BANNED`, `INACTIVE` không được access protected API dù Redis session còn.
+
+RBAC permission cache trong Redis là phase sau; chỉ triển khai khi có invalidation strategy cho role/permission/user-role changes.
+
+---
+
+## 10. WebSocket conventions
+
+Module socket dùng cấu trúc:
+
 ```text
 src/modules/socket/
-  socket.gateway.ts       ← Định nghĩa WebSocket Gateway, xử lý connect/disconnect/handshake
-  socket.service.ts       ← Cung cấp helper gửi message từ các module HTTP khác qua socket
-  socket.module.ts        ← Khai báo Provider và xuất bản SocketService
+  socket.gateway.ts
+  socket.service.ts
+  socket.module.ts
 ```
 
-### 6.2 Trách nhiệm của Gateway & Service
-- **`SocketGateway`**:
-  - Lắng nghe kết nối và xử lý xác thực token JWT lúc handshake.
-  - Quản lý Client Connection, đăng ký người dùng vào room `user:<userId>`.
-  - Sử dụng `@WebSocketGateway({ cors: { origin: ... } })` và cấu hình CORS chặt chẽ.
-- **`SocketService`**:
-  - Đóng vai trò là cầu nối (Bridge). Các mô-đun khác (ví dụ: `UsersService`, `RolesService`) tuyệt đối không được inject trực tiếp `SocketGateway` để tránh lỗi phụ thuộc vòng (Circular Dependency).
-  - Các service nghiệp vụ sẽ gọi `SocketService.sendToUser(userId, eventName, data)` hoặc `SocketService.sendToUsers(userIds, eventName, data)`.
+Quy ước:
 
-### 6.3 Xử lý Ngoại lệ (Exception Handling)
-- Không ném lỗi Http (`HttpException`, `BadRequestException`) trực tiếp trong Gateway vì client socket không nhận được mã lỗi HTTP chuẩn.
-- Bắt buộc dùng `WsException` từ `@nestjs/websockets` để ném lỗi socket:
-  ```typescript
-  throw new WsException(ERROR_CODES.UNAUTHORIZED);
-  ```
+- Gateway xử lý connect/disconnect/handshake.
+- Gateway xác thực token khi handshake nếu socket yêu cầu auth.
+- Client được join room theo pattern `user:<userId>`.
+- Module nghiệp vụ không inject trực tiếp `SocketGateway`; gọi qua `SocketService`.
+- Trong Gateway, dùng `WsException`, không throw `HttpException`.
 
+Ví dụ:
+
+```ts
+throw new WsException(ERROR_CODES.UNAUTHORIZED);
+```
+
+---
+
+## 11. Verification
+
+Sau khi sửa backend, chạy kiểm tra phù hợp tại root backend.
+
+Khuyến nghị tối thiểu:
+
+```bash
+pnpm run build
+```
+
+Nếu module có test:
+
+```bash
+pnpm test
+```
+
+Khi sửa auth/redis/session, cần kiểm tra các scenario:
+
+- Login tạo session Redis và set cookie.
+- Refresh token rotate hash.
+- Refresh token cũ bị reject sau rotation.
+- Logout chỉ xóa session hiện tại.
+- Reset/change password revoke toàn bộ sessions.
+- Protected API reject nếu session Redis đã bị xóa.
+- User locked/banned/inactive bị reject dù JWT còn hạn.
+
+Không commit code khi build/typecheck fail.

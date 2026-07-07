@@ -38,7 +38,7 @@
 
 | Method | Path | Mã quyền yêu cầu | Mô tả chức năng |
 |---|---|---|---|
-| `GET` | `/` | `users.read` | Lấy danh sách nhân viên nội bộ (hỗ trợ phân trang, bộ lọc). |
+| `GET` | `/` | `users.read` | Lấy danh sách nhân viên nội bộ (hỗ trợ phân trang, bộ lọc, search, sort). |
 | `GET` | `/:id` | `users.read` | Lấy chi tiết tài khoản nhân viên. |
 | `POST` | `/` | `users.create` | Tạo tài khoản nhân viên mới (mặc định trạng thái `ACTIVE`). |
 | `PATCH` | `/:id` | `users.update` | Cập nhật thông tin cơ bản nhân viên. |
@@ -52,7 +52,7 @@
 
 | Method | Path | Mã quyền yêu cầu | Mô tả chức năng |
 |---|---|---|---|
-| `GET` | `/` | `customers.read` | Danh sách khách hàng (tìm kiếm theo `searchText`). |
+| `GET` | `/` | `customers.read` | Danh sách khách hàng (phân trang, bộ lọc, search theo `searchText`, sort). |
 | `GET` | `/:id` | `customers.read` | Xem thông tin chi tiết, lịch sử thuê, công nợ. |
 | `POST` | `/` | `customers.create` | Tạo mới hồ sơ khách hàng. |
 | `PATCH` | `/:id` | `customers.update` | Cập nhật thông tin khách hàng. |
@@ -64,7 +64,7 @@
 
 | Method | Path | Mã quyền yêu cầu | Mô tả chức năng |
 |---|---|---|---|
-| `GET` | `/` | `products.read` | Danh sách sản phẩm khả dụng. |
+| `GET` | `/` | `products.read` | Danh sách sản phẩm khả dụng (phân trang, bộ lọc, search, sort). |
 | `GET` | `/:id` | `products.read` | Chi tiết sản phẩm kèm biểu giá bậc thang. |
 | `POST` | `/` | `products.create` | Thêm mới dòng sản phẩm. |
 | `PATCH` | `/:id` | `products.update` | Cập nhật thông tin sản phẩm và biểu giá bậc thang. |
@@ -76,7 +76,7 @@
 
 | Method | Path | Mã quyền yêu cầu | Mô tả chức năng |
 |---|---|---|---|
-| `GET` | `/` | `assets.read` | Danh sách thiết bị vật lý có serial. |
+| `GET` | `/` | `assets.read` | Danh sách thiết bị vật lý có serial (phân trang, bộ lọc, search, sort). |
 | `GET` | `/:id` | `assets.read` | Chi tiết thiết bị vật lý, lịch sử đơn thuê đi kèm. |
 | `POST` | `/` | `assets.create` | Thêm thiết bị vật lý vào kho. |
 | `PATCH` | `/:id` | `assets.update` | Sửa thông tin serial, ghi chú thiết bị. |
@@ -89,7 +89,7 @@
 | Method | Path | Mã quyền yêu cầu | Mô tả chức năng |
 |---|---|---|---|
 | `POST` | `/check-availability` | `orders.read` | Kiểm tra lịch trống của sản phẩm/máy. |
-| `GET` | `/` | `orders.read` | Danh sách đơn thuê hệ thống. |
+| `GET` | `/` | `orders.read` | Danh sách đơn thuê hệ thống (phân trang, bộ lọc, search, sort). |
 | `GET` | `/:id` | `orders.read` | Chi tiết đơn thuê, thông tin snapshots và các biên bản đính kèm. |
 | `POST` | `/` | `orders.create` | Tạo mới đơn thuê nháp (`DRAFT`). |
 | `PATCH` | `/:id/items/assign-assets` | `orders.update` | Gán thiết bị vật lý cụ thể (Serial) vào đơn thuê. |

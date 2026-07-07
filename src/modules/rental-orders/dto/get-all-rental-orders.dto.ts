@@ -1,9 +1,21 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDate, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
 import { OrderStatus, PaymentStatus } from '@generated/prisma/enums';
 import { ApiPagReq } from '@/libs/types/custom-response.type';
-import { INVALID_DATE, INVALID_ENUM, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { INVALID_DATE, INVALID_ENUM, INVALID_UUID } from '@/libs/constants/invalid.constant';
+
+export enum RentalOrderSortBy {
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
+  CODE = 'code',
+  START_DATE = 'startDate',
+  END_DATE = 'endDate',
+  STATUS = 'status',
+  PAYMENT_STATUS = 'paymentStatus',
+  UPFRONT_TOTAL = 'upfrontTotal',
+  REMAINING_TOTAL = 'remainingTotal',
+}
 
 export class GetAllRentalOrdersDto extends ApiPagReq {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
@@ -37,4 +49,12 @@ export class GetAllRentalOrdersDto extends ApiPagReq {
   @IsOptional()
   @IsDate({ message: INVALID_DATE })
   toDate?: Date;
+
+  @ApiPropertyOptional({
+    enum: RentalOrderSortBy,
+    default: RentalOrderSortBy.CREATED_AT,
+  })
+  @IsEnum(RentalOrderSortBy)
+  @IsOptional()
+  sortBy: RentalOrderSortBy = RentalOrderSortBy.CREATED_AT;
 }

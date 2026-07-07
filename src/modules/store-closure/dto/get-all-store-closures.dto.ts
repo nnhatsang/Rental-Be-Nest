@@ -1,9 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsIn, IsOptional } from 'class-validator';
+import { IsDate, IsEnum, IsIn, IsOptional } from 'class-validator';
 import { StoreClosureType } from '@generated/prisma/enums';
 import { ApiPagReq } from '@/libs/types/custom-response.type';
 import { INVALID_DATE, INVALID_ENUM } from '@/libs/constants/invalid.constant';
+
+export enum StoreClosureSortBy {
+  START_DATE = 'startDate',
+  END_DATE = 'endDate',
+  TYPE = 'type',
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
+}
 
 export class GetAllStoreClosuresDto extends ApiPagReq {
   @ApiPropertyOptional({ enum: Object.values(StoreClosureType) })
@@ -22,4 +30,12 @@ export class GetAllStoreClosuresDto extends ApiPagReq {
   @IsOptional()
   @IsDate({ message: INVALID_DATE })
   toDate?: Date;
+
+  @ApiPropertyOptional({
+    enum: StoreClosureSortBy,
+    default: StoreClosureSortBy.START_DATE,
+  })
+  @IsEnum(StoreClosureSortBy)
+  @IsOptional()
+  sortBy: StoreClosureSortBy = StoreClosureSortBy.START_DATE;
 }

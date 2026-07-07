@@ -33,7 +33,7 @@ export class UsersService {
   ) {}
 
   async getAllUsers(query: GetAllUsersInDto) {
-    const { page, perPage, roleCode, excludeRoleCode, search, status } = query;
+    const { page, perPage, roleCode, excludeRoleCode, search, status, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
     const where = {
@@ -67,9 +67,7 @@ export class UsersService {
         where,
         skip,
         take: perPage,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
         include: this.userRolesInclude(),
       }),
       this.prisma.user.count({ where }),
@@ -91,8 +89,8 @@ export class UsersService {
   async createUser(dto: CreateUserDto, userId: string): Promise<UserOutDto> {
     await this.ensureEmailAvailable(dto.email);
 
-    const roleCodes = dto.roleCodes?.length ? dto.roleCodes : [RoleCode.Staff];
-    const roles = await this.findRolesByCodesOrThrow(roleCodes);
+    // const roleCodes = dto.roleCodes?.length ? dto.roleCodes : [RoleCode.Staff];
+    const roles = await this.findRolesByCodesOrThrow([RoleCode.Staff]);
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     const user = await this.prisma.user.create({

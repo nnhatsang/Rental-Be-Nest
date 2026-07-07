@@ -91,7 +91,7 @@ export class RentalOrdersService {
   }
 
   async getAllRentalOrders(query: GetAllRentalOrdersDto) {
-    const { search, customerId, assignedToId, status, paymentStatus, fromDate, toDate, page, perPage } = query;
+    const { search, customerId, assignedToId, status, paymentStatus, fromDate, toDate, page, perPage, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
 
@@ -134,9 +134,7 @@ export class RentalOrdersService {
         where,
         skip,
         take: perPage,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
         include: this.rentalOrderInclude(),
       }),
       this.prisma.rentalOrder.count({ where }),

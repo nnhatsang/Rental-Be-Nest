@@ -15,7 +15,7 @@ export class StoreClosureService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAllStoreClosures(query: GetAllStoreClosuresDto) {
-    const { page, perPage, type, fromDate, toDate } = query;
+    const { page, perPage, type, fromDate, toDate, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
 
     const where = {
@@ -49,9 +49,7 @@ export class StoreClosureService {
         where,
         skip,
         take: perPage,
-        orderBy: {
-          startDate: 'desc',
-        },
+        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
       }),
       this.prisma.storeClosure.count({ where }),
     ]);

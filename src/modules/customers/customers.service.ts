@@ -15,7 +15,7 @@ export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAllCustomers(query: GetAllCustomersInDto) {
-    const { search, status, page, perPage } = query;
+    const { search, status, page, perPage, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
 
@@ -36,9 +36,7 @@ export class CustomersService {
         where,
         skip,
         take: perPage,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
       }),
       this.prisma.customer.count({ where }),
     ]);

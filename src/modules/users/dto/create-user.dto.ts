@@ -21,9 +21,9 @@ export class CreateUserDto {
   @MinLength(8, { message: INVALID_MIN(8, 'Mật khẩu') })
   password!: string;
 
-  @ApiPropertyOptional({ type: [String], example: ['STAFF'] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  roleCodes?: string[];
+  // @ApiPropertyOptional({ type: [String], example: ['STAFF'] })
+  // @IsOptional()
+  // @IsArray()
+  // @IsString({ each: true })
+  // roleCodes?: string[];
 }

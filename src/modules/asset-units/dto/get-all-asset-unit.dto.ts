@@ -1,9 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
 import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
-import { INVALID_BOOLEAN, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { INVALID_BOOLEAN, INVALID_UUID } from '@/libs/constants/invalid.constant';
 import { ApiPagReq } from '@/libs/types/custom-response.type';
+
+export enum AssetUnitSortBy {
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
+  SERIAL_NUMBER = 'serialNumber',
+  STATUS = 'status',
+  CONDITION = 'condition',
+  IS_ACTIVE = 'isActive',
+}
 
 export class GetAllAssetUnitsInDto extends ApiPagReq {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
@@ -26,4 +35,12 @@ export class GetAllAssetUnitsInDto extends ApiPagReq {
   @IsOptional()
   @IsBoolean({ message: INVALID_BOOLEAN })
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    enum: AssetUnitSortBy,
+    default: AssetUnitSortBy.CREATED_AT,
+  })
+  @IsEnum(AssetUnitSortBy)
+  @IsOptional()
+  sortBy: AssetUnitSortBy = AssetUnitSortBy.CREATED_AT;
 }

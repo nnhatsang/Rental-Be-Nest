@@ -3,7 +3,7 @@ import { PrismaService } from '@modules/database/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { DeleteRolesDto } from './dto/delete-roles.dto';
-import { GetAllRolesDto } from './dto/get-all-roles.dto';
+import { GetAllRolesDto, RoleSortBy } from './dto/get-all-roles.dto';
 import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 import { AssignRoleUsersDto } from './dto/assign-role-users.dto';
 import { RoleOutDto } from './dto/role-out.dto';
@@ -30,7 +30,7 @@ export class RolesService {
   ) {}
 
   async getAllRoles(query: GetAllRolesDto) {
-    const { page, perPage, search, isSystem } = query;
+    const { page, perPage, search, isSystem, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const where = {
       ...(isSystem !== undefined && { isSystem }),
@@ -38,13 +38,14 @@ export class RolesService {
         OR: [{ code: { contains: search } }, { name: { contains: search } }, { description: { contains: search } }],
       }),
     };
+    const orderBy = sortBy === RoleSortBy.IS_SYSTEM ? [{ isSystem: sort }, { code: 'asc' as const }] : [{ [sortBy]: sort }, { id: 'asc' as const }];
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.role.findMany({
         where,
         skip,
         take: perPage,
-        orderBy: [{ isSystem: 'desc' }, { code: 'asc' }],
+        orderBy,
         include: this.roleInclude(false),
       }),
       this.prisma.role.count({ where }),

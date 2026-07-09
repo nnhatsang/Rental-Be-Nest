@@ -33,13 +33,13 @@ export class UsersService {
   ) {}
 
   async getAllUsers(query: GetAllUsersInDto) {
-    const { page, perPage, roleCode, excludeRoleCode, search, status, sort, sortBy } = query;
+    const { page, perPage, roleCode, excludeRoleCode, search, activityStatus, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
     const where = {
       deletedAt: null,
-      ...(status && {
-        activityStatus: status,
+      ...(activityStatus && {
+        activityStatus,
       }),
       ...(searchText && {
         searchText: {

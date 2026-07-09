@@ -16,7 +16,7 @@ export class GetAllUsersInDto extends ApiPagReq {
   @ApiPropertyOptional({ enum: Object.values(EUserActivityStatus) })
   @IsIn(Object.values(EUserActivityStatus))
   @IsOptional()
-  status?: EUserActivityStatus;
+  activityStatus?: EUserActivityStatus;
 
   @ApiPropertyOptional({ enum: Object.values(RoleCode) })
   @IsString()

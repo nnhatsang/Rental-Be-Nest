@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@generated/prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@modules/database/prisma.service';
 import { GetAllUsersInDto } from './dto/get-all-users.in.dto';
@@ -36,7 +37,29 @@ export class UsersService {
     const { page, perPage, roleCode, excludeRoleCode, search, activityStatus, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
-    const where = {
+    const roleFilters: Prisma.UserWhereInput[] = [];
+
+    if (roleCode) {
+      roleFilters.push({
+        roles: {
+          some: {
+            role: { code: roleCode },
+          },
+        },
+      });
+    }
+
+    if (excludeRoleCode) {
+      roleFilters.push({
+        roles: {
+          none: {
+            role: { code: excludeRoleCode },
+          },
+        },
+      });
+    }
+
+    const where: Prisma.UserWhereInput = {
       deletedAt: null,
       ...(activityStatus && {
         activityStatus,
@@ -46,19 +69,8 @@ export class UsersService {
           contains: searchText,
         },
       }),
-      ...(roleCode && {
-        roles: {
-          some: {
-            role: { code: roleCode },
-          },
-        },
-      }),
-      ...(excludeRoleCode && {
-        roles: {
-          none: {
-            role: { code: excludeRoleCode },
-          },
-        },
+      ...(roleFilters.length && {
+        AND: roleFilters,
       }),
     };
 

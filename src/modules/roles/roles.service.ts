@@ -5,7 +5,7 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { DeleteRolesDto } from './dto/delete-roles.dto';
 import { GetAllRolesDto, RoleSortBy } from './dto/get-all-roles.dto';
 import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
-import { AssignRoleUsersDto } from './dto/assign-role-users.dto';
+import { AssignRoleUsersDto, AssignRoleUsersOperation } from './dto/assign-role-users.dto';
 import { RoleOutDto } from './dto/role-out.dto';
 import {
   ROLE_CODE_EXISTED,
@@ -228,6 +228,7 @@ export class RolesService {
     const roleId = dto.roleId;
     const existingRole = await this.findExistingRoleById(roleId);
     const uniqueUserIds = [...new Set(dto.userIds)];
+    const isRemoveOperation = dto.operation === AssignRoleUsersOperation.Remove;
 
     if (existingRole.code === RoleCode.Admin && uniqueUserIds.length === 0) {
       throw new BadRequestException(ROLE_SYSTEM_PROTECTED);
@@ -247,28 +248,22 @@ export class RolesService {
       }
     }
 
-    const affectedUserIds = new Set<string>();
-    const prevUsers = await this.prisma.userRole.findMany({
-      where: { roleId },
-      select: { userId: true },
-    });
-    prevUsers.forEach((u) => affectedUserIds.add(u.userId));
-    uniqueUserIds.forEach((id) => affectedUserIds.add(id));
+    const affectedUserIds = new Set(uniqueUserIds);
 
     const role = await this.prisma.$transaction(async (tx) => {
-      if (uniqueUserIds.length) {
+      if (isRemoveOperation) {
+        await tx.userRole.deleteMany({
+          where: {
+            roleId,
+            userId: { in: uniqueUserIds },
+          },
+        });
+      } else {
         await tx.userRole.deleteMany({
           where: {
             userId: { in: uniqueUserIds },
           },
         });
-      }
-
-      await tx.userRole.deleteMany({
-        where: { roleId },
-      });
-
-      if (uniqueUserIds.length) {
         await tx.userRole.createMany({
           data: uniqueUserIds.map((userId) => ({
             userId,

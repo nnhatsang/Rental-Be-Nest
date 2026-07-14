@@ -4,9 +4,13 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ErrorException } from '@libs/filters/all-exceptions.filter';
 import { ValidatePipe } from '@pipe/validate.pipe';
+const bodyLimit = 10_485_760; // 10MiB
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
+  //   rawBody: true,
+  // });
   const adminWebOrigin = process.env.ADMIN_WEB_ORIGIN ?? 'http://localhost:3000';
 
   app.setGlobalPrefix('api');
@@ -22,6 +26,11 @@ async function bootstrap() {
 
   // Thêm global exception filter
   app.useGlobalFilters(new ErrorException());
+
+  // app.useBodyParser('json', { limit: '10mb' });
+
+  // app.use(bodyParser.json({ limit: '10mb' }));
+  // app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
   const config = new DocumentBuilder()
     .setTitle('Rental Admin Dashboard API')

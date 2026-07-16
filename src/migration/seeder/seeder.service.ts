@@ -16,6 +16,7 @@ export class SeederService {
     await this.seedRoles();
     await this.seedRentalPolicy();
     await this.seedStoreBusinessHours();
+    await this.seedEmailTemplates();
     await this.seedDefaultAdmin();
     this.logger.log('Seeding completed');
   }
@@ -197,6 +198,76 @@ export class SeederService {
     });
 
     this.logger.log(`Default admin ready: ${email}`);
+  }
+
+  private async seedEmailTemplates() {
+    const defaultLayout = await this.prisma.emailLayout.upsert({
+      where: {
+        key: 'default',
+      },
+      update: {
+        name: 'Default email layout',
+        htmlLayout: [
+          '<!DOCTYPE html>',
+          '<html>',
+          '<head><meta charset="utf-8"><title>{{appName}}</title></head>',
+          '<body style="font-family: Arial, sans-serif; color: #111827; background: #f9fafb; margin: 0; padding: 24px;">',
+          '<div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; padding: 24px;">',
+          '<h2 style="margin-top: 0;">{{appName}}</h2>',
+          '{{content}}',
+          '<p style="font-size: 12px; color: #6b7280; margin-top: 24px;">Neu ban khong yeu cau thao tac nay, hay bo qua email nay.</p>',
+          '</div>',
+          '</body>',
+          '</html>',
+        ].join('\n'),
+        isActive: true,
+      },
+      create: {
+        key: 'default',
+        name: 'Default email layout',
+        htmlLayout: [
+          '<!DOCTYPE html>',
+          '<html>',
+          '<head><meta charset="utf-8"><title>{{appName}}</title></head>',
+          '<body style="font-family: Arial, sans-serif; color: #111827; background: #f9fafb; margin: 0; padding: 24px;">',
+          '<div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; padding: 24px;">',
+          '<h2 style="margin-top: 0;">{{appName}}</h2>',
+          '{{content}}',
+          '<p style="font-size: 12px; color: #6b7280; margin-top: 24px;">Neu ban khong yeu cau thao tac nay, hay bo qua email nay.</p>',
+          '</div>',
+          '</body>',
+          '</html>',
+        ].join('\n'),
+      },
+    });
+
+    await this.prisma.emailTemplate.upsert({
+      where: {
+        key: 'auth.reset_password',
+      },
+      update: {
+        name: 'Reset password',
+        layoutId: defaultLayout.id,
+        description: 'Password reset email sent from forgot password flow',
+        variables: ['userName', 'resetPasswordUrl', 'expiresInMinutes', 'appName'],
+      },
+      create: {
+        key: 'auth.reset_password',
+        name: 'Reset password',
+        layoutId: defaultLayout.id,
+        subject: 'Dat lai mat khau {{appName}}',
+        htmlBody: [
+          '<p>Xin chao <strong>{{userName}}</strong>,</p>',
+          '<p>Ban vua yeu cau dat lai mat khau cho tai khoan tai {{appName}}.</p>',
+          '<p>Link nay co hieu luc trong {{expiresInMinutes}} phut.</p>',
+          '<p><a href="{{resetPasswordUrl}}">Dat lai mat khau</a></p>',
+        ].join('\n'),
+        description: 'Password reset email sent from forgot password flow',
+        variables: ['userName', 'resetPasswordUrl', 'expiresInMinutes', 'appName'],
+      },
+    });
+
+    this.logger.log('Email templates seeded');
   }
 
   private toDisplayName(code: string) {

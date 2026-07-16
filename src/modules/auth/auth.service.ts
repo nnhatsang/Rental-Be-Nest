@@ -38,6 +38,7 @@ import { PasswordResetTokenService } from './services/password-reset-token.servi
 import { RedisService } from '@/libs/redis/redis.service';
 import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
 import { REDIS_EXPIRE } from '@/libs/redis/constant/prefix.constant';
+import { MailTemplateKey, MailTemplateService } from '@/modules/mail-template/mail-template.service';
 
 type UserWithAuth = User & {
   roles: {
@@ -61,6 +62,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly mailTemplateService: MailTemplateService,
     private readonly passwordResetTokenService: PasswordResetTokenService,
     private readonly redis: RedisService,
   ) {}
@@ -198,10 +200,25 @@ export class AuthService {
     }
 
     const rawToken = await this.passwordResetTokenService.createForUser(user.id);
+    const resetPasswordUrl = this.buildPasswordResetUrl(rawToken);
+    const appName = this.configService.get<string>('MAIL_SITE_NAME', 'Rental Admin');
 
     try {
-      await this.mailService.sendPasswordResetEmail(user.email, this.buildPasswordResetUrl(rawToken), {
-        fullName: user.fullName,
+      await this.mailTemplateService.sendTemplateEmail({
+        key: MailTemplateKey.AuthResetPassword,
+        toEmail: user.email,
+        payload: {
+          userName: user.fullName || 'ban',
+          resetPasswordUrl,
+          expiresInMinutes: Math.ceil(this.configService.get<number>('RESET_PASSWORD_EXPIRES_IN_SECONDS', 1800) / 60),
+          appName,
+        },
+        fallback: {
+          subject: `Dat lai mat khau ${appName}`,
+          htmlBody: this.mailService.buildPasswordResetEmailHtml(resetPasswordUrl, {
+            fullName: user.fullName,
+          }),
+        },
       });
     } catch (error) {
       this.logger.error(`Failed to send password reset email to user ${user.id}`, error instanceof Error ? error.stack : undefined);
@@ -374,8 +391,7 @@ export class AuthService {
   }): AuthSession {
     const now = new Date();
     const createdAt = input.createdAt ?? now.toISOString();
-    const lastUsedAt =
-      input.lastUsedAt instanceof Date ? input.lastUsedAt.toISOString() : input.lastUsedAt ?? now.toISOString();
+    const lastUsedAt = input.lastUsedAt instanceof Date ? input.lastUsedAt.toISOString() : (input.lastUsedAt ?? now.toISOString());
     const expiresAt = new Date(now.getTime() + this.getRefreshMaxAge()).toISOString();
 
     return {
@@ -409,10 +425,7 @@ export class AuthService {
   }
 
   private async revokeSession(userId: string, sessionId: string): Promise<void> {
-    await Promise.all([
-      this.redis.del(REDIS_KEYS.auth.session(sessionId)),
-      this.redis.srem(REDIS_KEYS.auth.userSessions(userId), sessionId),
-    ]);
+    await Promise.all([this.redis.del(REDIS_KEYS.auth.session(sessionId)), this.redis.srem(REDIS_KEYS.auth.userSessions(userId), sessionId)]);
   }
 
   private async revokeAllUserSessions(userId: string): Promise<void> {
@@ -484,9 +497,7 @@ export class AuthService {
   }
 
   private hashRefreshToken(refreshToken: string): string {
-    return createHmac('sha256', this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'))
-      .update(refreshToken)
-      .digest('hex');
+    return createHmac('sha256', this.configService.getOrThrow<string>('JWT_REFRESH_SECRET')).update(refreshToken).digest('hex');
   }
 
   private isRefreshTokenHashValid(refreshToken: string, expectedHash: string): boolean {
@@ -528,10 +539,7 @@ export class AuthService {
   }
 
   private async checkPasswordResetRateLimit(normalizedEmail: string): Promise<boolean> {
-    const requests = await this.redis.incrWithTTL(
-      REDIS_KEYS.auth.resetPasswordRateLimit(normalizedEmail),
-      REDIS_EXPIRE.RESET_PASSWORD_RATE_LIMIT,
-    );
+    const requests = await this.redis.incrWithTTL(REDIS_KEYS.auth.resetPasswordRateLimit(normalizedEmail), REDIS_EXPIRE.RESET_PASSWORD_RATE_LIMIT);
 
     return requests <= this.getPasswordResetRateLimit();
   }

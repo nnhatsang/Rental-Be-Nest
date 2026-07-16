@@ -36,6 +36,11 @@ export const PermissionCode = {
   SettingsRead: 'settings.read',
   SettingsUpdate: 'settings.update',
 
+  EmailTemplatesRead: 'email_templates.read',
+  EmailTemplatesUpdate: 'email_templates.update',
+  EmailTemplatesPreview: 'email_templates.preview',
+  EmailTemplatesSendTest: 'email_templates.send_test',
+
   ReportsRead: 'reports.read',
 } as const;
 
@@ -59,6 +64,8 @@ const MANAGER_EXCLUDED_PERMISSIONS: ReadonlySet<PermissionCode> = new Set([
   PermissionCode.RolesCreate,
   PermissionCode.RolesUpdate,
   PermissionCode.RolesDelete,
+  PermissionCode.EmailTemplatesUpdate,
+  PermissionCode.EmailTemplatesSendTest,
 ]);
 
 export const ROLE_SEEDS = [

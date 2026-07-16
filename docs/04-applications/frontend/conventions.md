@@ -22,6 +22,122 @@ Cấu trúc khuyến nghị trong từng module `modules/<domain>/`:
 - Component nghiệp vụ: `modules/<domain>/<Feature>.tsx` hoặc `modules/<domain>/components/<Feature>.tsx`
 - Next.js Page: `app/<route>/page.tsx` chỉ import component nghiệp vụ và render
 
+### 1.1 Module skeleton build nhanh
+
+Khi cần build nhanh một CRUD/list module, copy pattern từ `modules/users` của frontend. Giữ ít file, rõ trách nhiệm, chưa tách folder sâu nếu module còn nhỏ.
+
+```text
+modules/<domain>/
+  index.tsx                  # Entry component, bọc Provider và render Content
+  <domain>-provider.tsx      # Dialog state/current row/shared UI state
+  columns.tsx                # ColumnDef cho DataTable
+  dialog.tsx                 # Form dialogs: add/edit/status/reset...
+  bulk-action.tsx            # Bulk actions nếu có chọn nhiều dòng
+  schema.ts                  # Zod form schema
+  services.ts                # API calls
+  type.ts                    # API types/contracts
+  hooks/
+    keys.ts                  # React Query keys
+    use-get-<domain>.ts      # List query
+    use-get-<item>-by-id.ts  # Detail query nếu cần
+    use-create-<item>.ts     # Create mutation
+    use-update-<item>.ts     # Update mutation
+    use-delete-<item>.ts     # Delete/bulk delete mutation
+    <domain>-logic.tsx       # DataTable state + toolbar action orchestration
+```
+
+Page route chỉ render module:
+
+```tsx
+import { TITLE_PAGE } from '@/utils/consts/title-page.const';
+import { Metadata } from 'next';
+import dynamic from 'next/dynamic';
+
+const Users = dynamic(() => import('@/modules/users'));
+
+export const metadata: Metadata = {
+  title: TITLE_PAGE.USERS.INDEX,
+};
+
+export default function Page() {
+  return <Users />;
+}
+```
+
+`index.tsx` trong module nên giữ mỏng:
+
+```tsx
+'use client';
+
+import { DataTable } from '@/components/ui/data-table';
+import { BulkActions } from './bulk-action';
+import { UserDialogs } from './dialog';
+import { useUsersLogic } from './hooks/user-logic';
+import { UsersProvider } from './users-provider';
+
+function Content() {
+  const { table } = useUsersLogic();
+
+  return (
+    <>
+      <DataTable table={table} />
+      <BulkActions table={table} />
+      <UserDialogs table={table} />
+    </>
+  );
+}
+
+export default function Users() {
+  return (
+    <UsersProvider>
+      <Content />
+    </UsersProvider>
+  );
+}
+```
+
+Với module đơn giản chưa có bulk action hoặc nhiều dialog, có thể bỏ `bulk-action.tsx` và provider; nhưng khi có add/edit/delete/status dialogs thì nên giữ provider ngay từ đầu để tránh truyền props qua nhiều component.
+
+### 1.2 Mapping nhanh cho Products và Asset Units
+
+`products` và `asset-units` nên là hai module riêng nhưng điều hướng liên kết chặt:
+
+```text
+modules/products/
+  index.tsx
+  products-provider.tsx
+  columns.tsx
+  dialog.tsx
+  schema.ts
+  services.ts
+  type.ts
+  hooks/product-logic.tsx
+
+modules/asset-units/
+  index.tsx
+  asset-units-provider.tsx
+  columns.tsx
+  dialog.tsx
+  schema.ts
+  services.ts
+  type.ts
+  hooks/asset-unit-logic.tsx
+```
+
+Nguyên tắc chia:
+
+- `products`: quản lý dòng sản phẩm/model, giá thuê, cọc, category, brand, rental price tiers.
+- `asset-units`: quản lý thiết bị vật lý/serial, status, condition, note, active flag.
+- Trong product detail hoặc product row action có thể mở tab/link xem asset units theo `productId`.
+- Trong asset-units list cần filter `productId`, `status`, `condition`.
+- Trong order creation chọn `Product` trước, sau đó gán `AssetUnit` nếu cần.
+
+Build nhanh trước:
+
+1. Dựng `/products` list/create/edit/status/delete.
+2. Dựng `/asset-units` list/create/edit/status/delete với filter `productId`.
+3. Sau đó mới thêm product detail tab asset units nếu cần UX tốt hơn.
+
 ---
 
 ## 2. Các lớp kiến trúc

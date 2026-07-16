@@ -271,6 +271,31 @@ export const RECORD_NOT_FOUND = new ErrorResponse({
   message: 'Không tìm thấy bản ghi yêu cầu hoặc bản ghi đã bị xóa',
 });
 
+export const EMAIL_TEMPLATE_NOT_FOUND = new ErrorResponse({
+  code: 'EMAIL_TEMPLATE_NOT_FOUND',
+  message: 'Không tìm thấy mẫu email',
+});
+
+export const EMAIL_LAYOUT_NOT_FOUND = new ErrorResponse({
+  code: 'EMAIL_LAYOUT_NOT_FOUND',
+  message: 'Không tìm thấy layout email',
+});
+
+export const EMAIL_LAYOUT_KEY_EXISTED = new ErrorResponse({
+  code: 'EMAIL_LAYOUT_KEY_EXISTED',
+  message: 'Mã layout email đã tồn tại',
+});
+
+export const EMAIL_TEMPLATE_VARIABLE_INVALID = new ErrorResponse({
+  code: 'EMAIL_TEMPLATE_VARIABLE_INVALID',
+  message: 'Giá trị mẫu email không hợp lệ',
+});
+
+export const EMAIL_TEMPLATE_VARIABLE_MISSING = new ErrorResponse({
+  code: 'EMAIL_TEMPLATE_VARIABLE_MISSING',
+  message: 'Giá trị email không đủ để render email',
+});
+
 export const DATABASE_RELATION_ERROR = new ErrorResponse({
   code: 'DATABASE_RELATION_ERROR',
   message: 'Dữ liệu liên kết không hợp lệ hoặc đang được sử dụng ở bảng khác',

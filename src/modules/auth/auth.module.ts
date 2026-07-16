@@ -10,9 +10,10 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { MailModule } from '@modules/mail/mail.module';
 import { PasswordResetTokenService } from './services/password-reset-token.service';
+import { MailTemplateModule } from '@/modules/mail-template/mail-template.module';
 
 @Module({
-  imports: [PassportModule, JwtModule.register({}), MailModule],
+  imports: [PassportModule, JwtModule.register({}), MailModule, MailTemplateModule],
   controllers: [AuthController],
   providers: [
     AuthService,

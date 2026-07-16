@@ -12,7 +12,7 @@
 // pnpm prisma migrate dev
 // pnpm prisma generate
 // pnpm db:seed
-// npx prisma migrate reset   // xử lý reset db phía local
+// npx prisma migrate reset   // xử lý reset db phía local (k nên re)
 
 // Rental order validation flow:
 // 1. Lấy RentalPolicy DEFAULT
@@ -141,7 +141,7 @@ model RolePermission {
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   /// Permission granted to the role.
-  permissionId String @db.Uuid
+  permissionId String     @db.Uuid
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   /// When this permission was granted to the role.
@@ -398,8 +398,8 @@ model RentalPolicy {
   /// Các đơn đã áp dụng chính sách này tại thời điểm tạo đơn.
   orders RentalOrder[]
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   // deletedAt DateTime?
 
   createdBy String? @map("created_by") @db.Uuid
@@ -471,7 +471,7 @@ model RentalOrder {
   rentalPolicy   RentalPolicy? @relation(fields: [rentalPolicyId], references: [id])
 
   /// Khách hàng thuê thiết bị.
-  customerId               String        @db.Uuid
+  customerId               String   @db.Uuid
   customer                 Customer @relation(fields: [customerId], references: [id])
   /// Snapshot tên khách tại thời điểm tạo đơn để giữ lịch sử.
   customerNameSnapshot     String
@@ -575,14 +575,14 @@ model RentalOrderItem {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Đơn thuê cha chứa dòng sản phẩm này.
-  orderId String @db.Uuid
+  orderId String      @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Loại sản phẩm được thuê, ví dụ Sony A7 IV.
-  productId   String @db.Uuid
+  productId   String     @db.Uuid
   product     Product    @relation(fields: [productId], references: [id])
   /// Thiết bị vật lý/serial cụ thể được gán cho dòng này nếu có quản lý theo máy.
-  assetUnitId String? @db.Uuid
+  assetUnitId String?    @db.Uuid
   assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
 
   /// Snapshot tên sản phẩm tại thời điểm tạo đơn để giữ lịch sử giá/đơn.
@@ -622,7 +622,7 @@ model PaymentRecord {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order this payment/refund belongs to.
-  orderId String @db.Uuid
+  orderId String      @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id])
 
   /// Business kind of the payment/refund.
@@ -659,7 +659,7 @@ model OrderStatusHistory {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order whose status changed.
-  orderId String @db.Uuid
+  orderId String      @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Previous order status; null when creating the initial status record.
@@ -689,7 +689,7 @@ model OrderHandover {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order being handed over or received back.
-  orderId String @db.Uuid
+  orderId String      @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Handover type: outgoing handover or return handover.
@@ -721,7 +721,7 @@ model ReturnInspection {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order being inspected after return.
-  orderId String @db.Uuid
+  orderId String      @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id])
 
   /// Overall inspection result.
@@ -763,14 +763,14 @@ model DamageReport {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Parent return inspection.
-  inspectionId String @db.Uuid
+  inspectionId String           @db.Uuid
   inspection   ReturnInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
 
   /// Product involved in the damage/missing report.
-  productId   String @db.Uuid
+  productId   String     @db.Uuid
   product     Product    @relation(fields: [productId], references: [id])
   /// Specific physical device involved, if serial-managed.
-  assetUnitId String? @db.Uuid
+  assetUnitId String?    @db.Uuid
   assetUnit   AssetUnit? @relation(fields: [assetUnitId], references: [id])
 
   /// Damage severity.
@@ -801,7 +801,7 @@ model OrderEvent {
   id String @id @default(uuid(7)) @db.Uuid
 
   /// Rental order related to this event.
-  orderId String @db.Uuid
+  orderId String      @db.Uuid
   order   RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Event type.
@@ -823,6 +823,88 @@ model OrderEvent {
   @@index([type])
   @@index([createdBy])
   @@index([createdAt])
+}
+
+model EmailLayout {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  key  String @unique
+  name String
+
+  htmlLayout String @db.Text
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?  @db.Uuid
+  updatedBy String?  @db.Uuid
+
+  templates EmailTemplate[]
+
+  @@index([key])
+  @@index([isActive])
+}
+
+model EmailTemplate {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  key      String  @unique
+  name     String
+  layoutId String? @db.Uuid
+
+  subject   String
+  htmlBody  String @db.Text
+  variables Json?
+
+  description String? @db.Text
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?  @db.Uuid
+  updatedBy String?  @db.Uuid
+
+  layout EmailLayout? @relation(fields: [layoutId], references: [id])
+  logs   EmailLog[]
+
+  @@index([key])
+  @@index([layoutId])
+  @@index([isActive])
+}
+
+model EmailLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  templateId String? @db.Uuid
+
+  toEmail String
+
+  subject String
+
+  status EmailStatus
+
+  provider String?
+
+  error String? @db.Text
+
+  payload Json?
+
+  sentAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  template EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+  @@index([toEmail])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
 }
 
 enum CustomerStatus {

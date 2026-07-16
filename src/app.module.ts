@@ -19,6 +19,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
 import { SocketModule } from './libs/socket/socket.module';
 import { RedisWrapperModule } from './libs/redis/redis.module';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { MailTemplateModule } from './modules/mail-template/mail-template.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
     PermissionsModule,
     SocketModule,
     RedisWrapperModule,
+    MailTemplateModule,
   ],
   controllers: [AppController],
   providers: [AppService],

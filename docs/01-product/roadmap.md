@@ -27,11 +27,11 @@ Phase 0 (Thiết lập nền tảng)
 - [x] Khởi tạo dự án Frontend Next.js (App Router) với Shadcn UI.
 - [x] Setup cơ chế Soft Delete mặc định và cấu hình Index.
 
-### Phase 1 — Xác thực Auth & Phân quyền RBAC ⏳ (Đang hoàn thiện)
+### Phase 1 — Xác thực Auth & Phân quyền RBAC  ✅ (Hoàn thành)
 - [x] Backend: Viết Auth module (đăng nhập, đổi mật khẩu, refresh token qua cookie HttpOnly).
 - [x] Backend: Xây dựng cơ chế JwtStrategy & PermissionGuard kiểm tra mã quyền động.
 - [x] Frontend: Form đăng nhập admin và lưu trữ thông tin session cá nhân.
-- [ ] Frontend: Quản lý nhân viên (`/users`) và gán vai trò (`/roles`).
+- [X] Frontend: Quản lý nhân viên (`/users`) và gán vai trò (`/roles`).
 
 ### Phase 2 — Khách hàng & Kho thiết bị ✅ (Hoàn thành)
 - [x] Backend: API CRUD danh mục sản phẩm (`Product`), thương hiệu (`Brand`), nhóm (`ProductCategory`).

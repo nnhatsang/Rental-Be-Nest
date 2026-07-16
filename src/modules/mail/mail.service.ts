@@ -33,11 +33,25 @@ export class MailService {
       from: this.mailFrom,
       to,
       subject: 'Dat lai mat khau Rental Admin',
-      html: this.generatePasswordResetEmailHtml(resetUrl, user),
+      html: this.buildPasswordResetEmailHtml(resetUrl, user),
     });
   }
 
-  private generatePasswordResetEmailHtml(resetUrl: string, user?: { fullName?: string | null }): string {
+  async sendEmail(input: { to: string; subject: string; html: string; text?: string }): Promise<void> {
+    if (!this.transporter) {
+      throw new Error('SMTP is not configured');
+    }
+
+    await this.transporter.sendMail({
+      from: this.mailFrom,
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    });
+  }
+
+  buildPasswordResetEmailHtml(resetUrl: string, user?: { fullName?: string | null }): string {
     const safeSiteName = this.escapeHtml(this.siteName);
     const safeResetUrl = this.escapeHtml(resetUrl);
     const safeFullName = this.escapeHtml(user?.fullName || 'ban');

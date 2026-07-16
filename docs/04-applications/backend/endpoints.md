@@ -97,3 +97,18 @@
 | `POST` | `/:id/cancel` | `orders.cancel` | Hủy đơn thuê. |
 | `PATCH` | `/:id` | `orders.update` | Sửa đổi thông tin đơn nháp. |
 | `DELETE` | `/:id` | `orders.cancel` | Xóa mềm đơn thuê nháp. |
+
+### 2.7 Nhom Mau Email (Mail Templates)
+- Base Path: `/api/mail-templates`
+
+| Method | Path | Ma quyen yeu cau | Mo ta chuc nang |
+|---|---|---|---|
+| `GET` | `/layouts` | `email_templates.read` | Danh sach layout email co phan trang, search va filter `isActive`. |
+| `GET` | `/layouts/:id` | `email_templates.read` | Xem chi tiet layout email. |
+| `POST` | `/layouts` | `email_templates.update` | Tao layout email. |
+| `PATCH` | `/layouts/:id` | `email_templates.update` | Cap nhat layout email. |
+| `GET` | `/` | `email_templates.read` | Danh sach mau email co phan trang, search va filter `isActive`. |
+| `GET` | `/:id` | `email_templates.read` | Xem chi tiet mau email. |
+| `PATCH` | `/:id` | `email_templates.update` | Cap nhat subject, body, variables va trang thai active. |
+| `POST` | `/:id/preview` | `email_templates.preview` | Render preview voi payload mau. |
+| `POST` | `/:id/send-test` | `email_templates.send_test` | Gui thu email va ghi log ket qua. |

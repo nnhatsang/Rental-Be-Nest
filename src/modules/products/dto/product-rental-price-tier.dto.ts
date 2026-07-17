@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
-import { INVALID_NUMBER, INVALID_STRING } from '@/libs/constants/invalid.constant';
+import { IsNumber, IsOptional, IsPositive, IsString, Min } from 'class-validator';
+import { INVALID_NUMBER, INVALID_POSITIVE, INVALID_STRING } from '@/libs/constants/invalid.constant';
 
 export class ProductRentalPriceTierInDto {
   @ApiProperty({ example: 3 })
@@ -14,16 +14,15 @@ export class ProductRentalPriceTierInDto {
   @Type(() => Number)
   @IsOptional()
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(1)
   maxDays?: number;
 
   @ApiProperty({ example: 180000 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @IsPositive({ message: INVALID_POSITIVE })
   dailyPrice!: number;
 
-  @ApiPropertyOptional({ example: 'Combo 3-6 ngay' })
+  @ApiPropertyOptional({ example: 'Combo 3-6 ngày' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   name?: string;
@@ -49,7 +48,7 @@ export class ProductRentalPriceTierOutDto {
   @ApiProperty({ example: '180000' })
   dailyPrice!: string;
 
-  @ApiProperty({ example: 'Combo 3-6 ngay', nullable: true })
+  @ApiProperty({ example: 'Combo 3-6 ngày', nullable: true })
   name!: string | null;
 
   @ApiProperty({ example: 0 })

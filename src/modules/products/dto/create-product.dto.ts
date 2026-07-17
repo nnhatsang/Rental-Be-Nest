@@ -1,8 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { ProductRentalPriceTierInDto } from './product-rental-price-tier.dto';
-import { INVALID_ARRAY, INVALID_BOOLEAN, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { INVALID_ARRAY, INVALID_BOOLEAN, INVALID_NUMBER, INVALID_POSITIVE, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'Sony A7 IV' })
@@ -41,20 +41,19 @@ export class CreateProductDto {
   @ApiProperty({ example: 500000 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @IsPositive({ message: INVALID_POSITIVE })
   dailyPrice!: number;
 
-  @ApiPropertyOptional({ example: 300000 })
+  @ApiProperty({ example: 300000 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @IsPositive({ message: INVALID_POSITIVE })
   halfDayPrice!: number;
 
-  @ApiPropertyOptional({ example: 100000 })
+  @ApiProperty({ example: 100000 })
   @Type(() => Number)
-  @IsOptional()
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @IsPositive({ message: INVALID_POSITIVE })
   hourlyOveragePrice!: number;
 
   @ApiPropertyOptional({ type: [ProductRentalPriceTierInDto] })
@@ -68,13 +67,13 @@ export class CreateProductDto {
   @ApiProperty({ example: 5000000 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @IsPositive({ message: INVALID_POSITIVE })
   depositAmount!: number;
 
-  @ApiPropertyOptional({ example: 45000000 })
+  @ApiProperty({ example: 45000000 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @IsPositive({ message: INVALID_POSITIVE })
   replacementValue!: number;
 
   @ApiPropertyOptional({ example: true, default: true })

@@ -22,3 +22,4 @@ export const INVALID_PHONE_NUMBER = 'Số điện thoại phải gồm 10 ký t�
 export const INVALID_MONGO_ID = 'Phải có dạng objectId';
 export const INVALID_OBJECT = 'Phải có dạng object';
 export const INVALID_URL = 'Phải có dạng url';
+export const INVALID_POSITIVE = 'Giá trị phải lớn hơn 0';

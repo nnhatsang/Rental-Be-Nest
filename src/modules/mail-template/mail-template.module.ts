@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { MailModule } from '@modules/mail/mail.module';
+import { QueueModule } from '@/libs/queue/queue.module';
 import { MailTemplateController } from './mail-template.controller';
 import { MailTemplateService } from './mail-template.service';
 
 @Module({
-  imports: [MailModule],
+  imports: [QueueModule],
   controllers: [MailTemplateController],
   providers: [MailTemplateService],
   exports: [MailTemplateService],

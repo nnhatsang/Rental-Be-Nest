@@ -77,7 +77,6 @@ export class StoreClosureService {
         endDate: dto.endDate,
         type: dto.type,
         reason: dto.reason,
-        createdBy: userId,
       },
     });
 
@@ -98,7 +97,7 @@ export class StoreClosureService {
         endDate: dto.endDate,
         type: dto.type,
         reason: dto.reason,
-        updatedBy: userId,
+        updatedAt: new Date(),
       },
     });
 
@@ -115,7 +114,6 @@ export class StoreClosureService {
       where: { id: { in: uniqueIds } },
       data: {
         deletedAt: new Date(),
-        deletedBy: userId,
       },
     });
 

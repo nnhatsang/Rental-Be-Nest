@@ -1,9 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class StoreBusinessHourOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  id!: string;
-
   @ApiProperty({ example: 1, description: '0 = Sunday, 1 = Monday, ..., 6 = Saturday' })
   dayOfWeek!: number;
 

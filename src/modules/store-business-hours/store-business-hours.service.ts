@@ -3,27 +3,36 @@ import { PrismaService } from '../database/prisma.service';
 import { UpdateStoreBusinessHoursDto, UpdateStoreBusinessHourItemDto } from './dto/update-store-business-hours.dto';
 import { StoreBusinessHourOutDto } from './dto/store-business-hour-out.dto';
 import { RENTAL_ORDER_STORE_CLOSED, STORE_BUSINESS_HOURS_INVALID } from '@/libs/constants/error.constants';
+import { RedisService } from '@/libs/redis/redis.service';
+import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
+import { REDIS_EXPIRE } from '@/libs/redis/constant/prefix.constant';
+
+type CachedStoreBusinessHour = {
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  isOpen: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 @Injectable()
 export class StoreBusinessHoursService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   async getStoreBusinessHours(): Promise<StoreBusinessHourOutDto[]> {
-    await this.ensureDefaultBusinessHours();
+    const businessHours = await this.getCachedBusinessHours();
 
-    const businessHours = await this.prisma.storeBusinessHour.findMany({
-      orderBy: {
-        dayOfWeek: 'asc',
-      },
-    });
-
-    return businessHours.map((businessHour) => this.toStoreBusinessHourOut(businessHour));
+    return businessHours.map((businessHour) => this.toStoreBusinessHourOut(this.fromCachedBusinessHour(businessHour)));
   }
 
   async updateStoreBusinessHours(dto: UpdateStoreBusinessHoursDto): Promise<StoreBusinessHourOutDto[]> {
     this.validateBusinessHours(dto.items);
 
-    await this.prisma.$transaction(
+    const businessHours = await this.prisma.$transaction(
       dto.items.map((item) =>
         this.prisma.storeBusinessHour.upsert({
           where: {
@@ -44,13 +53,13 @@ export class StoreBusinessHoursService {
       ),
     );
 
-    return this.getStoreBusinessHours();
+    await this.redis.deleteBestEffort(REDIS_KEYS.store.businessHours());
+
+    return businessHours.sort((first, second) => first.dayOfWeek - second.dayOfWeek).map((businessHour) => this.toStoreBusinessHourOut(businessHour));
   }
 
   async assertRentalTimeWithinBusinessHours(startDate: Date, endDate: Date): Promise<void> {
-    await this.ensureDefaultBusinessHours();
-
-    const businessHours = await this.prisma.storeBusinessHour.findMany();
+    const businessHours = await this.getCachedBusinessHours();
     const businessHoursByDay = new Map(businessHours.map((businessHour) => [businessHour.dayOfWeek, businessHour]));
 
     this.assertDateWithinBusinessHours(startDate, businessHoursByDay);
@@ -75,6 +84,42 @@ export class StoreBusinessHoursService {
         }),
       ),
     );
+
+    await this.redis.deleteBestEffort(REDIS_KEYS.store.businessHours());
+  }
+
+  private async getCachedBusinessHours(): Promise<CachedStoreBusinessHour[]> {
+    return this.redis.getOrSetJson<CachedStoreBusinessHour[]>({
+      key: REDIS_KEYS.store.businessHours(),
+      ttlSeconds: REDIS_EXPIRE.STORE_BUSINESS_HOURS_CACHE,
+      loader: async () => {
+        await this.ensureDefaultBusinessHours();
+
+        const businessHours = await this.prisma.storeBusinessHour.findMany({
+          orderBy: {
+            dayOfWeek: 'asc',
+          },
+        });
+
+        return businessHours.map((businessHour) => this.toCachedBusinessHour(businessHour));
+      },
+    });
+  }
+
+  private toCachedBusinessHour(businessHour: StoreBusinessHourOutDto): CachedStoreBusinessHour {
+    return {
+      ...businessHour,
+      createdAt: businessHour.createdAt.toISOString(),
+      updatedAt: businessHour.updatedAt.toISOString(),
+    };
+  }
+
+  private fromCachedBusinessHour(businessHour: CachedStoreBusinessHour): StoreBusinessHourOutDto {
+    return {
+      ...businessHour,
+      createdAt: new Date(businessHour.createdAt),
+      updatedAt: new Date(businessHour.updatedAt),
+    };
   }
 
   private validateBusinessHours(items: UpdateStoreBusinessHourItemDto[]): void {
@@ -130,7 +175,6 @@ export class StoreBusinessHoursService {
 
   private toStoreBusinessHourOut(businessHour: StoreBusinessHourOutDto): StoreBusinessHourOutDto {
     return {
-      id: businessHour.id,
       dayOfWeek: businessHour.dayOfWeek,
       openTime: businessHour.openTime,
       closeTime: businessHour.closeTime,

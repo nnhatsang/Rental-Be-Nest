@@ -56,9 +56,12 @@ export class SendTestMailTemplateOutDto {
   @ApiProperty({ example: true })
   success!: boolean;
 
-  @ApiProperty({ example: 'SENT' })
+  @ApiProperty({ example: 'PENDING' })
   status!: string;
 
   @ApiProperty({ example: null, nullable: true })
   error!: string | null;
+
+  @ApiProperty({ example: '0190f6a4-7d10-7000-8000-000000000001' })
+  jobId!: string;
 }

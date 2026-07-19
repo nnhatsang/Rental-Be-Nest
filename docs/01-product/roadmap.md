@@ -39,6 +39,7 @@ Phase 0 (Thiết lập nền tảng)
 - [x] Backend: API quản lý từng thiết bị vật lý cụ thể theo Serial (`AssetUnit`).
 - [x] Backend: Tích hợp tìm kiếm tiếng Việt không dấu (Accent-insensitive) sử dụng chỉ mục trigram GIN.
 - [x] Frontend: Trang quản lý sản phẩm, thiết bị, và tạo nhanh khách hàng.
+- [x] Frontend: Module quản lý thiết bị vật lý (`/asset-units`) gồm list/filter/search, tạo mới, xem, sửa, cập nhật tình trạng và xóa mềm.
 
 ### Phase 3 — Vòng đời Đơn thuê & Kiểm tra lịch trống ⏳ (Đang phát triển)
 - [x] Backend: Thuật toán quét trùng lịch giao thoa thời gian (Time Overlap checking) có tính đến turnaround minutes.

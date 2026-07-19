@@ -26,7 +26,17 @@ export const REDIS_KEYS = {
   },
 
   rentalAvailability: {
+    // Do not use this cache for inventory decisions. Availability is dynamic
+    // and must be read from PostgreSQL when an order is confirmed or assigned.
     cache: (hash: string) => `${REDIS_PREFIX.RENTAL_AVAILABILITY}:cache:${hash}`,
+  },
+
+  rentalPolicy: {
+    default: () => `${REDIS_PREFIX.RENTAL_POLICY}:default`,
+  },
+
+  store: {
+    businessHours: () => `${REDIS_PREFIX.STORE}:business-hours`,
   },
 
   assetUnit: {

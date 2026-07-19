@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiAcceptedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
 import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
 import { AuthUser } from '@modules/auth/types/auth-user.type';
@@ -92,10 +92,11 @@ export class MailTemplateController {
   }
 
   @Post(':id/send-test')
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermissions(PermissionCode.EmailTemplatesSendTest)
   @ApiOperation({ summary: 'Gui thu mau email den mot dia chi' })
-  @ApiOkResponse({ type: SendTestMailTemplateResponseDto })
+  @ApiAcceptedResponse({ type: SendTestMailTemplateResponseDto })
   async sendTestMailTemplate(@Param('id', IdValidatePipe) id: string, @Body() dto: SendTestMailTemplateDto) {
-    return new ApiRes(await this.mailTemplateService.sendTestMailTemplate(id, dto), 'Gui thu mau email hoan tat');
+    return new ApiRes(await this.mailTemplateService.sendTestMailTemplate(id, dto), 'Email thu da duoc dua vao hang doi');
   }
 }

@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import { EmailStatus } from '@generated/prisma/enums';
-import { MailService } from '@modules/mail/mail.service';
 import { PrismaService } from '@modules/database/prisma.service';
+import { EmailQueueService } from '@/libs/queue/email-queue.service';
 import {
   EMAIL_LAYOUT_KEY_EXISTED,
   EMAIL_LAYOUT_NOT_FOUND,
@@ -19,10 +19,6 @@ import { SendTestMailTemplateDto } from './dto/send-test-mail-template.dto';
 import { UpdateMailLayoutDto } from './dto/update-mail-layout.dto';
 import { UpdateMailTemplateDto } from './dto/update-mail-template.dto';
 
-export const MailTemplateKey = {
-  AuthResetPassword: 'auth.reset_password',
-} as const;
-
 export type MailTemplateFallback = {
   subject: string;
   htmlBody: string;
@@ -35,7 +31,7 @@ type ExistingMailTemplateEntity = NonNullable<MailTemplateEntity>;
 export class MailTemplateService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mailService: MailService,
+    private readonly emailQueueService: EmailQueueService,
   ) {}
 
   async getAllMailLayouts(query: GetAllMailTemplatesDto) {
@@ -188,51 +184,23 @@ export class MailTemplateService {
   async sendTestMailTemplate(id: string, dto: SendTestMailTemplateDto): Promise<SendTestMailTemplateOutDto> {
     const template = await this.findExistingMailTemplateById(id);
     const rendered = this.renderTemplate(template, dto.payload);
+    const { jobId } = await this.enqueueRenderedEmail({
+      templateId: template.id,
+      toEmail: dto.toEmail,
+      subject: rendered.subject,
+      htmlBody: rendered.htmlBody,
+      payload: dto.payload,
+    });
 
-    try {
-      await this.mailService.sendEmail({
-        to: dto.toEmail,
-        subject: rendered.subject,
-        html: rendered.htmlBody,
-      });
-      await this.logEmail({
-        templateId: template.id,
-        toEmail: dto.toEmail,
-        subject: rendered.subject,
-        status: EmailStatus.SENT,
-        payload: dto.payload,
-      });
-
-      return {
-        success: true,
-        status: EmailStatus.SENT,
-        error: null,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown mail error';
-      await this.logEmail({
-        templateId: template.id,
-        toEmail: dto.toEmail,
-        subject: rendered.subject,
-        status: EmailStatus.FAILED,
-        error: errorMessage,
-        payload: dto.payload,
-      });
-
-      return {
-        success: false,
-        status: EmailStatus.FAILED,
-        error: errorMessage,
-      };
-    }
+    return {
+      success: true,
+      status: EmailStatus.PENDING,
+      error: null,
+      jobId,
+    };
   }
 
-  async sendTemplateEmail(params: {
-    key: string;
-    toEmail: string;
-    payload: Record<string, unknown>;
-    fallback: MailTemplateFallback;
-  }): Promise<void> {
+  async sendTemplateEmail(params: { key: string; toEmail: string; payload: Record<string, unknown>; fallback: MailTemplateFallback }): Promise<void> {
     const template = await this.prisma.emailTemplate.findUnique({
       where: {
         key: params.key,
@@ -241,30 +209,13 @@ export class MailTemplateService {
     });
     const rendered = template?.isActive ? this.renderTemplate(template, params.payload) : params.fallback;
 
-    try {
-      await this.mailService.sendEmail({
-        to: params.toEmail,
-        subject: rendered.subject,
-        html: rendered.htmlBody,
-      });
-      await this.logEmail({
-        templateId: template?.id ?? null,
-        toEmail: params.toEmail,
-        subject: rendered.subject,
-        status: EmailStatus.SENT,
-        payload: params.payload,
-      });
-    } catch (error) {
-      await this.logEmail({
-        templateId: template?.id ?? null,
-        toEmail: params.toEmail,
-        subject: rendered.subject,
-        status: EmailStatus.FAILED,
-        error: error instanceof Error ? error.message : 'Unknown mail error',
-        payload: params.payload,
-      });
-      throw error;
-    }
+    await this.enqueueRenderedEmail({
+      templateId: template?.id ?? null,
+      toEmail: params.toEmail,
+      subject: rendered.subject,
+      htmlBody: rendered.htmlBody,
+      payload: params.payload,
+    });
   }
 
   private renderTemplate(template: ExistingMailTemplateEntity, payload: Record<string, unknown>): RenderedMailTemplateOutDto {
@@ -347,25 +298,46 @@ export class MailTemplateService {
     return value as string[];
   }
 
-  private async logEmail(input: {
+  private async enqueueRenderedEmail(input: {
     templateId: string | null;
     toEmail: string;
     subject: string;
-    status: EmailStatus;
-    error?: string;
+    htmlBody: string;
     payload: Record<string, unknown>;
-  }): Promise<void> {
-    await this.prisma.emailLog.create({
+  }): Promise<{ jobId: string }> {
+    // Tạo log trước để API và worker cùng theo dõi một lần gửi email duy nhất.
+    const emailLog = await this.prisma.emailLog.create({
       data: {
         templateId: input.templateId,
         toEmail: input.toEmail,
         subject: input.subject,
-        status: input.status,
-        sentAt: input.status === EmailStatus.SENT ? new Date() : null,
-        error: input.error,
+        status: EmailStatus.PENDING,
+        sentAt: null,
+        error: null,
         payload: input.payload as Prisma.InputJsonValue,
       },
     });
+
+    try {
+      return await this.emailQueueService.enqueue({
+        emailLogId: emailLog.id,
+        to: input.toEmail,
+        subject: input.subject,
+        html: input.htmlBody,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown queue error';
+      // Enqueue lỗi nghĩa là worker sẽ không nhận được job, vì vậy kết thúc log ngay tại đây.
+      await this.prisma.emailLog.update({
+        where: { id: emailLog.id },
+        data: {
+          status: EmailStatus.FAILED,
+          error: errorMessage,
+          sentAt: null,
+        },
+      });
+      throw error;
+    }
   }
 
   private async findExistingMailTemplateById(id: string): Promise<ExistingMailTemplateEntity> {

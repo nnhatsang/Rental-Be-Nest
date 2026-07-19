@@ -117,7 +117,7 @@ export class AssetUnitsService {
         isActive: dto.isActive,
         searchText: buildAssetUnitSearchText(nextAssetUnit),
         updatedBy: userId,
-        deletedAt: new Date(),
+        updatedAt: new Date(),
       },
       include: this.assetUnitInclude(),
     });
@@ -143,7 +143,7 @@ export class AssetUnitsService {
           productSku: existingAssetUnit.product.sku,
         }),
         updatedBy: userId,
-        deletedAt: new Date(),
+        updatedAt: new Date(),
       },
       include: this.assetUnitInclude(),
     });

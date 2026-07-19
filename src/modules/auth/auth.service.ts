@@ -38,7 +38,8 @@ import { PasswordResetTokenService } from './services/password-reset-token.servi
 import { RedisService } from '@/libs/redis/redis.service';
 import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
 import { REDIS_EXPIRE } from '@/libs/redis/constant/prefix.constant';
-import { MailTemplateKey, MailTemplateService } from '@/modules/mail-template/mail-template.service';
+import { MailTemplateService } from '@/modules/mail-template/mail-template.service';
+import { MailTemplateKey } from '../mail-template/const/mail-template.const';
 
 type UserWithAuth = User & {
   roles: {
@@ -208,13 +209,13 @@ export class AuthService {
         key: MailTemplateKey.AuthResetPassword,
         toEmail: user.email,
         payload: {
-          userName: user.fullName || 'ban',
+          userName: user.fullName || 'bạn',
           resetPasswordUrl,
           expiresInMinutes: Math.ceil(this.configService.get<number>('RESET_PASSWORD_EXPIRES_IN_SECONDS', 1800) / 60),
           appName,
         },
         fallback: {
-          subject: `Dat lai mat khau ${appName}`,
+          subject: `Đặt lại mật khẩu ${appName}`,
           htmlBody: this.mailService.buildPasswordResetEmailHtml(resetPasswordUrl, {
             fullName: user.fullName,
           }),
@@ -551,17 +552,9 @@ export class AuthService {
       this.redis.incrWithTTL(REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail), REDIS_EXPIRE.LOGIN_ATTEMPT),
     ]);
 
-    if (userFailures < maxFailures) {
-      return;
+    if (userFailures === this.getMaxLoginFailures()) {
+      await this.redis.set(REDIS_KEYS.auth.userLock(userId), '1', REDIS_EXPIRE.AUTH_LOCK);
     }
-
-    await Promise.all([
-      this.redis.set(REDIS_KEYS.auth.userLock(userId), '1', REDIS_EXPIRE.AUTH_LOCK),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { activityStatus: EUserActivityStatus.Locked },
-      }),
-    ]);
   }
 
   private async clearLoginFailureCounters(userId: string, normalizedEmail: string): Promise<void> {

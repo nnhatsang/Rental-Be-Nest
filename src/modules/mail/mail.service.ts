@@ -22,20 +22,7 @@ export class MailService {
     this.transporter = host && user && pass ? createTransport({ host, port, secure, auth: { user, pass } }) : null;
   }
 
-  async sendPasswordResetEmail(to: string, resetUrl: string, user?: { fullName?: string | null }): Promise<void> {
-    if (!this.transporter) {
-      this.logger.warn('SMTP is not configured; password reset email was skipped.');
-      return;
-    }
 
-    this.logger.log(`Sending password reset email to ${to} with reset URL: ${resetUrl}`);
-    await this.transporter.sendMail({
-      from: this.mailFrom,
-      to,
-      subject: 'Dat lai mat khau Rental Admin',
-      html: this.buildPasswordResetEmailHtml(resetUrl, user),
-    });
-  }
 
   async sendEmail(input: { to: string; subject: string; html: string; text?: string }): Promise<void> {
     if (!this.transporter) {

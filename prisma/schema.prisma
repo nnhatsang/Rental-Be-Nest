@@ -25,6 +25,16 @@
 // StoreBusinessHour = weekly opening hours.
 // StoreClosure = holiday/off/maintenance windows.
 // RentalOrder = snapshot of the policy values applied to a specific order.
+
+// check toan bo phan prisma ok k
+// pnpm.cmd exec prisma format
+// pnpm.cmd exec prisma generate
+// pnpm.cmd exec prisma validate
+// pnpm.cmd typecheck
+// pnpm.cmd build
+
+// ne an toan thi migrate
+// pnpm.cmd prisma migrate dev
 generator client {
   provider        = "prisma-client"
   output          = "../generated/prisma"
@@ -382,6 +392,7 @@ model AssetUnit {
   @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "AssetUnit_searchText_trgm_idx")
 }
 
+// 1 chính sách về việc đặt đơn
 model RentalPolicy {
   /// Mã định danh chính của chính sách thuê.
   id String @id @default(uuid(7)) @db.Uuid
@@ -407,12 +418,16 @@ model RentalPolicy {
   // deletedBy String? @map("deleted_by") @db.Uuid
 }
 
+// quy định vê thời gian hoạt động trong tuần
 model StoreBusinessHour {
-  /// Mã định danh chính của khung giờ hoạt động trong tuần.
-  id String @id @default(uuid(7)) @db.Uuid
+  // /// Mã định danh chính của khung giờ hoạt động trong tuần.
+  // id String @id @default(uuid(7)) @db.Uuid
 
   /// Thứ trong tuần: 0 = Chủ nhật, 1 = Thứ hai, ..., 6 = Thứ bảy.
-  dayOfWeek Int
+  // dayOfWeek Int 
+
+  dayOfWeek Int @id
+
   /// Giờ mở cửa theo định dạng HH:mm, ví dụ 08:00.
   openTime  String
   /// Giờ đóng cửa theo định dạng HH:mm, ví dụ 20:00.
@@ -424,10 +439,9 @@ model StoreBusinessHour {
   createdAt DateTime @default(now())
   /// Thời gian cập nhật cấu hình giờ hoạt động gần nhất.
   updatedAt DateTime @updatedAt
-
-  @@unique([dayOfWeek])
 }
 
+// cấu hình lịch nghỉ 
 model StoreClosure {
   /// Mã định danh chính của lịch nghỉ/off/bảo trì.
   id String @id @default(uuid(7)) @db.Uuid
@@ -445,9 +459,9 @@ model StoreClosure {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  createdBy String? @map("created_by") @db.Uuid
-  updatedBy String? @map("updated_by") @db.Uuid
-  deletedBy String? @map("deleted_by") @db.Uuid
+  // createdBy String? @map("created_by") @db.Uuid
+  // updatedBy String? @map("updated_by") @db.Uuid
+  // deletedBy String? @map("deleted_by") @db.Uuid
 
   @@index([startDate, endDate])
   @@index([type])
@@ -617,6 +631,7 @@ model RentalOrderItem {
   @@index([assetUnitId])
 }
 
+// nhật ký giao dịch
 model PaymentRecord {
   /// Primary payment record id.
   id String @id @default(uuid(7)) @db.Uuid
@@ -654,6 +669,7 @@ model PaymentRecord {
   @@index([createdBy])
 }
 
+// Lịch sử đổi trạng thái đơn)
 model OrderStatusHistory {
   /// Primary status history id.
   id String @id @default(uuid(7)) @db.Uuid
@@ -684,6 +700,7 @@ model OrderStatusHistory {
   @@index([createdAt])
 }
 
+//(Biên bản bàn giao thiết bị)
 model OrderHandover {
   /// Primary handover id.
   id String @id @default(uuid(7)) @db.Uuid
@@ -716,6 +733,7 @@ model OrderHandover {
   @@index([createdBy])
 }
 
+// Biên bản kiểm tra máy khi trả
 model ReturnInspection {
   /// Primary return inspection id.
   id String @id @default(uuid(7)) @db.Uuid
@@ -758,6 +776,10 @@ model ReturnInspection {
   @@index([inspectedById])
 }
 
+// 4. DamageReport (Báo cáo hư hỏng / Mất mát chi tiết)
+// Bảng này là "con" của bảng ReturnInspection phía trên. Một đơn hàng khách thuê 3 món: 1 thân máy, 1 ống kính, 1 đèn flash. Khi trả, chỉ có cái ống kính bị nứt kính.
+
+// 👉 Nhiệm vụ: Lưu chi tiết chính xác thiết bị nào bị hỏng và hỏng thế nào (Ví dụ: Ống kính Sony serial 12345 bị nứt kính, mức độ nặng, ước tính chi phí sửa/đền là 2 triệu). Nó tách biệt hẳn với cái thân máy và đèn flash vẫn nguyên vẹn.
 model DamageReport {
   /// Primary damage report id.
   id String @id @default(uuid(7)) @db.Uuid
@@ -903,6 +925,7 @@ model EmailLog {
 }
 
 enum EmailStatus {
+  PENDING
   SENT
   FAILED
 }

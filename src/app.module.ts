@@ -20,6 +20,7 @@ import { SocketModule } from './libs/socket/socket.module';
 import { RedisWrapperModule } from './libs/redis/redis.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { MailTemplateModule } from './modules/mail-template/mail-template.module';
+import { QueueModule } from './libs/queue/queue.module';
 
 @Module({
   imports: [
@@ -96,6 +97,7 @@ import { MailTemplateModule } from './modules/mail-template/mail-template.module
     SocketModule,
     RedisWrapperModule,
     MailTemplateModule,
+    QueueModule,
   ],
   controllers: [AppController],
   providers: [AppService],

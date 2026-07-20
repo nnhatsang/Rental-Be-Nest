@@ -19,17 +19,19 @@ export class MailService {
     this.mailFrom = this.configService.get<string>('MAIL_FROM', 'Rental Admin <no-reply@rental.local>');
     // this.siteName = this.configService.get<string>('MAIL_SITE_NAME', 'Rental Admin');
     this.siteName = 'Rental Admin';
-    this.transporter = host && user && pass ? createTransport({ host, port, secure, auth: { user, pass } }) : null;
+    this.transporter =
+      host && user && pass
+        ? createTransport({ host, port, secure, auth: { user, pass }, connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 30_000 })
+        : null;
   }
 
-
-
-  async sendEmail(input: { to: string; subject: string; html: string; text?: string }): Promise<void> {
+  async sendEmail(input: { to: string; subject: string; html: string; text?: string; messageId?: string }): Promise<void> {
     if (!this.transporter) {
       throw new Error('SMTP is not configured');
     }
 
     await this.transporter.sendMail({
+      messageId: input.messageId,
       from: this.mailFrom,
       to: input.to,
       subject: input.subject,

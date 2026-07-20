@@ -1,8 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
-import { EmailStatus } from '@generated/prisma/enums';
 import { PrismaService } from '@modules/database/prisma.service';
-import { EmailQueueService } from '@/libs/queue/email-queue.service';
 import {
   EMAIL_LAYOUT_KEY_EXISTED,
   EMAIL_LAYOUT_NOT_FOUND,
@@ -18,6 +16,7 @@ import { PreviewMailTemplateDto } from './dto/preview-mail-template.dto';
 import { SendTestMailTemplateDto } from './dto/send-test-mail-template.dto';
 import { UpdateMailLayoutDto } from './dto/update-mail-layout.dto';
 import { UpdateMailTemplateDto } from './dto/update-mail-template.dto';
+import { EmailQueue } from '@/libs/queue/email-queue';
 
 export type MailTemplateFallback = {
   subject: string;
@@ -31,7 +30,7 @@ type ExistingMailTemplateEntity = NonNullable<MailTemplateEntity>;
 export class MailTemplateService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly emailQueueService: EmailQueueService,
+    private readonly emailQueue: EmailQueue,
   ) {}
 
   async getAllMailLayouts(query: GetAllMailTemplatesDto) {
@@ -193,9 +192,7 @@ export class MailTemplateService {
     });
 
     return {
-      success: true,
-      status: EmailStatus.PENDING,
-      error: null,
+      accepted: true,
       jobId,
     };
   }
@@ -305,39 +302,14 @@ export class MailTemplateService {
     htmlBody: string;
     payload: Record<string, unknown>;
   }): Promise<{ jobId: string }> {
-    // Tạo log trước để API và worker cùng theo dõi một lần gửi email duy nhất.
-    const emailLog = await this.prisma.emailLog.create({
-      data: {
-        templateId: input.templateId,
-        toEmail: input.toEmail,
-        subject: input.subject,
-        status: EmailStatus.PENDING,
-        sentAt: null,
-        error: null,
-        payload: input.payload as Prisma.InputJsonValue,
-      },
-    });
-
-    try {
-      return await this.emailQueueService.enqueue({
-        emailLogId: emailLog.id,
+    return this.emailQueue.enqueue(
+      {
         to: input.toEmail,
         subject: input.subject,
         html: input.htmlBody,
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown queue error';
-      // Enqueue lỗi nghĩa là worker sẽ không nhận được job, vì vậy kết thúc log ngay tại đây.
-      await this.prisma.emailLog.update({
-        where: { id: emailLog.id },
-        data: {
-          status: EmailStatus.FAILED,
-          error: errorMessage,
-          sentAt: null,
-        },
-      });
-      throw error;
-    }
+      },
+      {},
+    );
   }
 
   private async findExistingMailTemplateById(id: string): Promise<ExistingMailTemplateEntity> {

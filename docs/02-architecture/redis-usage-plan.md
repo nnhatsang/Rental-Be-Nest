@@ -1,5 +1,7 @@
 # Redis Usage Plan
 
+> **Lưu ý kiến trúc:** Xem [redis-socket-bullmq-design.md](./redis-socket-bullmq-design.md) cho phân ranh trách nhiệm mới nhất giữa PostgreSQL, Redis, BullMQ và Socket.IO. PostgreSQL transaction/advisory lock là lớp quyết định chống overbooking; Redis lock không được dùng làm cơ chế đúng đắn duy nhất cho inventory.
+
 > Tai lieu mo ta vai tro Redis trong backend Rental Admin, cac nhom chuc nang can build, key pattern de thong nhat, va ke hoach trien khai theo giai doan.
 
 ---
@@ -14,7 +16,7 @@ Muc tieu chinh:
 
 1. Tang toc cac du lieu doc nhieu, chap nhan cache ngan han.
 2. Ho tro bao mat va chong spam nhu password reset, login attempt, rate limit.
-3. Ho tro distributed lock de giam rui ro thao tac trung khi nhieu nhan vien cung xu ly mot don/thiet bi.
+3. Ho tro idempotency/UX lock ngan han; PostgreSQL advisory lock va transaction van chong race condition nghiep vu.
 4. Ho tro realtime dashboard/socket bang pub/sub khi can scale nhieu instance backend.
 5. Gom tat ca key Redis vao mot noi de tranh trung key va de de invalidate cache.
 
@@ -27,7 +29,7 @@ Muc tieu chinh:
 - Token tam thoi: password reset.
 - Counter co TTL: login failed attempts, API rate limit, resend email limit.
 - Cache ngan han: dashboard metrics, rental policy, permission snapshot, danh sach lookup nho.
-- Distributed lock ngan han: confirm order, assign asset unit, transition order status.
+- Idempotency hoac UX lock ngan han de giam double-submit; khong dung lam lop duy nhat cho confirm/assign.
 - Realtime event: publish order/asset/dashboard update cho socket gateway.
 - Idempotency key: chan double submit trong cac hanh dong nhay cam.
 
@@ -389,27 +391,23 @@ Rui ro can tranh: permission cache stale lam user tiep tuc dung quyen cu sau khi
 
 Flow de xuat:
 
-1. Lay lock `rental:order:lock:<orderId>`.
-2. Lay them lock tung `rental:asset-unit:lock:<assetUnitId>` neu order da gan serial.
-3. Query DB va check lai availability overlap.
+1. Mo PostgreSQL transaction va lay advisory lock theo order.
+2. Lay advisory lock theo product/asset lien quan theo thu tu on dinh.
+3. Query DB bang cung transaction client va check lai availability overlap.
 4. Trong transaction: cap nhat status, ghi status history, ghi order event.
-5. Sau transaction: invalidate dashboard cache va publish event.
-6. Release lock.
-
-Redis lock khong thay the DB transaction. No chi giam rui ro 2 request cung chay qua check cung luc.
+5. Commit thanh cong roi invalidate dashboard cache va publish event.
+6. Redis idempotency key la tuy chon de giam double-submit, khong tham gia quyet dinh ton kho.
 
 ### 8.6 Assign asset unit
 
 Flow de xuat:
 
-1. Lay lock theo order.
-2. Lay lock theo danh sach asset unit duoc gan.
-3. Check asset unit ton tai, dung product, khong bi maintenance/lost/retired.
-4. Check overlap bang DB.
-5. Update rental order items trong transaction.
-6. Invalidate dashboard/availability cache.
-7. Publish event `events:rental-order`.
-8. Release lock.
+1. Mo PostgreSQL transaction va lay advisory lock theo order.
+2. Lay advisory lock theo danh sach asset unit da sort/loai trung.
+3. Re-fetch va check asset unit ton tai, dung product, khong bi maintenance/lost/retired.
+4. Check overlap bang DB trong cung transaction.
+5. Update rental order items va commit transaction.
+6. Sau commit, invalidate dashboard cache va publish event `events:rental-order`.
 
 ### 8.7 Dashboard metrics
 
@@ -467,10 +465,11 @@ Client nen goi API lay chi tiet moi neu can data day du.
 
 ### Phase 3 - Rental order concurrency
 
-- Build `acquireLock`, `releaseLock`, `withLock`.
-- Boc `confirmRentalOrder`.
-- Boc `assignRentalOrderAssets`.
-- Boc cac action transition status sau nay.
+- Build PostgreSQL advisory-lock helper trong `PrismaService`.
+- Chay `confirmRentalOrder` trong mot transaction va re-check availability sau khi lock.
+- Chay `assignRentalOrderAssets` trong mot transaction va re-fetch asset sau khi lock.
+- Ap dung lock/re-fetch cho cac action transition status can chong stale state.
+- Redis chi giu idempotency key neu can chan double-submit o lop HTTP/UX.
 - Test case: 2 request confirm/assign cung luc chi 1 request thanh cong.
 
 ### Phase 4 - Dashboard cache

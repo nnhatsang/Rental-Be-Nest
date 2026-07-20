@@ -222,7 +222,7 @@ export class AuthService {
         },
       });
     } catch (error) {
-      this.logger.error(`Failed to send password reset email to user ${user.id}`, error instanceof Error ? error.stack : undefined);
+      this.logger.error(`Không thể enqueue password-reset email, userId=${user.id}`, error instanceof Error ? error.stack : undefined);
     }
 
     return { success: true };

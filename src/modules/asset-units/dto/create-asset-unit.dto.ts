@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
 import { INVALID_BOOLEAN, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
@@ -8,10 +8,10 @@ export class CreateAssetUnitDto {
   @IsUUID('7', { message: INVALID_UUID })
   productId!: string;
 
-  @ApiPropertyOptional({ example: 'SN-A7IV-001' })
-  @IsOptional()
+  @ApiProperty({ example: 'SN-A7IV-001' })
   @IsString({ message: INVALID_STRING })
-  serialNumber?: string;
+  @IsNotEmpty()
+  serialNumber!: string;
 
   @ApiPropertyOptional({ enum: Object.values(AssetStatus), example: AssetStatus.AVAILABLE })
   @IsOptional()

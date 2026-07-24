@@ -10,6 +10,9 @@ export class AssetUnitProductOutDto {
 
   @ApiProperty({ example: 'SONY-A7-IV' })
   sku!: string;
+
+  @ApiProperty({ type: Date, format: 'date-time', nullable: true })
+  deletedAt!: Date | null;
 }
 
 export class AssetUnitOutDto {
@@ -19,8 +22,8 @@ export class AssetUnitOutDto {
   @ApiProperty({ type: AssetUnitProductOutDto })
   product!: AssetUnitProductOutDto;
 
-  @ApiProperty({ example: 'SN-A7IV-001', nullable: true })
-  serialNumber!: string | null;
+  @ApiProperty({ example: 'SN-A7IV-001'})
+  serialNumber!: string;
 
   @ApiProperty({ enum: Object.values(AssetStatus), example: AssetStatus.AVAILABLE })
   status!: AssetStatus;

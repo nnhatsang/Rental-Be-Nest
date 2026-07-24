@@ -9,6 +9,8 @@ import { AssetUnitOutDto } from './dto/asset-unit-out.dto';
 import { ASSET_UNIT_NOT_FOUND, ASSET_UNIT_SERIAL_NUMBER_EXISTED, PRODUCT_NOT_FOUND } from '@/libs/constants/error.constants';
 import { buildAssetUnitSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
 import { DeleteAssetUnitsDto } from './dto/delete-asset-unit.dto';
+import { SocketService } from '@/libs/socket/socket.service';
+import { EAvailabilityChangeReason, ESocketEmit } from '@/libs/enums/socket.enum';
 
 type AssetUnitWithRelations = Awaited<ReturnType<AssetUnitsService['findAssetUnitById']>>;
 type ExistingAssetUnitWithRelations = NonNullable<AssetUnitWithRelations>;
@@ -16,7 +18,10 @@ type AssetUnitProduct = { id: string; name: string; sku: string };
 
 @Injectable()
 export class AssetUnitsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly socketService: SocketService,
+  ) {}
 
   async getAllAssetUnits(query: GetAllAssetUnitsInDto) {
     const { page, perPage, condition, isActive, productId, search, status, sort, sortBy } = query;
@@ -88,6 +93,8 @@ export class AssetUnitsService {
       include: this.assetUnitInclude(),
     });
 
+    this.emitAvailabilityChanged(EAvailabilityChangeReason.ASSET_CREATED, [assetUnit.productId], [assetUnit.id]);
+
     return this.toAssetUnitOut(assetUnit);
   }
 
@@ -122,6 +129,12 @@ export class AssetUnitsService {
       include: this.assetUnitInclude(),
     });
 
+    this.emitAvailabilityChanged(
+      EAvailabilityChangeReason.ASSET_UPDATED,
+      [...new Set([existingAssetUnit.product.id, assetUnit.productId])],
+      [assetUnit.id],
+    );
+
     return this.toAssetUnitOut(assetUnit);
   }
 
@@ -148,11 +161,17 @@ export class AssetUnitsService {
       include: this.assetUnitInclude(),
     });
 
+    this.emitAvailabilityChanged(EAvailabilityChangeReason.ASSET_UPDATED, [assetUnit.productId], [assetUnit.id]);
+
     return this.toAssetUnitOut(assetUnit);
   }
 
   async deleteAssetUnit(dto: DeleteAssetUnitsDto, userId: string): Promise<{ success: true }> {
     const uniquedIds = [...new Set(dto.assetUnitIds)];
+    const affectedAssets = await this.prisma.assetUnit.findMany({
+      where: { id: { in: uniquedIds }, deletedAt: null },
+      select: { id: true, productId: true },
+    });
     await this.prisma.assetUnit.updateMany({
       where: { id: { in: uniquedIds } },
       data: {
@@ -161,7 +180,22 @@ export class AssetUnitsService {
       },
     });
 
+    this.emitAvailabilityChanged(
+      EAvailabilityChangeReason.ASSET_DELETED,
+      [...new Set(affectedAssets.map((asset) => asset.productId))],
+      affectedAssets.map((asset) => asset.id),
+    );
+
     return { success: true };
+  }
+
+  private emitAvailabilityChanged(reason: EAvailabilityChangeReason, productIds: string[], assetUnitIds: string[]): void {
+    this.socketService.broadcastToAdmins(ESocketEmit.AVAILABILITY_CHANGED, {
+      reason,
+      productIds,
+      assetUnitIds,
+      occurredAt: new Date().toISOString(),
+    });
   }
 
   async getAssignableAssetUnits(assetUnitIds: string[]) {
@@ -288,6 +322,7 @@ export class AssetUnitsService {
           id: true,
           name: true,
           sku: true,
+          deletedAt: true,
         },
       },
     } as const;
@@ -300,6 +335,7 @@ export class AssetUnitsService {
         id: assetUnit.product.id,
         name: assetUnit.product.name,
         sku: assetUnit.product.sku,
+        deletedAt: assetUnit.product.deletedAt,
       },
       serialNumber: assetUnit.serialNumber,
       status: assetUnit.status,

@@ -245,7 +245,7 @@ model Product {
   /// Full-day rental price.
   dailyPrice          Decimal                  @db.Decimal(12, 2)
   /// Half-day rental price.
-  halfDayPrice        Decimal?                 @db.Decimal(12, 2)
+  halfDayPrice        Decimal                  @db.Decimal(12, 2)
   /// Hourly overage price for extra hours.
   hourlyOveragePrice  Decimal?                 @db.Decimal(12, 2)
   /// Standard deposit amount.
@@ -308,7 +308,7 @@ model AssetUnit {
   /// Product model/type this unit belongs to.
   productId     String            @db.Uuid
   /// Optional unique serial number for the physical device.
-  serialNumber  String?           @unique
+  serialNumber  String           @unique
   /// Current operational status of this physical device.
   status        AssetStatus       @default(AVAILABLE)
   /// Current condition of this physical device.
@@ -484,6 +484,7 @@ model RentalOrder {
   @@index([assignedToId])
   @@index([startDate, endDate])
   @@index([startDate, blockedEndDate])
+  @@index([status, startDate, blockedEndDate, deletedAt])
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "RentalOrder_searchText_trgm_idx", type: Gin)
 }
 
@@ -527,6 +528,8 @@ model RentalOrderItem {
   @@index([orderId])
   @@index([productId])
   @@index([assetUnitId])
+  @@index([productId, deletedAt])
+  @@index([assetUnitId, deletedAt])
 }
 
 model PaymentRecord {
@@ -742,7 +745,6 @@ model EmailTemplate {
   @@index([layoutId])
   @@index([isActive])
 }
-
 
 enum CustomerStatus {
   /// Customer can create/rent orders.

@@ -212,9 +212,7 @@ export class AssetUnitsService {
         },
         isActive: true,
         deletedAt: null,
-        status: {
-          notIn: [AssetStatus.MAINTENANCE, AssetStatus.RETIRED, AssetStatus.LOST],
-        },
+        status: AssetStatus.AVAILABLE,
         condition: {
           not: AssetCondition.LOST,
         },
@@ -244,9 +242,7 @@ export class AssetUnitsService {
         },
         isActive: true,
         deletedAt: null,
-        status: {
-          notIn: [AssetStatus.MAINTENANCE, AssetStatus.RETIRED, AssetStatus.LOST],
-        },
+        status: AssetStatus.AVAILABLE,
         condition: {
           not: AssetCondition.LOST,
         },

@@ -26,7 +26,12 @@ export enum AssetAvailabilityState {
 export enum AssetAvailabilityReason {
   BOOKED = 'BOOKED',
   INACTIVE = 'INACTIVE',
+  RESERVED = 'RESERVED',
+  RENTED = 'RENTED',
+  INSPECTING = 'INSPECTING',
   MAINTENANCE = 'MAINTENANCE',
+  CLEANING = 'CLEANING',
+  TRANSFERRING = 'TRANSFERRING',
   RETIRED = 'RETIRED',
   LOST = 'LOST',
 }

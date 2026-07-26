@@ -204,9 +204,24 @@ export class RentalOrderAvailabilityService {
         if (!asset.isActive) {
           availability = AssetAvailabilityState.UNASSIGNABLE;
           reasonCode = AssetAvailabilityReason.INACTIVE;
+        } else if (asset.status === AssetStatus.RESERVED) {
+          availability = AssetAvailabilityState.UNASSIGNABLE;
+          reasonCode = AssetAvailabilityReason.RESERVED;
+        } else if (asset.status === AssetStatus.RENTED) {
+          availability = AssetAvailabilityState.UNASSIGNABLE;
+          reasonCode = AssetAvailabilityReason.RENTED;
+        } else if (asset.status === AssetStatus.INSPECTING) {
+          availability = AssetAvailabilityState.UNASSIGNABLE;
+          reasonCode = AssetAvailabilityReason.INSPECTING;
         } else if (asset.status === AssetStatus.MAINTENANCE) {
           availability = AssetAvailabilityState.UNASSIGNABLE;
           reasonCode = AssetAvailabilityReason.MAINTENANCE;
+        } else if (asset.status === AssetStatus.CLEANING) {
+          availability = AssetAvailabilityState.UNASSIGNABLE;
+          reasonCode = AssetAvailabilityReason.CLEANING;
+        } else if (asset.status === AssetStatus.TRANSFERRING) {
+          availability = AssetAvailabilityState.UNASSIGNABLE;
+          reasonCode = AssetAvailabilityReason.TRANSFERRING;
         } else if (asset.status === AssetStatus.RETIRED) {
           availability = AssetAvailabilityState.UNASSIGNABLE;
           reasonCode = AssetAvailabilityReason.RETIRED;
@@ -539,7 +554,7 @@ export class RentalOrderAvailabilityService {
           productId: { in: productIds },
           deletedAt: null,
           isActive: true,
-          status: { notIn: [AssetStatus.MAINTENANCE, AssetStatus.RETIRED, AssetStatus.LOST] },
+          status: AssetStatus.AVAILABLE,
           condition: { not: AssetCondition.LOST },
         },
         _count: { _all: true },

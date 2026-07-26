@@ -767,18 +767,15 @@ enum UserActivityStatus {
 }
 
 enum AssetStatus {
-  /// Unit is available for new rental assignment.
-  AVAILABLE
-  /// Unit is reserved by an upcoming confirmed order.
-  RESERVED
-  /// Unit is currently rented out.
-  RENTED
-  /// Unit is under maintenance.
-  MAINTENANCE
-  /// Unit has been retired and should not be rented.
-  RETIRED
-  /// Unit is lost.
-  LOST
+  AVAILABLE      // Có thể assign
+  RESERVED       // Đã được giữ chỗ cho đơn sắp tới
+  RENTED         // Đang cho thuê
+  INSPECTING     // Đang kiểm tra sau khi trả
+  MAINTENANCE    // Đang bảo trì
+  CLEANING       // Đang vệ sinh
+  TRANSFERRING   // Đang chuyển kho
+  LOST           // Thất lạc
+  RETIRED        // Ngừng sử dụng
 }
 
 enum AssetCondition {

@@ -29,7 +29,7 @@ Mốc 1: Khởi tạo & Phân quyền (RBAC Setup)
 - Tích hợp chỉ mục GIN trigram index trên cột `searchText` ở PostgreSQL để hỗ trợ tìm kiếm tiếng Việt không dấu.
 - Hoàn thiện giao diện danh sách sản phẩm, thêm mới sản phẩm và quản lý số Serial trên Admin Console.
 
-### Bước 3: Phát triển luồng đơn thuê & cơ chế quét lịch trùng
+### Bước 3: Phát triển luồng  đơnthuê & cơ chế quét lịch trùng
 - Hiện thực hóa thuật toán quét giao thoa thời gian (Overlap formula) ở backend để kiểm tra khả dụng của thiết bị.
 - Phát triển API tạo đơn thuê nháp, gán Serial máy, và chuyển trạng thái sang `CONFIRMED`.
 - Xây dựng giao diện xem lịch trống `/availability` và biểu mẫu tạo đơn hàng đa bước phía frontend.

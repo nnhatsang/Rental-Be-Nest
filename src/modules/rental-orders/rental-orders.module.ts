@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { RentalOrdersService } from './rental-orders.service';
 import { RentalOrdersController } from './rental-orders.controller';
+import { RentalOrderAvailabilityService } from './services/rental-order-availability.service';
+import { RentalOrderPricingService } from './services/rental-order-pricing.service';
+import { RentalOrderRealtimeService } from './services/rental-order-realtime.service';
 import { CustomersModule } from '../customers/customers.module';
 import { ProductsModule } from '../products/products.module';
 import { AssetUnitsModule } from '../asset-units/asset-units.module';
@@ -12,7 +15,7 @@ import { UsersModule } from '../users/users.module';
 @Module({
   imports: [CustomersModule, ProductsModule, AssetUnitsModule, RentalPolicyModule, StoreBusinessHoursModule, StoreClosureModule, UsersModule],
   controllers: [RentalOrdersController],
-  providers: [RentalOrdersService],
-  exports: [RentalOrdersService],
+  providers: [RentalOrdersService, RentalOrderAvailabilityService, RentalOrderPricingService, RentalOrderRealtimeService],
+  exports: [RentalOrdersService, RentalOrderAvailabilityService],
 })
 export class RentalOrdersModule {}

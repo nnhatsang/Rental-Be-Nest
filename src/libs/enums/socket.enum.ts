@@ -1,5 +1,16 @@
 export enum ESocketEmit {
   PERMISSIONS_UPDATED = 'permissions:updated',
+  AVAILABILITY_CHANGED = 'availability:changed',
+}
+
+export enum EAvailabilityChangeReason {
+  ORDER_CONFIRMED = 'ORDER_CONFIRMED',
+  ORDER_CANCELLED = 'ORDER_CANCELLED',
+  ORDER_UPDATED = 'ORDER_UPDATED',
+  ASSET_CREATED = 'ASSET_CREATED',
+  ASSET_UPDATED = 'ASSET_UPDATED',
+  ASSET_DELETED = 'ASSET_DELETED',
+  PRODUCT_UPDATED = 'PRODUCT_UPDATED',
 }
 
 export enum ESocketReason {

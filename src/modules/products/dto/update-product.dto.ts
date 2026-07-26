@@ -47,7 +47,7 @@ export class UpdateProductDto {
   @Min(0)
   dailyPrice?: number;
 
-  @ApiPropertyOptional({ example: 300000, nullable: true })
+  @ApiPropertyOptional({ example: 300000 })
   @Type(() => Number)
   @IsOptional()
   @IsNumber({}, { message: INVALID_NUMBER })

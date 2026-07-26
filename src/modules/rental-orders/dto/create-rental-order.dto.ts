@@ -35,15 +35,13 @@ export class CreateRentalOrderDto {
   @IsDate({ message: INVALID_DATE })
   endDate!: Date;
 
-  @ApiPropertyOptional({ enum: Object.values(PickupMethod), example: PickupMethod.PICKUP_AT_STORE })
-  @IsOptional()
+  @ApiProperty({ enum: Object.values(PickupMethod), example: PickupMethod.PICKUP_AT_STORE })
   @IsIn(Object.values(PickupMethod), { message: INVALID_ENUM(Object.values(PickupMethod), 'pickupMethod') })
-  pickupMethod?: PickupMethod;
+  pickupMethod!: PickupMethod;
 
-  @ApiPropertyOptional({ example: '123 Nguyen Trai, Quan 1, TP.HCM' })
-  @IsOptional()
+  @ApiProperty({ example: '123 Nguyen Trai, Quan 1, TP.HCM' })
   @IsString({ message: INVALID_STRING })
-  deliveryAddress?: string;
+  deliveryAddress!: string;
 
   @ApiPropertyOptional({ example: 30000, default: 0 })
   @Type(() => Number)

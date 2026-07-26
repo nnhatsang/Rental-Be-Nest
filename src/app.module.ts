@@ -21,6 +21,7 @@ import { RedisWrapperModule } from './libs/redis/redis.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { MailTemplateModule } from './modules/mail-template/mail-template.module';
 import { QueueModule } from './libs/queue/queue.module';
+import { AvailabilityModule } from './modules/availability/availability.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { QueueModule } from './libs/queue/queue.module';
     RedisWrapperModule,
     MailTemplateModule,
     QueueModule,
+    AvailabilityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

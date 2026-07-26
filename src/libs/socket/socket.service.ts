@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SocketGateway } from './socket.gateway';
 import { IEmitToListUserIdDto, IEmitToUserIdDto } from '@/libs/types/socket.type';
+import { ESocketEmit } from '@/libs/enums/socket.enum';
 
 @Injectable()
 export class SocketService {
@@ -27,5 +28,16 @@ export class SocketService {
     userIds.forEach((userId) => {
       this.sendToUser({ userId, eventName, data });
     });
+  }
+
+  broadcastToAdmins<T>(eventName: ESocketEmit, data: T): void {
+    const server = this.socketGateway.getServer();
+
+    if (!server) {
+      this.logger.warn('Cannot emit socket event: Socket.io server has not started.');
+      return;
+    }
+
+    server.to('admins').emit(eventName, data);
   }
 }

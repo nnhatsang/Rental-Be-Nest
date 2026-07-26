@@ -1,8 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDate, ValidateNested } from 'class-validator';
-import { RentalOrderItemInDto } from './create-rental-order.dto';
-import { INVALID_ARRAY, INVALID_DATE } from '@/libs/constants/invalid.constant';
+import { ArrayMinSize, ArrayUnique, IsArray, IsDate, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { INVALID_ARRAY, INVALID_DATE, INVALID_NUMBER, INVALID_UUID } from '@/libs/constants/invalid.constant';
+
+export class CheckRentalOrderAvailabilityItemDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  @IsUUID('7', { message: INVALID_UUID })
+  productId!: string;
+
+  @ApiProperty({ example: 2, minimum: 1 })
+  @Type(() => Number)
+  @IsInt({ message: INVALID_NUMBER })
+  @Min(1, { message: 'Số lượng phải tối thiểu 1' })
+  quantity!: number;
+
+  @ApiProperty({ type: [String], format: 'uuid', required: false, example: ['0190f9ff-8a88-7000-8000-000000000001'] })
+  @IsOptional()
+  @IsArray({ message: INVALID_ARRAY })
+  @ArrayUnique()
+  @IsUUID('7', { each: true, message: INVALID_UUID })
+  assetUnitIds?: string[];
+}
 
 export class CheckRentalOrderAvailabilityDto {
   @ApiProperty({ example: '2026-06-10T07:00:00.000Z' })
@@ -15,12 +33,12 @@ export class CheckRentalOrderAvailabilityDto {
   @IsDate({ message: INVALID_DATE })
   endDate!: Date;
 
-  @ApiProperty({ type: [RentalOrderItemInDto] })
+  @ApiProperty({ type: [CheckRentalOrderAvailabilityItemDto] })
   @IsArray({ message: INVALID_ARRAY })
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => RentalOrderItemInDto)
-  items!: RentalOrderItemInDto[];
+  @Type(() => CheckRentalOrderAvailabilityItemDto)
+  items!: CheckRentalOrderAvailabilityItemDto[];
 }
 
 export class RentalOrderUnavailableItemDto {

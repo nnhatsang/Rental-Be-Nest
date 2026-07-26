@@ -37,8 +37,8 @@ export class ProductOutDto {
   @ApiProperty({ example: '500000' })
   dailyPrice!: string;
 
-  @ApiProperty({ example: '300000', nullable: true })
-  halfDayPrice!: string | null;
+  @ApiProperty({ example: '300000' })
+  halfDayPrice!: string;
 
   @ApiProperty({ example: '100000', nullable: true })
   hourlyOveragePrice!: string | null;

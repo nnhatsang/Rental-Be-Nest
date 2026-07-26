@@ -79,6 +79,7 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // 5. Đăng ký client vào phòng (room) định danh theo userId
       const userId = payload.sub; // sub là userId trong JwtAccessPayload
       await client.join(`user:${userId}`);
+      await client.join('admins');
 
       this.logger.log(`Client kết nối thành công: ${client.id} (User: ${userId})`);
     } catch (err) {

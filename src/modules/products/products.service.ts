@@ -16,6 +16,8 @@ import {
   PRODUCT_SKU_EXISTED,
 } from '@/libs/constants/error.constants';
 import { DeleteProductsDto } from './dto/delete-products.dto';
+import { SocketService } from '@/libs/socket/socket.service';
+import { EAvailabilityChangeReason, ESocketEmit } from '@/libs/enums/socket.enum';
 
 type ProductWithRelations = Awaited<ReturnType<ProductsService['findProductById']>>;
 type ExistingProductWithRelations = NonNullable<ProductWithRelations>;
@@ -23,7 +25,10 @@ type ProductRelation = { id: string; name: string } | null;
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly socketService: SocketService,
+  ) {}
 
   async getAllProducts(query: GetAllProductsInDto) {
     const { search, categoryId, brandId, isActive, page, perPage, sort, sortBy } = query;
@@ -126,6 +131,8 @@ export class ProductsService {
       include: this.productInclude(),
     });
 
+    this.emitAvailabilityChanged(product.id);
+
     return this.toProductOut(product);
   }
 
@@ -191,6 +198,8 @@ export class ProductsService {
       include: this.productInclude(),
     });
 
+    this.emitAvailabilityChanged(product.id);
+
     return this.toProductOut(product);
   }
 
@@ -205,6 +214,8 @@ export class ProductsService {
       },
       include: this.productInclude(),
     });
+
+    this.emitAvailabilityChanged(product.id);
 
     return this.toProductOut(product);
   }
@@ -223,7 +234,18 @@ export class ProductsService {
       },
     });
 
+    uniqueIds.forEach((id) => this.emitAvailabilityChanged(id));
+
     return { success: true };
+  }
+
+  private emitAvailabilityChanged(productId: string): void {
+    this.socketService.broadcastToAdmins(ESocketEmit.AVAILABILITY_CHANGED, {
+      reason: EAvailabilityChangeReason.PRODUCT_UPDATED,
+      productIds: [productId],
+      assetUnitIds: [],
+      occurredAt: new Date().toISOString(),
+    });
   }
 
   async getActiveProductsForRental(productIds: string[]) {
@@ -389,7 +411,7 @@ export class ProductsService {
           }
         : null,
       dailyPrice: product.dailyPrice.toString(),
-      halfDayPrice: product.halfDayPrice?.toString() ?? null,
+      halfDayPrice: product.halfDayPrice.toString(),
       hourlyOveragePrice: product.hourlyOveragePrice?.toString() ?? null,
       rentalPriceTiers: product.rentalPriceTiers.map((tier) => ({
         id: tier.id,

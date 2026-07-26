@@ -41,8 +41,8 @@ export class RentalOrderAssetUnitOutDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ example: 'SN-A7IV-001', nullable: true })
-  serialNumber!: string | null;
+  @ApiProperty({ example: 'SN-A7IV-001' })
+  serialNumber!: string;
 }
 
 export class RentalOrderItemOutDto {

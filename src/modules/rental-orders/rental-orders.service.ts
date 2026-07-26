@@ -1,17 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
-import { CustomerStatus, OrderEventType, OrderSource, OrderStatus, PaymentStatus, PickupMethod, UserActivityStatus } from '@generated/prisma/enums';
+import {
+  CustomerStatus,
+  OrderEventType,
+  OrderSource,
+  OrderStatus,
+  PaymentStatus,
+  PickupMethod,
+  UserActivityStatus,
+} from '@generated/prisma/enums';
 import { AssetUnitsService } from '../asset-units/asset-units.service';
 import { PrismaService } from '../database/prisma.service';
 import { ProductsService } from '../products/products.service';
 import { RentalPolicyService } from '../rental-policy/rental-policy.service';
-import { StoreBusinessHoursService } from '../store-business-hours/store-business-hours.service';
-import { StoreClosureService } from '../store-closure/store-closure.service';
 import { AssignRentalOrderAssetsDto, CancelRentalOrderDto, RentalOrderNoteDto } from './dto/rental-order-actions.dto';
 import {
   CheckRentalOrderAvailabilityDto,
   RentalOrderAvailabilityOutDto,
-  RentalOrderUnavailableItemDto,
 } from './dto/check-rental-order-availability.dto';
 import { CreateRentalOrderDto, RentalOrderItemInDto } from './dto/create-rental-order.dto';
 import { GetAllRentalOrdersDto } from './dto/get-all-rental-orders.dto';
@@ -30,46 +35,28 @@ import {
   RENTAL_ORDER_UNAVAILABLE,
 } from '@/libs/constants/error.constants';
 import { buildRentalOrderSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
-
-const BLOCKING_ORDER_STATUSES = [
-  OrderStatus.CONFIRMED,
-  OrderStatus.PREPARING,
-  OrderStatus.READY_FOR_PICKUP,
-  OrderStatus.DELIVERING,
-  OrderStatus.RENTING,
-  OrderStatus.OVERDUE,
-];
+import {
+  AvailabilityAssetsOutDto,
+  AvailabilityProductsOutDto,
+  GetAvailabilityAssetsDto,
+  GetAvailabilityProductsDto,
+} from './dto/get-rental-order-availability.dto';
+import { EAvailabilityChangeReason } from '@/libs/enums/socket.enum';
+import {
+  BLOCKING_ORDER_STATUSES,
+  NormalizedRentalOrderItem,
+  RentalOrderAvailabilityService,
+} from './services/rental-order-availability.service';
+import { RentalOrderPricingService } from './services/rental-order-pricing.service';
+import { RentalOrderRealtimeService } from './services/rental-order-realtime.service';
 
 const ASSIGN_ASSET_STATUSES = [OrderStatus.DRAFT, OrderStatus.CONFIRMED, OrderStatus.PREPARING];
-const CANCELABLE_STATUSES = [
-  OrderStatus.DRAFT,
-  OrderStatus.CONFIRMED,
-  OrderStatus.PREPARING,
-  OrderStatus.READY_FOR_PICKUP,
-  OrderStatus.DELIVERING,
-];
+const CANCELABLE_STATUSES = [OrderStatus.DRAFT, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP, OrderStatus.DELIVERING];
 const SOFT_DELETABLE_STATUSES = [OrderStatus.DRAFT, OrderStatus.CANCELLED];
 
 type RentalOrderWithRelations = Awaited<ReturnType<RentalOrdersService['findRentalOrderById']>>;
 type ExistingRentalOrderWithRelations = NonNullable<RentalOrderWithRelations>;
 type RentalProduct = Awaited<ReturnType<ProductsService['getActiveProductsForRental']>>[number];
-type RentalPolicy = Awaited<ReturnType<RentalPolicyService['getDefaultPolicyForOrder']>>;
-type NormalizedRentalOrderItem = {
-  id?: string;
-  productId: string;
-  assetUnitId?: string | null;
-  note?: string | null;
-};
-type PricedRentalOrderItem = NormalizedRentalOrderItem & {
-  productNameSnapshot: string;
-  skuSnapshot: string;
-  unitPrice: number;
-  bookingHoldAmount: number;
-  upfrontAmount: number;
-  refundableDepositAmount: number;
-  depositAmount: number;
-  lineTotal: number;
-};
 
 @Injectable()
 export class RentalOrdersService {
@@ -78,16 +65,21 @@ export class RentalOrdersService {
     private readonly productsService: ProductsService,
     private readonly assetUnitsService: AssetUnitsService,
     private readonly rentalPolicyService: RentalPolicyService,
-    private readonly storeBusinessHoursService: StoreBusinessHoursService,
-    private readonly storeClosureService: StoreClosureService,
+    private readonly availabilityService: RentalOrderAvailabilityService,
+    private readonly pricingService: RentalOrderPricingService,
+    private readonly realtimeService: RentalOrderRealtimeService,
   ) {}
 
   async checkRentalOrderAvailability(dto: CheckRentalOrderAvailabilityDto): Promise<RentalOrderAvailabilityOutDto> {
-    return this.evaluateAvailability({
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      items: this.normalizeItems(dto.items),
-    });
+    return this.availabilityService.checkRentalOrderAvailability(dto);
+  }
+
+  async getAvailabilityProducts(dto: GetAvailabilityProductsDto): Promise<AvailabilityProductsOutDto> {
+    return this.availabilityService.getAvailabilityProducts(dto);
+  }
+
+  async getAvailabilityAssets(dto: GetAvailabilityAssetsDto): Promise<AvailabilityAssetsOutDto> {
+    return this.availabilityService.getAvailabilityAssets(dto);
   }
 
   async getAllRentalOrders(query: GetAllRentalOrdersDto) {
@@ -157,7 +149,7 @@ export class RentalOrdersService {
   async createRentalOrder(dto: CreateRentalOrderDto, currentUser: AuthUser): Promise<RentalOrderOutDto> {
     const rentalPolicy = await this.rentalPolicyService.getDefaultPolicyForOrder();
     const normalizedItems = this.normalizeItems(dto.items);
-    const availability = await this.evaluateAvailability({
+    const availability = await this.availabilityService.evaluateAvailability({
       startDate: dto.startDate,
       endDate: dto.endDate,
       items: normalizedItems,
@@ -171,8 +163,8 @@ export class RentalOrdersService {
       this.findAssignedUserForRental(dto.assignedToId),
       this.findProductsForItems(normalizedItems),
     ]);
-    const pricedItems = this.priceItems(normalizedItems, products, rentalPolicy, dto.startDate, dto.endDate);
-    const totals = this.calculateTotals(pricedItems, dto.deliveryFeeTotal ?? 0, dto.discountTotal ?? 0);
+    const pricedItems = this.pricingService.priceItems(normalizedItems, products, rentalPolicy, dto.startDate, dto.endDate);
+    const totals = this.pricingService.calculateTotals(pricedItems, dto.deliveryFeeTotal ?? 0, dto.discountTotal ?? 0);
 
     const order = await this.prisma.$transaction(async (tx) => {
       const code = await this.generateOrderCode(tx);
@@ -218,7 +210,7 @@ export class RentalOrdersService {
             internalNote: dto.internalNote,
           }),
           items: {
-            create: this.toCreateOrderItemsData(pricedItems),
+            create: this.pricingService.toCreateOrderItemsData(pricedItems),
           },
           statusHistories: {
             create: {
@@ -251,7 +243,7 @@ export class RentalOrdersService {
     const endDate = dto.endDate ?? existingOrder.endDate;
     const normalizedItems = dto.items ? this.normalizeItems(dto.items) : this.normalizeExistingItems(existingOrder.items);
     const rentalPolicy = await this.rentalPolicyService.getDefaultPolicyForOrder();
-    const availability = await this.evaluateAvailability({
+    const availability = await this.availabilityService.evaluateAvailability({
       startDate,
       endDate,
       items: normalizedItems,
@@ -262,16 +254,16 @@ export class RentalOrdersService {
     this.assertAvailable(availability);
 
     const customer = dto.customerId ? await this.findCustomerForRental(dto.customerId) : existingOrder.customer;
-    const assignedToId = this.hasOwn(dto, 'assignedToId') ? dto.assignedToId ?? null : existingOrder.assignedToId;
+    const assignedToId = this.hasOwn(dto, 'assignedToId') ? (dto.assignedToId ?? null) : existingOrder.assignedToId;
     const assignedTo = assignedToId ? await this.findAssignedUserForRental(assignedToId) : null;
     const products = await this.findProductsForItems(normalizedItems);
-    const pricedItems = this.priceItems(normalizedItems, products, rentalPolicy, startDate, endDate);
-    const deliveryAddress = this.hasOwn(dto, 'deliveryAddress') ? dto.deliveryAddress ?? null : existingOrder.deliveryAddress;
-    const note = this.hasOwn(dto, 'note') ? dto.note ?? null : existingOrder.note;
-    const internalNote = this.hasOwn(dto, 'internalNote') ? dto.internalNote ?? null : existingOrder.internalNote;
+    const pricedItems = this.pricingService.priceItems(normalizedItems, products, rentalPolicy, startDate, endDate);
+    const deliveryAddress = this.hasOwn(dto, 'deliveryAddress') ? (dto.deliveryAddress ?? null) : existingOrder.deliveryAddress;
+    const note = this.hasOwn(dto, 'note') ? (dto.note ?? null) : existingOrder.note;
+    const internalNote = this.hasOwn(dto, 'internalNote') ? (dto.internalNote ?? null) : existingOrder.internalNote;
     const deliveryFeeTotal = dto.deliveryFeeTotal ?? Number(existingOrder.deliveryFeeTotal);
     const discountTotal = dto.discountTotal ?? Number(existingOrder.discountTotal);
-    const totals = this.calculateTotals(pricedItems, deliveryFeeTotal, discountTotal);
+    const totals = this.pricingService.calculateTotals(pricedItems, deliveryFeeTotal, discountTotal);
 
     const order = await this.prisma.$transaction(async (tx) => {
       if (dto.items) {
@@ -282,7 +274,7 @@ export class RentalOrdersService {
         });
 
         await tx.rentalOrderItem.createMany({
-          data: this.toCreateManyOrderItemsData(id, pricedItems),
+          data: this.pricingService.toCreateManyOrderItemsData(id, pricedItems),
         });
       } else {
         for (const item of pricedItems) {
@@ -294,7 +286,7 @@ export class RentalOrdersService {
             where: {
               id: item.id,
             },
-            data: this.toUpdateOrderItemData(item),
+            data: this.pricingService.toUpdateOrderItemData(item),
           });
         }
       }
@@ -351,7 +343,7 @@ export class RentalOrdersService {
     const assetUnitIds = dto.items.map((item) => item.assetUnitId);
     const [assetUnits, bookedAssetUnitIds] = await Promise.all([
       this.assetUnitsService.getAssignableAssetUnits(assetUnitIds),
-      this.getBookedAssetUnitIds(assetUnitIds, existingOrder.startDate, existingOrder.blockedEndDate, id),
+      this.availabilityService.getBookedAssetUnitIds(assetUnitIds, existingOrder.startDate, existingOrder.blockedEndDate, id),
     ]);
     const assetUnitsById = new Map(assetUnits.map((assetUnit) => [assetUnit.id, assetUnit]));
 
@@ -369,6 +361,22 @@ export class RentalOrdersService {
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
+      await this.acquireAdvisoryLocks(tx, [
+        `rental-order:${id}`,
+        ...[...new Set(existingOrder.items.map((item) => item.productId))].map((productId) => `rental-product:${productId}`),
+        ...assetUnitIds.map((assetUnitId) => `rental-asset:${assetUnitId}`),
+      ]);
+      const lockedOrder = await tx.rentalOrder.findFirst({
+        where: { id, deletedAt: null },
+        include: this.rentalOrderInclude(),
+      });
+      if (!lockedOrder) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      this.assertStatusIn(lockedOrder.status, ASSIGN_ASSET_STATUSES);
+      const lockedBookedAssetUnitIds = await this.availabilityService.getBookedAssetUnitIds(assetUnitIds, lockedOrder.startDate, lockedOrder.blockedEndDate, id);
+      if (assetUnitIds.some((assetUnitId) => lockedBookedAssetUnitIds.has(assetUnitId))) {
+        throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
+      }
+
       for (const item of dto.items) {
         await tx.rentalOrderItem.update({
           where: {
@@ -400,30 +408,47 @@ export class RentalOrdersService {
       throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
     }
 
+    if (BLOCKING_ORDER_STATUSES.includes(order.status)) {
+      this.realtimeService.emitAvailabilityChanged(EAvailabilityChangeReason.ORDER_UPDATED, order.items);
+    }
+
     return this.toRentalOrderOut(order);
   }
 
   async confirmRentalOrder(id: string, dto: RentalOrderNoteDto, currentUser: AuthUser): Promise<RentalOrderOutDto> {
-    const existingOrder = await this.findExistingRentalOrderById(id);
-    this.assertStatusIn(existingOrder.status, [OrderStatus.DRAFT]);
+    const order = await this.prisma.$transaction(async (tx) => {
+      await this.acquireAdvisoryLocks(tx, [`rental-order:${id}`]);
+      const existingOrder = await tx.rentalOrder.findFirst({
+        where: { id, deletedAt: null },
+        include: this.rentalOrderInclude(),
+      });
+      if (!existingOrder) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      this.assertStatusIn(existingOrder.status, [OrderStatus.DRAFT]);
 
-    const availability = await this.evaluateAvailability({
-      startDate: existingOrder.startDate,
-      endDate: existingOrder.endDate,
-      items: this.normalizeExistingItems(existingOrder.items),
-      excludeOrderId: id,
-      turnaroundMinutes: existingOrder.turnaroundMinutes,
-    });
-    this.assertAvailable(availability);
+      await this.acquireAdvisoryLocks(
+        tx,
+        [...new Set(existingOrder.items.map((item) => item.productId))].map((productId) => `rental-product:${productId}`),
+      );
+      const availability = await this.availabilityService.evaluateAvailability({
+        startDate: existingOrder.startDate,
+        endDate: existingOrder.endDate,
+        items: this.normalizeExistingItems(existingOrder.items),
+        excludeOrderId: id,
+        turnaroundMinutes: existingOrder.turnaroundMinutes,
+      });
+      this.assertAvailable(availability);
 
-    const order = await this.transitionOrderStatus({
-      order: existingOrder,
-      nextStatus: OrderStatus.CONFIRMED,
-      currentUserId: currentUser.id,
-      note: dto.note,
-      eventType: OrderEventType.ORDER_CONFIRMED,
-      eventMessage: 'Order confirmed',
+      return this.transitionOrderStatusInTransaction(tx, {
+        order: existingOrder,
+        nextStatus: OrderStatus.CONFIRMED,
+        currentUserId: currentUser.id,
+        note: dto.note,
+        eventType: OrderEventType.ORDER_CONFIRMED,
+        eventMessage: 'Order confirmed',
+      });
     });
+
+    this.realtimeService.emitAvailabilityChanged(EAvailabilityChangeReason.ORDER_CONFIRMED, order.items);
 
     return this.toRentalOrderOut(order);
   }
@@ -470,6 +495,10 @@ export class RentalOrdersService {
       });
     });
 
+    if (BLOCKING_ORDER_STATUSES.includes(existingOrder.status)) {
+      this.realtimeService.emitAvailabilityChanged(EAvailabilityChangeReason.ORDER_CANCELLED, order.items);
+    }
+
     return this.toRentalOrderOut(order);
   }
 
@@ -499,145 +528,51 @@ export class RentalOrdersService {
     return { success: true };
   }
 
-  private async evaluateAvailability(params: {
-    startDate: Date;
-    endDate: Date;
-    items: NormalizedRentalOrderItem[];
-    excludeOrderId?: string;
-    rentalPolicy?: RentalPolicy;
-    turnaroundMinutes?: number;
-  }): Promise<RentalOrderAvailabilityOutDto> {
-    this.validateRentalTime(params.startDate, params.endDate);
-    this.validateRequestedItems(params.items);
+  private async transitionOrderStatusInTransaction(
+    tx: Prisma.TransactionClient,
+    params: {
+      order: ExistingRentalOrderWithRelations;
+      nextStatus: OrderStatus;
+      currentUserId: string;
+      note?: string;
+      eventType: OrderEventType;
+      eventMessage: string;
+    },
+  ): Promise<ExistingRentalOrderWithRelations> {
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: params.order.id,
+        fromStatus: params.order.status,
+        toStatus: params.nextStatus,
+        createdBy: params.currentUserId,
+        note: params.note,
+      },
+    });
 
-    const turnaroundMinutes = params.turnaroundMinutes ?? params.rentalPolicy?.turnaroundMinutes;
-    const rentalPolicy = turnaroundMinutes === undefined ? await this.rentalPolicyService.getDefaultPolicyForOrder() : params.rentalPolicy;
-    const effectiveTurnaroundMinutes = turnaroundMinutes ?? rentalPolicy?.turnaroundMinutes ?? 60;
-    const blockedEndDate = this.addMinutes(params.endDate, effectiveTurnaroundMinutes);
+    await tx.orderEvent.create({
+      data: {
+        orderId: params.order.id,
+        type: params.eventType,
+        message: params.eventMessage,
+        createdBy: params.currentUserId,
+      },
+    });
 
-    await this.storeBusinessHoursService.assertRentalTimeWithinBusinessHours(params.startDate, params.endDate);
-    await this.storeClosureService.assertNoClosureOverlap(params.startDate, params.endDate);
-
-    const productIds = [...new Set(params.items.map((item) => item.productId))];
-    const assetUnitIds = params.items.flatMap((item) => (item.assetUnitId ? [item.assetUnitId] : []));
-    const [products, assetUnits, assignableAssetCountByProduct, bookedAssetUnitIds, bookedQuantityByProduct] = await Promise.all([
-      this.productsService.getActiveProductsForRental(productIds),
-      this.assetUnitsService.getAssignableAssetUnits(assetUnitIds),
-      this.assetUnitsService.countAssignableAssetUnitsByProduct(productIds),
-      this.getBookedAssetUnitIds(assetUnitIds, params.startDate, blockedEndDate, params.excludeOrderId),
-      this.getBookedQuantityByProduct(productIds, params.startDate, blockedEndDate, params.excludeOrderId),
-    ]);
-
-    const productsById = new Map(products.map((product) => [product.id, product]));
-    const assetUnitsById = new Map(assetUnits.map((assetUnit) => [assetUnit.id, assetUnit]));
-
-    if (products.length !== productIds.length) {
-      throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
-    }
-
-    if (assetUnits.length !== assetUnitIds.length) {
-      throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
-    }
-
-    for (const item of params.items) {
-      if (!item.assetUnitId) {
-        continue;
-      }
-
-      const assetUnit = assetUnitsById.get(item.assetUnitId);
-      if (!assetUnit || assetUnit.productId !== item.productId) {
-        throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
-      }
-    }
-
-    const unavailableItems: RentalOrderUnavailableItemDto[] = [];
-
-    for (const item of params.items) {
-      if (item.assetUnitId && bookedAssetUnitIds.has(item.assetUnitId)) {
-        unavailableItems.push({
-          productId: item.productId,
-          assetUnitId: item.assetUnitId,
-          reason: 'Asset unit is already booked in this time range',
-        });
-      }
-    }
-
-    const requestedQuantityByProduct = this.countRequestedItemsByProduct(params.items);
-    for (const [productId, requestedQuantity] of requestedQuantityByProduct.entries()) {
-      const product = productsById.get(productId);
-      if (!product) {
-        throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
-      }
-
-      const assignableAssetCount = assignableAssetCountByProduct.get(productId) ?? 0;
-      const bookedQuantity = bookedQuantityByProduct.get(productId) ?? 0;
-
-      if (assignableAssetCount === 0) {
-        unavailableItems.push({
-          productId,
-          assetUnitId: null,
-          reason: 'Product has no assignable asset units',
-        });
-        continue;
-      }
-
-      if (bookedQuantity + requestedQuantity > assignableAssetCount) {
-        unavailableItems.push({
-          productId,
-          assetUnitId: null,
-          reason: 'Product does not have enough available asset units in this time range',
-        });
-      }
-    }
-
-    return {
-      isAvailable: unavailableItems.length === 0,
-      startDate: params.startDate,
-      endDate: params.endDate,
-      blockedEndDate,
-      turnaroundMinutes: effectiveTurnaroundMinutes,
-      unavailableItems,
-    };
+    return tx.rentalOrder.update({
+      where: {
+        id: params.order.id,
+      },
+      data: {
+        status: params.nextStatus,
+      },
+      include: this.rentalOrderInclude(),
+    });
   }
 
-  private async transitionOrderStatus(params: {
-    order: ExistingRentalOrderWithRelations;
-    nextStatus: OrderStatus;
-    currentUserId: string;
-    note?: string;
-    eventType: OrderEventType;
-    eventMessage: string;
-  }): Promise<ExistingRentalOrderWithRelations> {
-    return this.prisma.$transaction(async (tx) => {
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: params.order.id,
-          fromStatus: params.order.status,
-          toStatus: params.nextStatus,
-          createdBy: params.currentUserId,
-          note: params.note,
-        },
-      });
-
-      await tx.orderEvent.create({
-        data: {
-          orderId: params.order.id,
-          type: params.eventType,
-          message: params.eventMessage,
-          createdBy: params.currentUserId,
-        },
-      });
-
-      return tx.rentalOrder.update({
-        where: {
-          id: params.order.id,
-        },
-        data: {
-          status: params.nextStatus,
-        },
-        include: this.rentalOrderInclude(),
-      });
-    });
+  private async acquireAdvisoryLocks(tx: Prisma.TransactionClient, keys: string[]): Promise<void> {
+    for (const key of [...new Set(keys)].sort()) {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    }
   }
 
   private normalizeItems(items: RentalOrderItemInDto[]): NormalizedRentalOrderItem[] {
@@ -655,28 +590,6 @@ export class RentalOrdersService {
       assetUnitId: item.assetUnitId,
       note: item.note,
     }));
-  }
-
-  private validateRentalTime(startDate: Date, endDate: Date): void {
-    if (startDate >= endDate) {
-      throw new BadRequestException(RENTAL_ORDER_TIME_INVALID);
-    }
-  }
-
-  private validateRequestedItems(items: NormalizedRentalOrderItem[]): void {
-    const assetUnitIds = new Set<string>();
-
-    for (const item of items) {
-      if (!item.assetUnitId) {
-        continue;
-      }
-
-      if (assetUnitIds.has(item.assetUnitId)) {
-        throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
-      }
-
-      assetUnitIds.add(item.assetUnitId);
-    }
   }
 
   private assertAvailable(availability: RentalOrderAvailabilityOutDto): void {
@@ -744,227 +657,6 @@ export class RentalOrdersService {
     }
 
     return products;
-  }
-
-  private priceItems(items: NormalizedRentalOrderItem[], products: RentalProduct[], rentalPolicy: RentalPolicy, startDate: Date, endDate: Date): PricedRentalOrderItem[] {
-    const productsById = new Map(products.map((product) => [product.id, product]));
-
-    return items.map((item) => {
-      const product = productsById.get(item.productId);
-
-      if (!product) {
-        throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
-      }
-
-      const unitPrice = this.calculateRentalUnitPrice(product, startDate, endDate);
-      const depositAmount = Number(product.depositAmount);
-
-      return {
-        ...item,
-        productNameSnapshot: product.name,
-        skuSnapshot: product.sku,
-        unitPrice,
-        bookingHoldAmount: Number(rentalPolicy.bookingHoldAmountPerUnit),
-        upfrontAmount: unitPrice + depositAmount,
-        refundableDepositAmount: depositAmount,
-        depositAmount,
-        lineTotal: unitPrice,
-      };
-    });
-  }
-
-  private calculateRentalUnitPrice(product: RentalProduct, startDate: Date, endDate: Date): number {
-    const durationHours = Math.ceil((endDate.getTime() - startDate.getTime()) / (60 * 60 * 1000));
-
-    if (durationHours <= 6) {
-      return Number(product.halfDayPrice ?? product.dailyPrice);
-    }
-
-    if (durationHours <= 24) {
-      return Number(product.dailyPrice);
-    }
-
-    const fullDays = Math.floor(durationHours / 24);
-    const extraHours = durationHours - fullDays * 24;
-
-    if (product.hourlyOveragePrice && extraHours > 0) {
-      return this.getTierDailyPrice(product, fullDays) * fullDays + Number(product.hourlyOveragePrice) * extraHours;
-    }
-
-    const billableDays = Math.ceil(durationHours / 24);
-    return this.getTierDailyPrice(product, billableDays) * billableDays;
-  }
-
-  private getTierDailyPrice(product: RentalProduct, days: number): number {
-    const tier = product.rentalPriceTiers.find((priceTier) => {
-      const maxDays = priceTier.maxDays ?? Number.POSITIVE_INFINITY;
-      return priceTier.minDays <= days && days <= maxDays;
-    });
-
-    return Number(tier?.dailyPrice ?? product.dailyPrice);
-  }
-
-  private calculateTotals(items: PricedRentalOrderItem[], deliveryFeeTotal: number, discountTotal: number) {
-    const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
-    const depositTotal = items.reduce((total, item) => total + item.depositAmount, 0);
-    const bookingHoldTotal = items.reduce((total, item) => total + item.bookingHoldAmount, 0);
-    const upfrontTotal = Math.max(subtotal + depositTotal + deliveryFeeTotal - discountTotal, 0);
-
-    return {
-      subtotal,
-      depositTotal,
-      deliveryFeeTotal,
-      discountTotal,
-      bookingHoldTotal,
-      upfrontTotal,
-      handoverDueTotal: Math.max(upfrontTotal - bookingHoldTotal, 0),
-    };
-  }
-
-  private toCreateOrderItemsData(items: PricedRentalOrderItem[]): Prisma.RentalOrderItemCreateWithoutOrderInput[] {
-    return items.map((item) => ({
-      product: {
-        connect: {
-          id: item.productId,
-        },
-      },
-      assetUnit: item.assetUnitId
-        ? {
-            connect: {
-              id: item.assetUnitId,
-            },
-          }
-        : undefined,
-      productNameSnapshot: item.productNameSnapshot,
-      skuSnapshot: item.skuSnapshot,
-      unitPrice: item.unitPrice,
-      bookingHoldAmount: item.bookingHoldAmount,
-      upfrontAmount: item.upfrontAmount,
-      refundableDepositAmount: item.refundableDepositAmount,
-      depositAmount: item.depositAmount,
-      lineTotal: item.lineTotal,
-      note: item.note,
-    }));
-  }
-
-  private toCreateManyOrderItemsData(orderId: string, items: PricedRentalOrderItem[]): Prisma.RentalOrderItemCreateManyInput[] {
-    return items.map((item) => ({
-      orderId,
-      productId: item.productId,
-      assetUnitId: item.assetUnitId,
-      productNameSnapshot: item.productNameSnapshot,
-      skuSnapshot: item.skuSnapshot,
-      unitPrice: item.unitPrice,
-      bookingHoldAmount: item.bookingHoldAmount,
-      upfrontAmount: item.upfrontAmount,
-      refundableDepositAmount: item.refundableDepositAmount,
-      depositAmount: item.depositAmount,
-      lineTotal: item.lineTotal,
-      note: item.note,
-    }));
-  }
-
-  private toUpdateOrderItemData(item: PricedRentalOrderItem): Prisma.RentalOrderItemUpdateInput {
-    return {
-      product: {
-        connect: {
-          id: item.productId,
-        },
-      },
-      assetUnit: item.assetUnitId
-        ? {
-            connect: {
-              id: item.assetUnitId,
-            },
-          }
-        : {
-            disconnect: true,
-          },
-      productNameSnapshot: item.productNameSnapshot,
-      skuSnapshot: item.skuSnapshot,
-      unitPrice: item.unitPrice,
-      bookingHoldAmount: item.bookingHoldAmount,
-      upfrontAmount: item.upfrontAmount,
-      refundableDepositAmount: item.refundableDepositAmount,
-      depositAmount: item.depositAmount,
-      lineTotal: item.lineTotal,
-      note: item.note,
-    };
-  }
-
-  private async getBookedAssetUnitIds(assetUnitIds: string[], startDate: Date, blockedEndDate: Date, excludeOrderId?: string): Promise<Set<string>> {
-    const uniqueAssetUnitIds = [...new Set(assetUnitIds)];
-
-    if (uniqueAssetUnitIds.length === 0) {
-      return new Set();
-    }
-
-    const bookedItems = await this.prisma.rentalOrderItem.findMany({
-      where: {
-        assetUnitId: {
-          in: uniqueAssetUnitIds,
-        },
-        order: this.blockingOrderWhere(startDate, blockedEndDate, excludeOrderId),
-      },
-      select: {
-        assetUnitId: true,
-      },
-    });
-
-    return new Set(bookedItems.flatMap((item) => (item.assetUnitId ? [item.assetUnitId] : [])));
-  }
-
-  private async getBookedQuantityByProduct(productIds: string[], startDate: Date, blockedEndDate: Date, excludeOrderId?: string): Promise<Map<string, number>> {
-    const uniqueProductIds = [...new Set(productIds)];
-
-    if (uniqueProductIds.length === 0) {
-      return new Map();
-    }
-
-    const bookedItems = await this.prisma.rentalOrderItem.groupBy({
-      by: ['productId'],
-      where: {
-        productId: {
-          in: uniqueProductIds,
-        },
-        order: this.blockingOrderWhere(startDate, blockedEndDate, excludeOrderId),
-      },
-      _count: {
-        _all: true,
-      },
-    });
-
-    return new Map(bookedItems.map((item) => [item.productId, item._count._all]));
-  }
-
-  private blockingOrderWhere(startDate: Date, blockedEndDate: Date, excludeOrderId?: string): Prisma.RentalOrderWhereInput {
-    return {
-      deletedAt: null,
-      ...(excludeOrderId && {
-        id: {
-          not: excludeOrderId,
-        },
-      }),
-      status: {
-        in: BLOCKING_ORDER_STATUSES,
-      },
-      startDate: {
-        lt: blockedEndDate,
-      },
-      blockedEndDate: {
-        gt: startDate,
-      },
-    };
-  }
-
-  private countRequestedItemsByProduct(items: NormalizedRentalOrderItem[]): Map<string, number> {
-    const requestedQuantityByProduct = new Map<string, number>();
-
-    for (const item of items) {
-      requestedQuantityByProduct.set(item.productId, (requestedQuantityByProduct.get(item.productId) ?? 0) + 1);
-    }
-
-    return requestedQuantityByProduct;
   }
 
   private async findExistingRentalOrderById(id: string): Promise<ExistingRentalOrderWithRelations> {
@@ -1143,7 +835,4 @@ export class RentalOrdersService {
     return Object.prototype.hasOwnProperty.call(value, key);
   }
 
-  private addMinutes(date: Date, minutes: number): Date {
-    return new Date(date.getTime() + minutes * 60 * 1000);
-  }
 }

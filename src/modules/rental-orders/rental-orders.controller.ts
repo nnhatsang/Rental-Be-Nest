@@ -20,6 +20,12 @@ import { SUCCESS } from '@/libs/constants/response.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
 import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
+import {
+  AvailabilityAssetsOutDto,
+  AvailabilityProductsOutDto,
+  GetAvailabilityAssetsDto,
+  GetAvailabilityProductsDto,
+} from './dto/get-rental-order-availability.dto';
 
 @ApiTags('rental-orders')
 @Controller('rental-orders')
@@ -35,6 +41,22 @@ export class RentalOrdersController {
   @ApiOkResponse({ type: RentalOrderAvailabilityResponseDto })
   async checkRentalOrderAvailability(@Body() dto: CheckRentalOrderAvailabilityDto) {
     return new ApiRes(await this.rentalOrdersService.checkRentalOrderAvailability(dto), 'Kiểm tra lịch thuê thành công');
+  }
+
+  @Get('availability/products')
+  @RequirePermissions(PermissionCode.OrdersRead)
+  @ApiOperation({ summary: 'Tìm sản phẩm còn trống trong khoảng thời gian' })
+  @ApiOkResponse({ type: AvailabilityProductsOutDto })
+  async getAvailabilityProducts(@Query() dto: GetAvailabilityProductsDto) {
+    return new ApiRes(await this.rentalOrdersService.getAvailabilityProducts(dto), 'Lấy sản phẩm khả dụng thành công');
+  }
+
+  @Get('availability/assets')
+  @RequirePermissions(PermissionCode.OrdersRead)
+  @ApiOperation({ summary: 'Tìm serial trống hoặc bị chặn trong khoảng thời gian' })
+  @ApiOkResponse({ type: AvailabilityAssetsOutDto })
+  async getAvailabilityAssets(@Query() dto: GetAvailabilityAssetsDto) {
+    return new ApiRes(await this.rentalOrdersService.getAvailabilityAssets(dto), 'Lấy thiết bị khả dụng thành công');
   }
 
   @Get()
@@ -64,7 +86,7 @@ export class RentalOrdersController {
   @Post()
   @RequirePermissions(PermissionCode.OrdersCreate)
   @ApiOperation({
-    summary: 'Tạo đơn thuê nháp',
+    summary: 'Tạo đơn thuê',
     description: 'Tạo đơn thuê admin-first với trạng thái DRAFT, snapshot khách hàng/sản phẩm/chính sách và tính tổng tiền.',
   })
   @ApiOkResponse({ type: RentalOrderResponseDto })

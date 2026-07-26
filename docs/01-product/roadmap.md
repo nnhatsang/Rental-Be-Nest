@@ -44,8 +44,10 @@ Phase 0 (Thiết lập nền tảng)
 ### Phase 3 — Vòng đời Đơn thuê & Kiểm tra lịch trống ⏳ (Đang phát triển)
 - [x] Backend: Thuật toán quét trùng lịch giao thoa thời gian (Time Overlap checking) có tính đến turnaround minutes.
 - [x] Backend: API tạo đơn hàng nháp (`DRAFT`) và gán thiết bị cụ thể.
-- [ ] Frontend: Màn hình kiểm tra lịch trống khả dụng (`/availability`) thời gian thực.
-- [ ] Frontend: Màn hình tạo đơn hàng mới theo từng bước (Step-by-step order creation).
+- [x] Frontend: Màn tra cứu nhanh khả dụng theo sản phẩm (`/availability/products`).
+- [x] Frontend: Màn timeline điều phối lịch thuê theo từng serial (`/availability/timeline`).
+- [ ] Frontend: Tích hợp kiểm tra availability vào flow tạo/sửa đơn thuê thay vì xây dựng một màn `/availability` độc lập.
+- [ ] Frontend: Màn hình tạo đơn hàng mới theo từng bước (Step-by-step order creation), bao gồm check availability trước khi tạo `DRAFT`.
 
 ### Phase 4 — Biên bản Bàn giao & Kiểm tra ⏳ (Chưa bắt đầu)
 - [ ] Backend: API tạo biên bản bàn giao (`OrderHandover`) khi giao máy và khi nhận trả máy.

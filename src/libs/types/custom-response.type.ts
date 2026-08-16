@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { DEFAULT_PAGE, DEFAULT_PER_PAGE, SortOrder } from '../constants/common.constant';
 import { INVALID_NUMBER, INVALID_STRING } from '../constants/invalid.constant';
 import { SUCCESS } from '../constants/response.constant';
@@ -118,6 +118,7 @@ export class ApiPagReq {
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(1)
+  @Max(100)
   @IsOptional()
   perPage: number = DEFAULT_PER_PAGE;
 

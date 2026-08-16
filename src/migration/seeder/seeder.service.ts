@@ -14,7 +14,7 @@ export class SeederService {
   async seed() {
     await this.seedPermissions();
     await this.seedRoles();
-    await this.seedRentalPolicy();
+    await this.seedSystemSettings();
     await this.seedStoreBusinessHours();
     await this.seedEmailTemplates();
     await this.seedDefaultAdmin();
@@ -79,21 +79,22 @@ export class SeederService {
     this.logger.log('Roles seeded');
   }
 
-  private async seedRentalPolicy() {
-    await this.prisma.rentalPolicy.upsert({
+  private async seedSystemSettings() {
+    await this.prisma.systemSettings.upsert({
       where: {
-        code: 'DEFAULT',
+        id: 1,
       },
       update: {},
       create: {
-        code: 'DEFAULT',
-        name: 'Default Rental Policy',
-        bookingHoldAmountPerUnit: 50000,
-        turnaroundMinutes: 60,
+        id: 1,
+        bookingHoldPricePerUnit: 50000,
+        bookingBufferTimeMinutes: 60,
+        maxRentalTimeDays: 30,
+        maxLateReturnTimeHours: 6,
       },
     });
 
-    this.logger.log('Rental policy seeded');
+    this.logger.log('System settings seeded');
   }
 
   private async seedStoreBusinessHours() {

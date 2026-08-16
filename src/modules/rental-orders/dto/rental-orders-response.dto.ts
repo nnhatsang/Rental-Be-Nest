@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ApiPag, ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
-import { RentalOrderOutDto } from './rental-order-out.dto';
+import { RentalOrderListItemOutDto, RentalOrderOutDto } from './rental-order-out.dto';
 import { RentalOrderAvailabilityOutDto } from './check-rental-order-availability.dto';
 
 export class RentalOrderResponseDto extends ApiRes<RentalOrderOutDto> {
@@ -8,12 +8,12 @@ export class RentalOrderResponseDto extends ApiRes<RentalOrderOutDto> {
   declare data: RentalOrderOutDto;
 }
 
-export class RentalOrdersPaginatedDataDto extends ApiPag<RentalOrderOutDto> {
-  @ApiProperty({ type: [RentalOrderOutDto] })
-  declare items: RentalOrderOutDto[];
+export class RentalOrdersPaginatedDataDto extends ApiPag<RentalOrderListItemOutDto> {
+  @ApiProperty({ type: [RentalOrderListItemOutDto] })
+  declare items: RentalOrderListItemOutDto[];
 }
 
-export class RentalOrdersPaginatedResponseDto extends ApiPaginatedResponseDto<RentalOrderOutDto> {
+export class RentalOrdersPaginatedResponseDto extends ApiPaginatedResponseDto<RentalOrderListItemOutDto> {
   @ApiProperty({ type: RentalOrdersPaginatedDataDto })
   declare data: RentalOrdersPaginatedDataDto;
 }

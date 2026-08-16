@@ -1,70 +1,41 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RentalOrdersService } from './rental-orders.service';
-import { AssignRentalOrderAssetsDto, CancelRentalOrderDto, RentalOrderNoteDto } from './dto/rental-order-actions.dto';
-import { CheckRentalOrderAvailabilityDto } from './dto/check-rental-order-availability.dto';
-import { CreateRentalOrderDto } from './dto/create-rental-order.dto';
-import { GetAllRentalOrdersDto } from './dto/get-all-rental-orders.dto';
-import {
-  DeleteRentalOrderResponseDto,
-  RentalOrderAvailabilityResponseDto,
-  RentalOrderResponseDto,
-  RentalOrdersPaginatedResponseDto,
-} from './dto/rental-orders-response.dto';
-import { UpdateRentalOrderDto } from './dto/update-rental-order.dto';
-import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
-import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
-import { AuthUser } from '@modules/auth/types/auth-user.type';
 import { PermissionCode } from '@/libs/constants/rbac.constant';
 import { SUCCESS } from '@/libs/constants/response.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
+import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
+import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
+import { AuthUser } from '@modules/auth/types/auth-user.type';
+import { CreateRentalOrderDto } from './dto/create-rental-order.dto';
 import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
+import { GetAllRentalOrdersDto } from './dto/get-all-rental-orders.dto';
 import {
-  AvailabilityAssetsOutDto,
-  AvailabilityProductsOutDto,
-  GetAvailabilityAssetsDto,
-  GetAvailabilityProductsDto,
-} from './dto/get-rental-order-availability.dto';
+  CancelRentalOrderDto,
+  CompleteRentalOrderDto,
+  HandoverRentalOrderDto,
+  RecordRentalOrderPaymentDto,
+  RefundRentalOrderPaymentDto,
+  StartRentalOrderDto,
+} from './dto/rental-order-actions.dto';
+import { DeleteRentalOrderResponseDto, RentalOrderResponseDto, RentalOrdersPaginatedResponseDto } from './dto/rental-orders-response.dto';
+import { UpdateRentalOrderDto } from './dto/update-rental-order.dto';
+import { RentalOrdersService } from './rental-orders.service';
+import { RentalOrderPaymentsService } from './services/rental-order-payments.service';
+import { RentalOrderWorkflowService } from './services/rental-order-workflow.service';
 
 @ApiTags('rental-orders')
 @Controller('rental-orders')
 export class RentalOrdersController {
-  constructor(private readonly rentalOrdersService: RentalOrdersService) {}
-
-  @Post('check-availability')
-  @RequirePermissions(PermissionCode.OrdersRead)
-  @ApiOperation({
-    summary: 'Kiểm tra khả dụng sản phẩm cho đơn thuê',
-    description: 'Kiểm tra giờ mở cửa, lịch đóng cửa, sản phẩm, asset unit và đơn thuê đang block trong cùng khoảng thời gian.',
-  })
-  @ApiOkResponse({ type: RentalOrderAvailabilityResponseDto })
-  async checkRentalOrderAvailability(@Body() dto: CheckRentalOrderAvailabilityDto) {
-    return new ApiRes(await this.rentalOrdersService.checkRentalOrderAvailability(dto), 'Kiểm tra lịch thuê thành công');
-  }
-
-  @Get('availability/products')
-  @RequirePermissions(PermissionCode.OrdersRead)
-  @ApiOperation({ summary: 'Tìm sản phẩm còn trống trong khoảng thời gian' })
-  @ApiOkResponse({ type: AvailabilityProductsOutDto })
-  async getAvailabilityProducts(@Query() dto: GetAvailabilityProductsDto) {
-    return new ApiRes(await this.rentalOrdersService.getAvailabilityProducts(dto), 'Lấy sản phẩm khả dụng thành công');
-  }
-
-  @Get('availability/assets')
-  @RequirePermissions(PermissionCode.OrdersRead)
-  @ApiOperation({ summary: 'Tìm serial trống hoặc bị chặn trong khoảng thời gian' })
-  @ApiOkResponse({ type: AvailabilityAssetsOutDto })
-  async getAvailabilityAssets(@Query() dto: GetAvailabilityAssetsDto) {
-    return new ApiRes(await this.rentalOrdersService.getAvailabilityAssets(dto), 'Lấy thiết bị khả dụng thành công');
-  }
+  constructor(
+    private readonly rentalOrdersService: RentalOrdersService,
+    private readonly workflowService: RentalOrderWorkflowService,
+    private readonly paymentsService: RentalOrderPaymentsService,
+  ) {}
 
   @Get()
   @RequirePermissions(PermissionCode.OrdersRead)
-  @ApiOperation({
-    summary: 'Lấy danh sách đơn thuê',
-    description: 'Trả về danh sách đơn thuê có phân trang, tìm kiếm và bộ lọc trạng thái/thời gian.',
-  })
+  @ApiOperation({ summary: 'List rental orders' })
   @ApiOkResponse({ type: RentalOrdersPaginatedResponseDto })
   async getAllRentalOrders(@Query() query: GetAllRentalOrdersDto) {
     const result = await this.rentalOrdersService.getAllRentalOrders(query);
@@ -74,78 +45,81 @@ export class RentalOrdersController {
 
   @Get(':id')
   @RequirePermissions(PermissionCode.OrdersRead)
-  @ApiOperation({
-    summary: 'Lấy chi tiết đơn thuê',
-    description: 'Trả về chi tiết đơn thuê kèm items, customer, người tạo và người được phân công.',
-  })
+  @ApiOperation({ summary: 'Get rental order detail' })
   @ApiOkResponse({ type: RentalOrderResponseDto })
   async getRentalOrderById(@Param('id', IdValidatePipe) id: string) {
-    return new ApiRes(await this.rentalOrdersService.getRentalOrderById(id), 'Lấy thông tin đơn thuê thành công');
+    return new ApiRes(await this.rentalOrdersService.getRentalOrderById(id), 'Lây thông tin chi tiết đơn thuê thành công');
   }
 
   @Post()
   @RequirePermissions(PermissionCode.OrdersCreate)
-  @ApiOperation({
-    summary: 'Tạo đơn thuê',
-    description: 'Tạo đơn thuê admin-first với trạng thái DRAFT, snapshot khách hàng/sản phẩm/chính sách và tính tổng tiền.',
-  })
+  @ApiOperation({ summary: 'Create rental order with CREATED status' })
   @ApiOkResponse({ type: RentalOrderResponseDto })
   async createRentalOrder(@Body() dto: CreateRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
-    return new ApiRes(await this.rentalOrdersService.createRentalOrder(dto, currentUser), 'Tạo đơn thuê thành công');
-  }
-
-  @Patch(':id/items/assign-assets')
-  @RequirePermissions(PermissionCode.OrdersUpdate)
-  @ApiOperation({
-    summary: 'Gán thiết bị vật lý cho đơn thuê',
-    description: 'Gán asset unit cho từng dòng đơn thuê.',
-  })
-  @ApiOkResponse({ type: RentalOrderResponseDto })
-  async assignRentalOrderAssets(@Param('id', IdValidatePipe) id: string, @Body() dto: AssignRentalOrderAssetsDto, @CurrentUser() currentUser: AuthUser) {
-    return new ApiRes(await this.rentalOrdersService.assignRentalOrderAssets(id, dto, currentUser), 'Gán thiết bị cho đơn thuê thành công');
-  }
-
-  @Post(':id/confirm')
-  @RequirePermissions(PermissionCode.OrdersUpdateStatus)
-  @ApiOperation({
-    summary: 'Xác nhận đơn thuê',
-    description: 'Chuyển đơn từ DRAFT sang CONFIRMED sau khi kiểm tra lại availability.',
-  })
-  @ApiOkResponse({ type: RentalOrderResponseDto })
-  async confirmRentalOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: RentalOrderNoteDto, @CurrentUser() currentUser: AuthUser) {
-    return new ApiRes(await this.rentalOrdersService.confirmRentalOrder(id, dto, currentUser), 'Xác nhận đơn thuê thành công');
-  }
-
-  @Post(':id/cancel')
-  @RequirePermissions(PermissionCode.OrdersCancel)
-  @ApiOperation({
-    summary: 'Hủy đơn thuê',
-    description: 'Chuyển đơn sang CANCELLED và lưu lý do hủy.',
-  })
-  @ApiOkResponse({ type: RentalOrderResponseDto })
-  async cancelRentalOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: CancelRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
-    return new ApiRes(await this.rentalOrdersService.cancelRentalOrder(id, dto, currentUser), 'Hủy đơn thuê thành công');
+    return new ApiRes(await this.rentalOrdersService.createRentalOrder(dto, currentUser), 'Tao don thue thanh cong');
   }
 
   @Patch(':id')
   @RequirePermissions(PermissionCode.OrdersUpdate)
-  @ApiOperation({
-    summary: 'Cập nhật đơn thuê nháp',
-    description: 'Cập nhật thông tin đơn DRAFT; nếu truyền items thì thay thế toàn bộ danh sách items.',
-  })
+  @ApiOperation({ summary: 'Update CREATED rental order' })
   @ApiOkResponse({ type: RentalOrderResponseDto })
   async updateRentalOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: UpdateRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
-    return new ApiRes(await this.rentalOrdersService.updateRentalOrder(id, dto, currentUser), 'Cập nhật đơn thuê thành công');
+    return new ApiRes(await this.rentalOrdersService.updateRentalOrder(id, dto, currentUser), 'Cap nhat don thue thanh cong');
   }
 
   @Delete()
   @RequirePermissions(PermissionCode.OrdersCancel)
-  @ApiOperation({
-    summary: 'Xóa mềm nhiều đơn thuê',
-    description: 'Chỉ xóa mềm đơn DRAFT hoặc CANCELLED.',
-  })
+  @ApiOperation({ summary: 'Soft delete CREATED or CANCELLED rental orders' })
   @ApiOkResponse({ type: DeleteRentalOrderResponseDto })
   async deleteRentalOrders(@CurrentUser() currentUser: AuthUser, @Body() dto: DeleteRentalOrdersDto) {
-    return new ApiRes(await this.rentalOrdersService.deleteRentalOrders(dto, currentUser.id), 'Xóa đơn thuê thành công');
+    return new ApiRes(await this.rentalOrdersService.deleteRentalOrders(dto, currentUser), 'Xoa don thue thanh cong');
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions(PermissionCode.OrdersCancel)
+  @ApiOperation({ summary: 'Cancel rental order' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async cancelRentalOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: CancelRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.workflowService.cancelOrder(id, dto, currentUser), 'Huy don thue thanh cong');
+  }
+
+  @Post(':id/renting')
+  @RequirePermissions(PermissionCode.OrdersUpdateStatus)
+  @ApiOperation({ summary: 'Start rental (legacy alias of handover)' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async markRenting(@Param('id', IdValidatePipe) id: string, @Body() dto: StartRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.workflowService.markRenting(id, dto, currentUser), 'Cap nhat trang thai don thanh cong');
+  }
+
+  @Post(':id/handover')
+  @RequirePermissions(PermissionCode.OrdersUpdateStatus)
+  @ApiOperation({ summary: 'Handover rental order and start renting' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async handoverOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: HandoverRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.workflowService.handoverOrder(id, dto, currentUser), 'Ban giao don thue thanh cong');
+  }
+
+  @Post(':id/complete')
+  @RequirePermissions(PermissionCode.OrdersUpdateStatus)
+  @ApiOperation({ summary: 'Complete rental order with return settlement' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async completeOrder(@Param('id', IdValidatePipe) id: string, @Body() dto: CompleteRentalOrderDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.workflowService.completeOrder(id, dto, currentUser), 'Hoan tat don thue thanh cong');
+  }
+
+  @Post(':id/payments')
+  @RequirePermissions(PermissionCode.OrdersRecordPayment)
+  @ApiOperation({ summary: 'Record rental order payment' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async recordPayment(@Param('id', IdValidatePipe) id: string, @Body() dto: RecordRentalOrderPaymentDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.paymentsService.recordPayment(id, dto, currentUser), 'Ghi nhan thanh toan thanh cong');
+  }
+
+  @Post(':id/refunds')
+  @RequirePermissions(PermissionCode.OrdersRecordPayment)
+  @ApiOperation({ summary: 'Record rental order refund' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async recordRefund(@Param('id', IdValidatePipe) id: string, @Body() dto: RefundRentalOrderPaymentDto, @CurrentUser() currentUser: AuthUser) {
+    return new ApiRes(await this.paymentsService.recordRefund(id, dto, currentUser), 'Ghi nhan hoan tien thanh cong');
   }
 }

@@ -11,12 +11,6 @@ export enum AvailabilityFilter {
   UNAVAILABLE = 'UNAVAILABLE',
 }
 
-export enum ProductAvailabilityState {
-  AVAILABLE = 'AVAILABLE',
-  LOW_STOCK = 'LOW_STOCK',
-  UNAVAILABLE = 'UNAVAILABLE',
-}
-
 export enum AssetAvailabilityState {
   AVAILABLE = 'AVAILABLE',
   BOOKED = 'BOOKED',
@@ -61,9 +55,10 @@ export class GetAvailabilityBaseDto extends ApiPagReq {
 export class GetAvailabilityProductsDto extends GetAvailabilityBaseDto {}
 
 export class GetAvailabilityAssetsDto extends GetAvailabilityBaseDto {
-  @ApiProperty({ type: String, format: 'uuid' })
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })
-  productId!: string;
+  productId?: string;
 }
 
 export class GetAvailabilityProductAssetsDto extends GetAvailabilityBaseDto {}
@@ -80,8 +75,8 @@ export class AvailabilityProductPriceTierOutDto {
   @ApiProperty({ example: 6, nullable: true })
   maxDays!: number | null;
 
-  @ApiProperty({ example: '180000' })
-  dailyPrice!: string;
+  @ApiProperty({ example: 180000 })
+  dailyPrice!: number;
 
   @ApiProperty({ example: 'Combo 3-6 ngày', nullable: true })
   name!: string | null;
@@ -111,20 +106,49 @@ export class AvailabilityProductOutDto {
   @ApiProperty()
   sku!: string;
 
-  @ApiProperty({ example: '250000' })
-  dailyPrice!: string;
+  @ApiProperty({ example: 250000 })
+  dailyPrice!: number;
 
-  @ApiProperty({ example: '150000' })
-  halfDayPrice!: string;
+  @ApiProperty({ example: 150000 })
+  halfDayPrice!: number;
+
+  @ApiProperty({ example: 25000 })
+  hourlyOveragePrice!: number;
 
   @ApiProperty({ type: [AvailabilityProductPriceTierOutDto] })
   rentalPriceTiers!: AvailabilityProductPriceTierOutDto[];
 
+  @ApiProperty({ example: 2000000 })
+  depositAmount!: number;
+
   @ApiProperty({ type: AvailabilityProductInventoryOutDto })
   inventory!: AvailabilityProductInventoryOutDto;
+}
 
-  @ApiProperty({ enum: ProductAvailabilityState })
-  availabilityState!: ProductAvailabilityState;
+export class AvailabilityAssetProductOutDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  productId!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  sku!: string;
+
+  @ApiProperty({ example: 250000 })
+  dailyPrice!: number;
+
+  @ApiProperty({ example: 150000 })
+  halfDayPrice!: number;
+
+  @ApiProperty({ example: 25000 })
+  hourlyOveragePrice!: number;
+
+  @ApiProperty({ type: [AvailabilityProductPriceTierOutDto] })
+  rentalPriceTiers!: AvailabilityProductPriceTierOutDto[];
+
+  @ApiProperty({ example: 2000000 })
+  depositAmount!: number;
 }
 
 export class AvailabilityProductsOutDto {
@@ -143,8 +167,7 @@ export class AvailabilityProductsOutDto {
   @ApiProperty()
   blockedEndDate!: Date;
 
-  @ApiProperty()
-  turnaroundMinutes!: number;
+
 }
 
 export class AvailabilityAssetOutDto {
@@ -168,6 +191,9 @@ export class AvailabilityAssetOutDto {
 
   @ApiProperty({ nullable: true })
   conflictBlockedEndDate!: Date | null;
+
+  @ApiProperty({ type: AvailabilityAssetProductOutDto })
+  product!: AvailabilityAssetProductOutDto;
 }
 
 export class AvailabilityAssetsOutDto {
@@ -177,9 +203,6 @@ export class AvailabilityAssetsOutDto {
   @ApiProperty({ type: Pagination })
   pagination!: Pagination;
 
-  @ApiProperty({ type: String, format: 'uuid' })
-  productId!: string;
-
   @ApiProperty()
   availableQuantity!: number;
 
@@ -188,6 +211,9 @@ export class AvailabilityAssetsOutDto {
 
   @ApiProperty()
   blockedEndDate!: Date;
+
+  @ApiProperty({ example: 100000 })
+  bookingHoldAmountPerUnit!: number;
 }
 
 export class AvailabilityTimelineBlockOutDto {
@@ -249,4 +275,3 @@ export class AvailabilityTimelineOutDto {
   @ApiProperty()
   endDate!: Date;
 }
-

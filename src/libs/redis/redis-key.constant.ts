@@ -25,14 +25,8 @@ export const REDIS_KEYS = {
     idempotency: (userId: string, requestHash: string) => `${REDIS_PREFIX.RENTAL_ORDER}:idempotency:${userId}:${requestHash}`,
   },
 
-  rentalAvailability: {
-    // Do not use this cache for inventory decisions. Availability is dynamic
-    // and must be read from PostgreSQL when an order is confirmed or assigned.
-    cache: (hash: string) => `${REDIS_PREFIX.RENTAL_AVAILABILITY}:cache:${hash}`,
-  },
-
-  rentalPolicy: {
-    default: () => `${REDIS_PREFIX.RENTAL_POLICY}:default`,
+  systemSettings: {
+    default: () => `${REDIS_PREFIX.SYSTEM_SETTINGS}:default`,
   },
 
   store: {
@@ -45,12 +39,6 @@ export const REDIS_KEYS = {
     productSummary: (productId: string) => `${REDIS_PREFIX.RENTAL_ASSET_UNIT}:product-summary:${productId}`,
   },
 
-  dashboard: {
-    overview: () => `${REDIS_PREFIX.DASHBOARD_METRICS}:overview`,
-    orders: (dateRangeHash: string) => `${REDIS_PREFIX.DASHBOARD_METRICS}:orders:${dateRangeHash}`,
-    assets: () => `${REDIS_PREFIX.DASHBOARD_METRICS}:assets`,
-    revenue: (dateRangeHash: string) => `${REDIS_PREFIX.DASHBOARD_METRICS}:revenue:${dateRangeHash}`,
-  },
 
   rbac: {
     userPermissions: (userId: string) => `${REDIS_PREFIX.RBAC}:user-permissions:${userId}`,

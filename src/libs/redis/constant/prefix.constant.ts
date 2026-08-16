@@ -13,8 +13,7 @@ export const REDIS_PREFIX = {
 
   RENTAL_ORDER: 'rental:order',
   RENTAL_ASSET_UNIT: 'rental:asset-unit',
-  RENTAL_AVAILABILITY: 'rental:availability',
-  RENTAL_POLICY: 'rental:policy',
+  SYSTEM_SETTINGS: 'system:settings',
   STORE: 'rental:store',
 
   DASHBOARD_METRICS: 'dashboard:metrics',
@@ -37,10 +36,8 @@ export const REDIS_EXPIRE = {
 
   IDEMPOTENCY: 2 * 60,
   DISTRIBUTED_LOCK: 30,
-  AVAILABILITY_CACHE: 60,
 
-  DASHBOARD_METRICS: 60,
-  RENTAL_POLICY_CACHE: 10 * 60,
-  STORE_BUSINESS_HOURS_CACHE: 10 * 60,
+  SYSTEM_SETTINGS_CACHE: 60 * 60 * 24, // 1 day
+  STORE_BUSINESS_HOURS_CACHE: 60 * 60 * 24,
   RBAC_PERMISSION_CACHE: 10 * 60,
 } as const;

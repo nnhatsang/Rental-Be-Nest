@@ -112,7 +112,6 @@ export class ProductsService {
                 maxDays: tier.maxDays,
                 dailyPrice: tier.dailyPrice,
                 name: tier.name,
-                sortOrder: tier.sortOrder ?? 0,
               })),
             }
           : undefined,
@@ -185,7 +184,6 @@ export class ProductsService {
                 maxDays: tier.maxDays,
                 dailyPrice: tier.dailyPrice,
                 name: tier.name,
-                sortOrder: tier.sortOrder ?? 0,
               })),
             }
           : undefined,
@@ -268,7 +266,9 @@ export class ProductsService {
           where: {
             deletedAt: null,
           },
-          orderBy: [{ sortOrder: 'asc' }, { minDays: 'asc' }],
+          orderBy: {
+            minDays: 'asc',
+          },
         },
       },
     });
@@ -359,7 +359,9 @@ export class ProductsService {
         where: {
           deletedAt: null,
         },
-        orderBy: [{ sortOrder: 'asc' }, { minDays: 'asc' }],
+        orderBy: {
+          minDays: 'asc',
+        },
       },
     };
   }
@@ -410,22 +412,21 @@ export class ProductsService {
             name: product.brand.name,
           }
         : null,
-      dailyPrice: product.dailyPrice.toString(),
-      halfDayPrice: product.halfDayPrice.toString(),
-      hourlyOveragePrice: product.hourlyOveragePrice?.toString() ?? null,
+      dailyPrice: Number(product.dailyPrice),
+      halfDayPrice: Number(product.halfDayPrice),
+      hourlyOveragePrice: product.hourlyOveragePrice === null ? null : Number(product.hourlyOveragePrice),
       rentalPriceTiers: product.rentalPriceTiers.map((tier) => ({
         id: tier.id,
         minDays: tier.minDays,
         maxDays: tier.maxDays,
-        dailyPrice: tier.dailyPrice.toString(),
+        dailyPrice: Number(tier.dailyPrice),
         name: tier.name,
-        sortOrder: tier.sortOrder,
         createdAt: tier.createdAt,
         updatedAt: tier.updatedAt,
         deletedAt: tier.deletedAt,
       })),
-      depositAmount: product.depositAmount.toString(),
-      replacementValue: product.replacementValue?.toString() ?? null,
+      depositAmount: Number(product.depositAmount),
+      replacementValue: product.replacementValue === null ? null : Number(product.replacementValue),
       isActive: product.isActive,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,

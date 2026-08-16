@@ -146,6 +146,11 @@ export const RENTAL_POLICY_NOT_FOUND = new ErrorResponse({
   message: 'Không tìm thấy chính sách thuê',
 });
 
+export const SYSTEM_SETTINGS_NOT_FOUND = new ErrorResponse({
+  code: 'SYSTEM_SETTINGS_NOT_FOUND',
+  message: 'Khong tim thay cau hinh he thong',
+});
+
 export const STORE_BUSINESS_HOURS_INVALID = new ErrorResponse({
   code: 'STORE_BUSINESS_HOURS_INVALID',
   message: 'Cấu hình giờ hoạt động không hợp lệ',
@@ -214,6 +219,11 @@ export const RENTAL_ORDER_UNAVAILABLE = new ErrorResponse({
 export const RENTAL_ORDER_STATUS_TRANSITION_INVALID = new ErrorResponse({
   code: 'RENTAL_ORDER_STATUS_TRANSITION_INVALID',
   message: 'Không thể chuyển trạng thái đơn thuê theo yêu cầu',
+});
+
+export const RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT = new ErrorResponse({
+  code: 'RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT',
+  message: 'Số tiền khách đã thanh toán chưa đủ để bàn giao thiết bị',
 });
 
 export const ROLE_NOT_FOUND = new ErrorResponse({

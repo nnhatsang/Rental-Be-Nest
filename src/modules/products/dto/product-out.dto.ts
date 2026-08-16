@@ -34,23 +34,23 @@ export class ProductOutDto {
   @ApiProperty({ type: ProductRelationOutDto, nullable: true })
   brand!: ProductRelationOutDto | null;
 
-  @ApiProperty({ example: '500000' })
-  dailyPrice!: string;
+  @ApiProperty({ example: 500000 })
+  dailyPrice!: number;
 
-  @ApiProperty({ example: '300000' })
-  halfDayPrice!: string;
+  @ApiProperty({ example: 300000 })
+  halfDayPrice!: number;
 
-  @ApiProperty({ example: '100000', nullable: true })
-  hourlyOveragePrice!: string | null;
+  @ApiProperty({ example: 100000, nullable: true })
+  hourlyOveragePrice!: number | null;
 
   @ApiProperty({ type: [ProductRentalPriceTierOutDto] })
   rentalPriceTiers!: ProductRentalPriceTierOutDto[];
 
-  @ApiProperty({ example: '5000000' })
-  depositAmount!: string;
+  @ApiProperty({ example: 5000000 })
+  depositAmount!: number;
 
-  @ApiProperty({ example: '45000000', nullable: true })
-  replacementValue!: string | null;
+  @ApiProperty({ example: 45000000, nullable: true })
+  replacementValue!: number | null;
 
   @ApiProperty({ example: true })
   isActive!: boolean;

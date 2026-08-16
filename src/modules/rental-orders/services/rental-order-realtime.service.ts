@@ -7,9 +7,10 @@ export class RentalOrderRealtimeService {
   constructor(private readonly socketService: SocketService) {}
 
   emitAvailabilityChanged(reason: EAvailabilityChangeReason, items: Array<{ productId: string; assetUnitId?: string | null }>): void {
+    const productIds = [...new Set(items.map((item) => item.productId))];
     this.socketService.broadcastToAdmins(ESocketEmit.AVAILABILITY_CHANGED, {
       reason,
-      productIds: [...new Set(items.map((item) => item.productId))],
+      productIds,
       assetUnitIds: [...new Set(items.flatMap((item) => (item.assetUnitId ? [item.assetUnitId] : [])))],
       occurredAt: new Date().toISOString(),
     });

@@ -5,11 +5,49 @@ import { PickupMethod } from '@generated/prisma/enums';
 import { RentalOrderItemInDto } from './create-rental-order.dto';
 import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
+export class UpdateRentalOrderCustomerSnapshotDto {
+  @ApiPropertyOptional({ example: 'Nguyen Van A' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  name?: string;
+
+  @ApiPropertyOptional({ example: '0900000000', nullable: true })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'customer@example.com', nullable: true })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  email?: string;
+
+  @ApiPropertyOptional({ example: '123 Nguyen Trai, Quan 1, TP.HCM', nullable: true })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  address?: string;
+
+  @ApiPropertyOptional({ example: '079200000001', nullable: true })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  identityNumber?: string;
+
+  @ApiPropertyOptional({ example: 'https://facebook.com/nguyenvana', nullable: true })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  socialContact?: string;
+}
+
 export class UpdateRentalOrderDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })
   customerId?: string;
+
+  @ApiPropertyOptional({ type: UpdateRentalOrderCustomerSnapshotDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateRentalOrderCustomerSnapshotDto)
+  customerSnapshot?: UpdateRentalOrderCustomerSnapshotDto;
 
   @ApiPropertyOptional({ example: '2026-06-10T07:00:00.000Z' })
   @Type(() => Date)
@@ -46,11 +84,6 @@ export class UpdateRentalOrderDto {
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(0)
   discountTotal?: number;
-
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
-  @IsOptional()
-  @IsUUID('7', { message: INVALID_UUID })
-  assignedToId?: string;
 
   @ApiPropertyOptional({ example: 'Khach doi gio nhan may' })
   @IsOptional()

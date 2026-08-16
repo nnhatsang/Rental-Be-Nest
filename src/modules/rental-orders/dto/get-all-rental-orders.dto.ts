@@ -13,8 +13,7 @@ export enum RentalOrderSortBy {
   END_DATE = 'endDate',
   STATUS = 'status',
   PAYMENT_STATUS = 'paymentStatus',
-  UPFRONT_TOTAL = 'upfrontTotal',
-  REMAINING_TOTAL = 'remainingTotal',
+  RENTAL_FEE_TOTAL = 'rentalFeeTotal',
 }
 
 export class GetAllRentalOrdersDto extends ApiPagReq {
@@ -22,11 +21,6 @@ export class GetAllRentalOrdersDto extends ApiPagReq {
   @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })
   customerId?: string;
-
-  @ApiPropertyOptional({ type: String, format: 'uuid' })
-  @IsOptional()
-  @IsUUID('7', { message: INVALID_UUID })
-  assignedToId?: string;
 
   @ApiPropertyOptional({ enum: Object.values(OrderStatus) })
   @IsOptional()

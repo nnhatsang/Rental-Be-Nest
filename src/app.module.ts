@@ -7,7 +7,7 @@ import { UsersModule } from './modules/users/users.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ProductsModule } from './modules/products/products.module';
 import { AssetUnitsModule } from './modules/asset-units/asset-units.module';
-import { RentalPolicyModule } from './modules/rental-policy/rental-policy.module';
+import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 import { StoreBusinessHoursModule } from './modules/store-business-hours/store-business-hours.module';
 import { StoreClosureModule } from './modules/store-closure/store-closure.module';
 import { RentalOrdersModule } from './modules/rental-orders/rental-orders.module';
@@ -89,7 +89,7 @@ import { AvailabilityModule } from './modules/availability/availability.module';
     CustomersModule,
     ProductsModule,
     AssetUnitsModule,
-    RentalPolicyModule,
+    SystemSettingsModule,
     StoreBusinessHoursModule,
     StoreClosureModule,
     RentalOrdersModule,

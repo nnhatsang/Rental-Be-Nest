@@ -17,6 +17,10 @@ sections:
   domains:
     path: 03-domains/
     owner: backend
+    rental_orders:
+      audit_log_plan: 03-domains/rental-orders/audit-log-plan.md
+      refactor_plan: 03-domains/rental-orders/refactor-plan.md
+      status_flow_rules: 03-domains/rental-orders/status-flow-rules.md
 
   backend:
     path: 04-applications/backend/

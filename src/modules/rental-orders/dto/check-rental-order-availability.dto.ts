@@ -14,12 +14,12 @@ export class CheckRentalOrderAvailabilityItemDto {
   @Min(1, { message: 'Số lượng phải tối thiểu 1' })
   quantity!: number;
 
-  @ApiProperty({ type: [String], format: 'uuid', required: false, example: ['0190f9ff-8a88-7000-8000-000000000001'] })
-  @IsOptional()
+  @ApiProperty({ type: [String], format: 'uuid', example: ['0190f9ff-8a88-7000-8000-000000000001'] })
   @IsArray({ message: INVALID_ARRAY })
+  @ArrayMinSize(1)
   @ArrayUnique()
   @IsUUID('7', { each: true, message: INVALID_UUID })
-  assetUnitIds?: string[];
+  assetUnitIds!: string[];
 }
 
 export class CheckRentalOrderAvailabilityDto {
@@ -32,6 +32,11 @@ export class CheckRentalOrderAvailabilityDto {
   @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   endDate!: Date;
+
+  @ApiProperty({ type: String, format: 'uuid', required: false })
+  @IsOptional()
+  @IsUUID('7', { message: INVALID_UUID })
+  excludeOrderId?: string;
 
   @ApiProperty({ type: [CheckRentalOrderAvailabilityItemDto] })
   @IsArray({ message: INVALID_ARRAY })

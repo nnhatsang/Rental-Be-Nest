@@ -26,13 +26,6 @@ export class ProductRentalPriceTierInDto {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   name?: string;
-
-  @ApiPropertyOptional({ example: 0, default: 0 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  sortOrder?: number;
 }
 
 export class ProductRentalPriceTierOutDto {
@@ -45,14 +38,11 @@ export class ProductRentalPriceTierOutDto {
   @ApiProperty({ example: 6, nullable: true })
   maxDays!: number | null;
 
-  @ApiProperty({ example: '180000' })
-  dailyPrice!: string;
+  @ApiProperty({ example: 180000 })
+  dailyPrice!: number;
 
   @ApiProperty({ example: 'Combo 3-6 ngày', nullable: true })
   name!: string | null;
-
-  @ApiProperty({ example: 0 })
-  sortOrder!: number;
 
   @ApiProperty({ type: Date, format: 'date-time' })
   createdAt!: Date;

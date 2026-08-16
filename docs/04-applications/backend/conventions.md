@@ -270,7 +270,7 @@ Danh sách `sortBy` đang hỗ trợ cho các endpoint phân trang:
 | `GET /products` | `createdAt` | `createdAt`, `updatedAt`, `name`, `sku`, `dailyPrice`, `depositAmount`, `isActive` |
 | `GET /customers` | `createdAt` | `createdAt`, `updatedAt`, `code`, `name`, `phone`, `email`, `status` |
 | `GET /asset-units` | `createdAt` | `createdAt`, `updatedAt`, `serialNumber`, `status`, `condition`, `isActive` |
-| `GET /rental-orders` | `createdAt` | `createdAt`, `updatedAt`, `code`, `startDate`, `endDate`, `status`, `paymentStatus`, `upfrontTotal`, `remainingTotal` |
+| `GET /rental-orders` | `createdAt` | `createdAt`, `updatedAt`, `code`, `startDate`, `endDate`, `status`, `paymentStatus`, `rentalFeeTotal`, `amountDueNow`, `amountDueAtHandover` |
 | `GET /roles` | `isSystem` | `isSystem`, `code`, `name`, `createdAt`, `updatedAt` |
 | `GET /store-closures` | `startDate` | `startDate`, `endDate`, `type`, `createdAt`, `updatedAt` |
 

@@ -31,10 +31,12 @@ import { EmailProcessor } from './email.processor';
           type: 'exponential',
           delay: 2_000,
         },
-        removeOnComplete: {
-          age: 3_600,
-          count: 1_000,
-        },
+        // removeOnComplete: {
+        //   age: 3_600,
+        //   count: 1_000,
+        // },
+        removeOnComplete: true,
+
         removeOnFail: {
           age: 86_400,
           count: 5_000,

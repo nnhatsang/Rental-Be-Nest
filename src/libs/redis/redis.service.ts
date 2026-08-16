@@ -95,6 +95,10 @@ export class RedisService {
     return result;
   }
 
+  async incr(key: string): Promise<number> {
+    return this.getClient().incr(key);
+  }
+
   async sadd(key: string, ...values: string[]): Promise<void> {
     if (values.length === 0) return;
     await this.getClient().sadd(key, ...values);

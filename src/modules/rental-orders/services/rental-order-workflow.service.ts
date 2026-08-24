@@ -9,6 +9,7 @@ import {
   CancelRentalOrderDto,
   CompleteRentalOrderDto,
   HandoverRentalOrderDto,
+  RentalOrderLateFeePolicy,
   ReturnRentalOrderDto,
   StartRentalOrderDto,
 } from '../dto/rental-order-actions.dto';
@@ -22,7 +23,7 @@ import { RentalOrderRealtimeService } from './rental-order-realtime.service';
 
 const CANCELABLE_STATUSES = [OrderStatus.CREATED, OrderStatus.CONFIRMED];
 const HANDOVER_STATUSES = [OrderStatus.CREATED, OrderStatus.CONFIRMED];
-const COMPLETE_STATUSES = [OrderStatus.RENTING, OrderStatus.OVERDUE, OrderStatus.RETURNED];
+const COMPLETE_STATUSES = [OrderStatus.RENTING, OrderStatus.RETURNED];
 
 @Injectable()
 export class RentalOrderWorkflowService {
@@ -152,9 +153,11 @@ export class RentalOrderWorkflowService {
       this.rentalOrdersService.assertAvailable(availability);
 
       const collateralType = dto.collateralType ?? CollateralType.NONE;
+      const discountTotal = dto.discountTotal ?? Number(existingOrder.discountTotal);
+      const chargeTotal = this.calculateChargeTotal(existingOrder, discountTotal);
       const handoverTotals = this.calculateHandoverTotals({
         depositTotal: Number(existingOrder.depositTotal),
-        chargeTotal: Number(existingOrder.chargeTotal),
+        chargeTotal,
         paidTotalBeforeHandover: Number(existingOrder.paidTotal),
         paymentAmount: dto.payment?.amount ?? 0,
         collateralType,
@@ -220,10 +223,13 @@ export class RentalOrderWorkflowService {
           actualPickupDate: dto.actualPickupDate ?? new Date(),
           collateralType,
           collateralDescription: dto.collateralDescription,
+          discountTotal,
+          chargeTotal,
           paidTotal,
           adjustedDepositTotal: handoverTotals.adjustedDepositTotal,
           handoverRequiredTotal: handoverTotals.handoverRequiredTotal,
           handoverAmountDue: 0,
+          estimatedRefundTotal: Math.max(handoverTotals.handoverRequiredTotal - chargeTotal, 0),
           paymentStatus: this.resolvePaymentStatus(paidTotal, handoverTotals.handoverRequiredTotal),
           updatedBy: currentUser.id,
         },
@@ -244,10 +250,12 @@ export class RentalOrderWorkflowService {
             oldValue: existingOrder.collateralDescription,
             newValue: order.collateralDescription,
           },
+          { field: 'financials.discountTotal', label: 'Giảm giá', oldValue: existingOrder.discountTotal, newValue: order.discountTotal },
+          { field: 'financials.chargeTotal', label: 'Tiền thuê cần thanh toán', oldValue: existingOrder.chargeTotal, newValue: order.chargeTotal },
           { field: 'financials.paidTotal', label: 'Đã thu', oldValue: existingOrder.paidTotal, newValue: order.paidTotal },
           {
             field: 'financials.adjustedDepositTotal',
-            label: 'Tiền cọc áp dụng',
+            label: 'Tiền cọc cần thu',
             oldValue: existingOrder.adjustedDepositTotal,
             newValue: order.adjustedDepositTotal,
           },
@@ -290,9 +298,10 @@ export class RentalOrderWorkflowService {
       this.rentalOrdersService.assertStatusIn(existingOrder.status, COMPLETE_STATUSES);
 
       const actualReturnDate = dto.actualReturnDate ?? new Date();
-      const lateFeeTotal = this.calculateLateFeeTotal(existingOrder, actualReturnDate);
+      const calculatedLateFeeTotal = this.calculateLateFeeTotal(existingOrder, actualReturnDate);
+      const lateFeeTotal = this.resolveAppliedLateFeeTotal(dto, calculatedLateFeeTotal);
       const damageFeeTotal = dto.damageFeeTotal ?? Number(existingOrder.damageFeeTotal);
-      const compensationFeeTotal = Number(existingOrder.compensationFeeTotal);
+      const compensationFeeTotal = dto.compensationFeeTotal ?? Number(existingOrder.compensationFeeTotal);
       const chargeTotal = Math.max(
         Number(existingOrder.rentalFeeTotal) +
           Number(existingOrder.deliveryFeeTotal) +
@@ -322,13 +331,14 @@ export class RentalOrderWorkflowService {
       const actualRefundTotal = await this.getSuccessfulRefundTotal(tx, id);
       const estimatedRefundTotal = Math.max(paidTotal - chargeTotal - actualRefundTotal, 0);
       const refundStatus = actualRefundTotal <= 0 ? (estimatedRefundTotal > 0 ? RefundStatus.NOT_REQUIRED : existingOrder.refundStatus) : estimatedRefundTotal <= 0 ? RefundStatus.REFUNDED : RefundStatus.PARTIALLY_REFUNDED;
+      const previousFinancialBreakdown = this.rentalOrdersService.calculateFinancialBreakdown(existingOrder);
 
       await this.eventsService.appendStatusChange(tx, {
         orderId: id,
         fromStatus: existingOrder.status,
         toStatus: OrderStatus.DONE,
         createdBy: currentUser.id,
-        note: dto.note ?? dto.damageNote,
+        note: this.resolveCompleteOrderNote(dto),
       });
 
       await tx.rentalOrderItem.updateMany({
@@ -350,6 +360,7 @@ export class RentalOrderWorkflowService {
           actualReturnDate,
           lateFeeTotal,
           damageFeeTotal,
+          compensationFeeTotal,
           chargeTotal,
           paidTotal,
           estimatedRefundTotal,
@@ -360,6 +371,7 @@ export class RentalOrderWorkflowService {
         },
         include: this.rentalOrdersService.rentalOrderInclude(),
       });
+      const nextFinancialBreakdown = this.rentalOrdersService.calculateFinancialBreakdown(order);
 
       await this.logsService.appendLog(tx, {
         orderId: id,
@@ -370,8 +382,38 @@ export class RentalOrderWorkflowService {
           { field: 'rentalPeriod.actualReturnDate', label: 'Giờ trả thực tế', oldValue: existingOrder.actualReturnDate, newValue: order.actualReturnDate },
           { field: 'financials.lateFeeTotal', label: 'Phí trễ hạn', oldValue: existingOrder.lateFeeTotal, newValue: order.lateFeeTotal },
           { field: 'financials.damageFeeTotal', label: 'Phí hư hỏng', oldValue: existingOrder.damageFeeTotal, newValue: order.damageFeeTotal },
-          { field: 'financials.chargeTotal', label: 'Tiền thuê cần thanh toán', oldValue: existingOrder.chargeTotal, newValue: order.chargeTotal },
+          {
+            field: 'financials.compensationFeeTotal',
+            label: 'Phí bồi thường',
+            oldValue: existingOrder.compensationFeeTotal,
+            newValue: order.compensationFeeTotal,
+          },
+          {
+            field: 'financials.rentalRevenueTotal',
+            label: 'Doanh thu thuê',
+            oldValue: previousFinancialBreakdown.rentalRevenueTotal,
+            newValue: nextFinancialBreakdown.rentalRevenueTotal,
+          },
+          {
+            field: 'financials.incidentFeeTotal',
+            label: 'Phí phát sinh',
+            oldValue: previousFinancialBreakdown.incidentFeeTotal,
+            newValue: nextFinancialBreakdown.incidentFeeTotal,
+          },
+          { field: 'financials.chargeTotal', label: 'Tổng khách phải trả', oldValue: existingOrder.chargeTotal, newValue: order.chargeTotal },
           { field: 'financials.paidTotal', label: 'Đã thu', oldValue: existingOrder.paidTotal, newValue: order.paidTotal },
+          {
+            field: 'financials.refundDue',
+            label: 'Cần hoàn',
+            oldValue: previousFinancialBreakdown.refundDue,
+            newValue: nextFinancialBreakdown.refundDue,
+          },
+          {
+            field: 'financials.additionalChargeDue',
+            label: 'Cần thu thêm',
+            oldValue: previousFinancialBreakdown.additionalChargeDue,
+            newValue: nextFinancialBreakdown.additionalChargeDue,
+          },
           {
             field: 'financials.estimatedRefundTotal',
             label: 'Còn phải hoàn',
@@ -382,7 +424,7 @@ export class RentalOrderWorkflowService {
           { field: 'refundStatus', label: 'Trạng thái hoàn tiền', oldValue: existingOrder.refundStatus, newValue: order.refundStatus },
           { field: 'paymentStatus', label: 'Trạng thái thanh toán', oldValue: existingOrder.paymentStatus, newValue: order.paymentStatus },
         ]),
-        note: dto.note ?? dto.damageNote,
+        note: this.resolveCompleteOrderNote(dto),
       });
 
       return tx.rentalOrder.findFirstOrThrow({
@@ -406,6 +448,32 @@ export class RentalOrderWorkflowService {
     return 0;
   }
 
+  private resolveCompleteOrderNote(dto: CompleteRentalOrderDto): string | undefined {
+    const notes = [
+      dto.note?.trim(),
+      dto.lateFeeNote?.trim() ? `Phí trễ hạn: ${dto.lateFeeNote.trim()}` : undefined,
+      dto.damageNote?.trim() ? `Hư hỏng: ${dto.damageNote.trim()}` : undefined,
+      dto.compensationNote?.trim() ? `Bồi thường: ${dto.compensationNote.trim()}` : undefined,
+    ].filter(Boolean);
+
+    return notes.length ? notes.join('\n') : undefined;
+  }
+
+  private resolveAppliedLateFeeTotal(dto: CompleteRentalOrderDto, calculatedLateFeeTotal: number): number {
+    const policy = dto.lateFeePolicy ?? RentalOrderLateFeePolicy.CHARGE;
+    if (policy === RentalOrderLateFeePolicy.WAIVE) return 0;
+    if (policy === RentalOrderLateFeePolicy.CUSTOM) {
+      const customLateFeeTotal = Number(dto.customLateFeeTotal ?? 0);
+      if (customLateFeeTotal <= 0) {
+        throw new BadRequestException('Vui lòng nhập phí trễ hạn tùy chỉnh lớn hơn 0');
+      }
+
+      return Math.max(customLateFeeTotal, 0);
+    }
+
+    return calculatedLateFeeTotal;
+  }
+
   private calculateHandoverTotals({
     depositTotal,
     chargeTotal,
@@ -420,22 +488,17 @@ export class RentalOrderWorkflowService {
     collateralType: CollateralType;
   }) {
     const rentalCharge = Math.max(chargeTotal, 0);
-    let adjustedDepositTotal = Math.max(depositTotal, 0);
-
-    if (adjustedDepositTotal <= 0 && rentalCharge > 0) {
-      adjustedDepositTotal = rentalCharge * 2;
-    }
-
-    while (adjustedDepositTotal / 2 < rentalCharge) {
-      adjustedDepositTotal *= 2;
-    }
-
+    const baseDepositTotal = Math.max(depositTotal, 0);
+    const adjustedDepositTotal =
+      collateralType === CollateralType.VEHICLE_OR_HIGH_VALUE || collateralType === CollateralType.OTHER_ASSET
+        ? 0
+        : collateralType === CollateralType.IDENTITY_CARD
+          ? baseDepositTotal / 2
+          : baseDepositTotal;
     const handoverRequiredTotal =
-      collateralType === CollateralType.VEHICLE_OR_HIGH_VALUE
-        ? rentalCharge
-        : collateralType === CollateralType.IDENTITY_CARD || collateralType === CollateralType.OTHER_ASSET
-          ? (adjustedDepositTotal + rentalCharge) / 2
-          : adjustedDepositTotal;
+      collateralType === CollateralType.NONE && adjustedDepositTotal / 2 >= rentalCharge
+        ? adjustedDepositTotal
+        : rentalCharge + adjustedDepositTotal;
     const paidTotal = Math.max(paidTotalBeforeHandover, 0) + Math.max(paymentAmount, 0);
 
     return {
@@ -445,27 +508,61 @@ export class RentalOrderWorkflowService {
     };
   }
 
+  private calculateChargeTotal(
+    order: Awaited<ReturnType<RentalOrdersService['findExistingRentalOrderByIdInTransaction']>>,
+    discountTotal: number,
+  ): number {
+    return Math.max(
+      Number(order.rentalFeeTotal) +
+        Number(order.lateFeeTotal) +
+        Number(order.damageFeeTotal) +
+        Number(order.compensationFeeTotal) +
+        Number(order.deliveryFeeTotal) -
+        Math.max(discountTotal, 0),
+      0,
+    );
+  }
+
   private calculateLateFeeTotal(
     order: Awaited<ReturnType<RentalOrdersService['findExistingRentalOrderByIdInTransaction']>>,
     actualReturnDate: Date,
   ): number {
     const settingsSnapshot = this.isRecord(order.settingsSnapshot) ? order.settingsSnapshot : {};
-    const maxLateReturnTimeHours = Number(settingsSnapshot.maxLateReturnTimeHours ?? 0);
-    const lateHours = Math.max((actualReturnDate.getTime() - order.endDate.getTime()) / (60 * 60 * 1000) - maxLateReturnTimeHours, 0);
+    const lateDayThresholdHours = Math.max(Number(settingsSnapshot.maxLateReturnTimeHours ?? 6), 1);
+    const lateHours = Math.max((actualReturnDate.getTime() - order.endDate.getTime()) / (60 * 60 * 1000), 0);
 
     if (lateHours <= 0) return 0;
+
+    const billableLateHours = Math.ceil(lateHours);
+    const billableLateDays = billableLateHours >= lateDayThresholdHours ? Math.max(Math.ceil(lateHours / 24), 1) : 0;
 
     return Math.round(
       order.items
         .filter((item) => item.deletedAt === null && item.status === RentalOrderItemStatus.ACTIVE)
-        .reduce((total, item) => total + this.getHourlyOveragePrice(item.snapshot) * lateHours, 0),
+        .reduce(
+          (total, item) =>
+            total +
+            (billableLateDays > 0
+              ? this.getDailyPrice(item.snapshot) * billableLateDays
+              : this.getHourlyOveragePrice(item.snapshot) * billableLateHours),
+          0,
+        ),
     );
+  }
+
+  private getDailyPrice(snapshot: Prisma.JsonValue): number {
+    if (!this.isRecord(snapshot) || !this.isRecord(snapshot.product)) return 0;
+
+    return this.getSnapshotMoneyValue(snapshot.product.dailyPrice);
   }
 
   private getHourlyOveragePrice(snapshot: Prisma.JsonValue): number {
     if (!this.isRecord(snapshot) || !this.isRecord(snapshot.product)) return 0;
 
-    const value = snapshot.product.hourlyOveragePrice;
+    return this.getSnapshotMoneyValue(snapshot.product.hourlyOveragePrice);
+  }
+
+  private getSnapshotMoneyValue(value: unknown): number {
     const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : 0;
 
     return Number.isFinite(parsed) ? parsed : 0;

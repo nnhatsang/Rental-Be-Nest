@@ -88,6 +88,24 @@ export class RentalOrderFinancialsOutDto {
 
   @ApiProperty({ example: 1450000 })
   handoverAmountDue!: number;
+
+  @ApiProperty({ example: 230000 })
+  rentalRevenueTotal!: number;
+
+  @ApiProperty({ example: 50000 })
+  incidentFeeTotal!: number;
+
+  @ApiProperty({ example: 280000 })
+  finalPayableTotal!: number;
+
+  @ApiProperty({ example: 320000 })
+  refundDue!: number;
+
+  @ApiProperty({ example: 0 })
+  additionalChargeDue!: number;
+
+  @ApiProperty({ enum: ['NEED_COLLECT', 'NEED_REFUND', 'SETTLED'], example: 'NEED_REFUND' })
+  settlementStatus!: 'NEED_COLLECT' | 'NEED_REFUND' | 'SETTLED';
 }
 
 export class RentalOrderNotesOutDto {
@@ -353,6 +371,9 @@ export class RentalOrderListItemOutDto {
   @ApiProperty({ type: Date, format: 'date-time' })
   endDate!: Date;
 
+  @ApiProperty({ example: 30000 })
+  deliveryFeeTotal!: number;
+
   @ApiProperty({ example: 1200000 })
   rentalFeeTotal!: number;
 
@@ -361,6 +382,18 @@ export class RentalOrderListItemOutDto {
 
   @ApiProperty({ example: 50000 })
   bookingHoldTotal!: number;
+
+  @ApiProperty({ example: 0 })
+  lateFeeTotal!: number;
+
+  @ApiProperty({ example: 0 })
+  damageFeeTotal!: number;
+
+  @ApiProperty({ example: 0 })
+  discountTotal!: number;
+
+  @ApiProperty({ example: 0 })
+  compensationFeeTotal!: number;
 
   @ApiProperty({ example: 1200000 })
   chargeTotal!: number;
@@ -379,6 +412,24 @@ export class RentalOrderListItemOutDto {
 
   @ApiProperty({ example: 1450000 })
   handoverAmountDue!: number;
+
+  @ApiProperty({ example: 230000 })
+  rentalRevenueTotal!: number;
+
+  @ApiProperty({ example: 50000 })
+  incidentFeeTotal!: number;
+
+  @ApiProperty({ example: 280000 })
+  finalPayableTotal!: number;
+
+  @ApiProperty({ example: 320000 })
+  refundDue!: number;
+
+  @ApiProperty({ example: 0 })
+  additionalChargeDue!: number;
+
+  @ApiProperty({ enum: ['NEED_COLLECT', 'NEED_REFUND', 'SETTLED'], example: 'NEED_REFUND' })
+  settlementStatus!: 'NEED_COLLECT' | 'NEED_REFUND' | 'SETTLED';
 
   @ApiProperty({ type: Date, format: 'date-time' })
   createdAt!: Date;

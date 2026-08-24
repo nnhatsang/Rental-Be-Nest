@@ -4,6 +4,12 @@ import { IsBoolean, IsDate, IsEnum, IsIn, IsNumber, IsOptional, IsString, Min, V
 import { CollateralType, PaymentKind, PaymentMethod, PaymentRecordStatus } from '@generated/prisma/enums';
 import { INVALID_DATE, INVALID_NUMBER, INVALID_STRING } from '@/libs/constants/invalid.constant';
 
+export enum RentalOrderLateFeePolicy {
+  CHARGE = 'CHARGE',
+  WAIVE = 'WAIVE',
+  CUSTOM = 'CUSTOM',
+}
+
 export class RentalOrderNoteDto {
   @ApiPropertyOptional({ example: 'Da goi xac nhan voi khach' })
   @IsOptional()
@@ -99,6 +105,13 @@ export class HandoverRentalOrderDto extends RentalOrderNoteDto {
   @IsEnum(CollateralType)
   collateralType?: CollateralType;
 
+  @ApiPropertyOptional({ example: 50000, description: 'Tong tien giam gia sau cung cua don tai thoi diem ban giao' })
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({}, { message: INVALID_NUMBER })
+  @Min(0)
+  discountTotal?: number;
+
   @ApiPropertyOptional({ type: HandoverRentalOrderPaymentDto })
   @IsOptional()
   @ValidateNested()
@@ -150,6 +163,35 @@ export class CompleteRentalOrderDto extends RentalOrderNoteDto {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   damageNote?: string;
+
+  @ApiPropertyOptional({ example: 500000 })
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({}, { message: INVALID_NUMBER })
+  @Min(0)
+  compensationFeeTotal?: number;
+
+  @ApiPropertyOptional({ example: 'Mat lens Sony 35mm, tinh phi den bu' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  compensationNote?: string;
+
+  @ApiPropertyOptional({ enum: RentalOrderLateFeePolicy, default: RentalOrderLateFeePolicy.CHARGE })
+  @IsOptional()
+  @IsEnum(RentalOrderLateFeePolicy)
+  lateFeePolicy?: RentalOrderLateFeePolicy;
+
+  @ApiPropertyOptional({ example: 100000 })
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({}, { message: INVALID_NUMBER })
+  @Min(0)
+  customLateFeeTotal?: number;
+
+  @ApiPropertyOptional({ example: 'Khach quen, shop ho tro mien phi tre han' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  lateFeeNote?: string;
 
   @ApiPropertyOptional({ type: CompleteRentalOrderSettlementPaymentDto })
   @IsOptional()

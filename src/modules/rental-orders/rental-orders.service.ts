@@ -80,9 +80,14 @@ const rentalOrderListSelect = {
   customerSnapshot: true,
   startDate: true,
   endDate: true,
+  deliveryFeeTotal: true,
   rentalFeeTotal: true,
   depositTotal: true,
   bookingHoldTotal: true,
+  lateFeeTotal: true,
+  damageFeeTotal: true,
+  discountTotal: true,
+  compensationFeeTotal: true,
   chargeTotal: true,
   paidTotal: true,
   estimatedRefundTotal: true,
@@ -96,6 +101,20 @@ const rentalOrderListSelect = {
 type RentalOrderWithRelations = Prisma.RentalOrderGetPayload<{ include: typeof rentalOrderInclude }>;
 type RentalOrderListItemWithRelations = Prisma.RentalOrderGetPayload<{ select: typeof rentalOrderListSelect }>;
 type RentalProduct = Awaited<ReturnType<ProductsService['getActiveProductsForRental']>>[number];
+type RentalOrderFinancialBreakdownInput = Pick<
+  RentalOrderWithRelations,
+  | 'rentalFeeTotal'
+  | 'deliveryFeeTotal'
+  | 'discountTotal'
+  | 'lateFeeTotal'
+  | 'damageFeeTotal'
+  | 'compensationFeeTotal'
+  | 'chargeTotal'
+  | 'paidTotal'
+  | 'actualRefundTotal'
+>;
+
+export type RentalOrderSettlementStatus = 'NEED_COLLECT' | 'NEED_REFUND' | 'SETTLED';
 
 @Injectable()
 export class RentalOrdersService {
@@ -110,7 +129,7 @@ export class RentalOrdersService {
   ) {}
 
   async getAllRentalOrders(query: GetAllRentalOrdersDto) {
-    const { search, customerId, status, paymentStatus, fromDate, toDate, page, perPage, sort, sortBy } = query;
+    const { search, customerId, status, paymentStatus, refundStatus, source, pickupMethod, fromDate, toDate, page, perPage, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
 
@@ -119,6 +138,9 @@ export class RentalOrdersService {
       ...(customerId && { customerId }),
       ...(status && { status }),
       ...(paymentStatus && { paymentStatus }),
+      ...(refundStatus && { refundStatus }),
+      ...(source && { source }),
+      ...(pickupMethod && { pickupMethod }),
       ...(searchText && {
         searchText: {
           contains: searchText,
@@ -229,9 +251,9 @@ export class RentalOrdersService {
           paidTotal: 0,
           estimatedRefundTotal: totals.estimatedRefundTotal,
           actualRefundTotal: totals.actualRefundTotal,
-          adjustedDepositTotal: totals.depositTotal,
-          handoverRequiredTotal: totals.depositTotal,
-          handoverAmountDue: totals.depositTotal,
+          adjustedDepositTotal: totals.adjustedDepositTotal,
+          handoverRequiredTotal: totals.handoverRequiredTotal,
+          handoverAmountDue: totals.handoverAmountDue,
           note: dto.note,
           internalNote: dto.internalNote,
           createdBy: currentUser.id,
@@ -268,7 +290,7 @@ export class RentalOrdersService {
           { field: 'rentalPeriod.startDate', label: 'Giờ nhận', oldValue: null, newValue: dto.startDate },
           { field: 'rentalPeriod.endDate', label: 'Giờ trả', oldValue: null, newValue: dto.endDate },
           { field: 'financials.rentalFeeTotal', label: 'Tiền thuê', oldValue: null, newValue: totals.rentalFeeTotal },
-          { field: 'financials.depositTotal', label: 'Tiền cọc áp dụng', oldValue: null, newValue: totals.depositTotal },
+          { field: 'financials.depositTotal', label: 'Cọc theo thiết bị', oldValue: null, newValue: totals.depositTotal },
           { field: 'items', label: 'Thiết bị', oldValue: null, newValue: pricedItems.map((item) => item.assetUnitId) },
         ],
         note: dto.note,
@@ -349,9 +371,11 @@ export class RentalOrdersService {
     const nonRepricedOriginalDepositTotal = existingOrder.items
       .filter((item) => item.deletedAt === null && item.status !== RentalOrderItemStatus.CANCELLED)
       .reduce((total, item) => total + Number(item.depositAmount), 0);
-    const nonRepricedDepositTotal = this.pricingService.calculateProtectedDepositTotal(
-      nonRepricedOriginalDepositTotal,
+    const nonRepricedDepositTotal = this.pricingService.calculateProtectedDepositTotal(nonRepricedOriginalDepositTotal, nonRepricedChargeTotal);
+    const nonRepricedHandoverTotals = this.pricingService.calculateHandoverTotals(
+      nonRepricedDepositTotal,
       nonRepricedChargeTotal,
+      existingOrder.collateralType,
     );
     const totals = shouldReprice
       ? this.pricingService.calculateTotals(pricedItems, deliveryFeeTotal, discountTotal)
@@ -365,7 +389,10 @@ export class RentalOrdersService {
           compensationFeeTotal: Number(existingOrder.compensationFeeTotal),
           chargeTotal: nonRepricedChargeTotal,
           discountTotal,
-          estimatedRefundTotal: Math.max(nonRepricedDepositTotal - nonRepricedChargeTotal, 0),
+          adjustedDepositTotal: nonRepricedHandoverTotals.adjustedDepositTotal,
+          handoverRequiredTotal: nonRepricedHandoverTotals.handoverRequiredTotal,
+          handoverAmountDue: Math.max(nonRepricedHandoverTotals.handoverRequiredTotal - Number(existingOrder.paidTotal), 0),
+          estimatedRefundTotal: Math.max(nonRepricedHandoverTotals.handoverRequiredTotal - nonRepricedChargeTotal, 0),
           actualRefundTotal: Number(existingOrder.actualRefundTotal),
         };
     const customerSnapshot = this.mergeJsonObject(existingOrder.customerSnapshot, dto.customerSnapshot);
@@ -454,9 +481,9 @@ export class RentalOrdersService {
           discountTotal: totals.discountTotal,
           estimatedRefundTotal: totals.estimatedRefundTotal,
           actualRefundTotal: totals.actualRefundTotal,
-          adjustedDepositTotal: totals.depositTotal,
-          handoverRequiredTotal: totals.depositTotal,
-          handoverAmountDue: Math.max(totals.depositTotal - Number(existingOrder.paidTotal), 0),
+          adjustedDepositTotal: totals.adjustedDepositTotal,
+          handoverRequiredTotal: totals.handoverRequiredTotal,
+          handoverAmountDue: Math.max(totals.handoverRequiredTotal - Number(existingOrder.paidTotal), 0),
           note,
           internalNote,
           updatedBy: currentUser.id,
@@ -884,6 +911,8 @@ export class RentalOrdersService {
   }
 
   toRentalOrderOut(order: RentalOrderWithRelations): RentalOrderOutDto {
+    const financialBreakdown = this.calculateFinancialBreakdown(order);
+
     return {
       id: order.id,
       code: order.code,
@@ -922,6 +951,7 @@ export class RentalOrdersService {
         adjustedDepositTotal: Number(order.adjustedDepositTotal),
         handoverRequiredTotal: Number(order.handoverRequiredTotal),
         handoverAmountDue: Number(order.handoverAmountDue),
+        ...financialBreakdown,
       },
       notes: {
         customerNote: order.note,
@@ -1019,6 +1049,8 @@ export class RentalOrdersService {
   }
 
   toRentalOrderListItemOut(order: RentalOrderListItemWithRelations): RentalOrderListItemOutDto {
+    const financialBreakdown = this.calculateFinancialBreakdown(order);
+
     return {
       id: order.id,
       code: order.code,
@@ -1029,17 +1061,55 @@ export class RentalOrdersService {
       customerSnapshot: order.customerSnapshot,
       startDate: order.startDate,
       endDate: order.endDate,
+      deliveryFeeTotal: Number(order.deliveryFeeTotal),
       rentalFeeTotal: Number(order.rentalFeeTotal),
       depositTotal: Number(order.depositTotal),
       bookingHoldTotal: Number(order.bookingHoldTotal),
+      lateFeeTotal: Number(order.lateFeeTotal),
+      damageFeeTotal: Number(order.damageFeeTotal),
+      discountTotal: Number(order.discountTotal),
+      compensationFeeTotal: Number(order.compensationFeeTotal),
       chargeTotal: Number(order.chargeTotal),
       paidTotal: Number(order.paidTotal),
       estimatedRefundTotal: Number(order.estimatedRefundTotal),
       actualRefundTotal: Number(order.actualRefundTotal),
       handoverRequiredTotal: Number(order.handoverRequiredTotal),
       handoverAmountDue: Number(order.handoverAmountDue),
+      ...financialBreakdown,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+    };
+  }
+
+  calculateFinancialBreakdown(order: RentalOrderFinancialBreakdownInput): {
+    rentalRevenueTotal: number;
+    incidentFeeTotal: number;
+    finalPayableTotal: number;
+    refundDue: number;
+    additionalChargeDue: number;
+    settlementStatus: RentalOrderSettlementStatus;
+  } {
+    const rentalRevenueTotal = Math.max(
+      Number(order.rentalFeeTotal) + Number(order.deliveryFeeTotal) - Number(order.discountTotal),
+      0,
+    );
+    const incidentFeeTotal = Math.max(
+      Number(order.lateFeeTotal) + Number(order.damageFeeTotal) + Number(order.compensationFeeTotal),
+      0,
+    );
+    const finalPayableTotal = Math.max(rentalRevenueTotal + incidentFeeTotal, 0);
+    const refundDue = Math.max(Number(order.paidTotal) - finalPayableTotal - Number(order.actualRefundTotal), 0);
+    const additionalChargeDue = Math.max(finalPayableTotal + Number(order.actualRefundTotal) - Number(order.paidTotal), 0);
+    const settlementStatus: RentalOrderSettlementStatus =
+      additionalChargeDue > 0 ? 'NEED_COLLECT' : refundDue > 0 ? 'NEED_REFUND' : 'SETTLED';
+
+    return {
+      rentalRevenueTotal: Math.round(rentalRevenueTotal),
+      incidentFeeTotal: Math.round(incidentFeeTotal),
+      finalPayableTotal: Math.round(finalPayableTotal),
+      refundDue: Math.round(refundDue),
+      additionalChargeDue: Math.round(additionalChargeDue),
+      settlementStatus,
     };
   }
 
@@ -1087,7 +1157,7 @@ export class RentalOrdersService {
       { field: 'fulfillment.deliveryAddress', label: 'Địa chỉ giao', oldValue: before.deliveryAddress, newValue: after.deliveryAddress },
       { field: 'financials.deliveryFeeTotal', label: 'Phí giao hàng', oldValue: before.deliveryFeeTotal, newValue: after.deliveryFeeTotal },
       { field: 'financials.rentalFeeTotal', label: 'Tiền thuê', oldValue: before.rentalFeeTotal, newValue: after.rentalFeeTotal },
-      { field: 'financials.depositTotal', label: 'Tiền cọc áp dụng', oldValue: before.depositTotal, newValue: after.depositTotal },
+      { field: 'financials.depositTotal', label: 'Cọc theo thiết bị', oldValue: before.depositTotal, newValue: after.depositTotal },
       { field: 'financials.bookingHoldTotal', label: 'Tiền giữ lịch', oldValue: before.bookingHoldTotal, newValue: after.bookingHoldTotal },
       { field: 'financials.discountTotal', label: 'Giảm giá', oldValue: before.discountTotal, newValue: after.discountTotal },
       { field: 'financials.chargeTotal', label: 'Tiền thuê cần thanh toán', oldValue: before.chargeTotal, newValue: after.chargeTotal },

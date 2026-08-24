@@ -27,7 +27,7 @@ import {
 import { RENTAL_ORDER_ASSET_UNIT_INVALID, RENTAL_ORDER_PRODUCT_INVALID, RENTAL_ORDER_TIME_INVALID } from '@/libs/constants/error.constants';
 import { normalizeSearchText } from '@/libs/utils/search-text.util';
 
-export const BLOCKING_ORDER_STATUSES: OrderStatus[] = [OrderStatus.CONFIRMED, OrderStatus.RENTING, OrderStatus.OVERDUE, OrderStatus.DISPUTED];
+export const BLOCKING_ORDER_STATUSES: OrderStatus[] = [OrderStatus.CONFIRMED, OrderStatus.RENTING, OrderStatus.DISPUTED];
 
 export type SystemSettingsForOrder = Awaited<ReturnType<SystemSettingsService['getDefaultSettingsForOrder']>>;
 
@@ -620,7 +620,7 @@ export class RentalOrderAvailabilityService {
         WHERE roi."deletedAt" IS NULL
           AND roi."status" = 'ACTIVE'
           AND ro."deletedAt" IS NULL
-          AND ro."status" IN ('CONFIRMED', 'RENTING', 'OVERDUE', 'DISPUTED')
+          AND ro."status" IN ('CONFIRMED', 'RENTING', 'DISPUTED')
           AND roi."startDate" < ${blockedEndDate}
           AND roi."blockedEndDate" > ${dto.startDate}
           ${excludeOrderFilter}
@@ -696,7 +696,7 @@ export class RentalOrderAvailabilityService {
         WHERE roi."deletedAt" IS NULL
           AND roi."status" = 'ACTIVE'
           AND ro."deletedAt" IS NULL
-          AND ro."status" IN ('CONFIRMED', 'RENTING', 'OVERDUE', 'DISPUTED')
+          AND ro."status" IN ('CONFIRMED', 'RENTING', 'DISPUTED')
           AND roi."startDate" < ${blockedEndDate}
           AND roi."blockedEndDate" > ${dto.startDate}
           ${excludeOrderFilter}
@@ -767,7 +767,7 @@ export class RentalOrderAvailabilityService {
         WHERE roi."deletedAt" IS NULL
           AND roi."status" = 'ACTIVE'
           AND ro."deletedAt" IS NULL
-          AND ro."status" IN ('CONFIRMED', 'RENTING', 'OVERDUE', 'DISPUTED')
+          AND ro."status" IN ('CONFIRMED', 'RENTING', 'DISPUTED')
           AND roi."startDate" < ${blockedEndDate}
           AND roi."blockedEndDate" > ${dto.startDate}
           ${excludeOrderFilter}
@@ -902,7 +902,6 @@ export class RentalOrderAvailabilityService {
  *    Order cha cung phai dang o trang thai co tac dung giu lich:
  *    - CONFIRMED
  *    - RENTING
- *    - OVERDUE
  *    - DISPUTED
  *
  * 6. CREATED/PENDING khong block asset.

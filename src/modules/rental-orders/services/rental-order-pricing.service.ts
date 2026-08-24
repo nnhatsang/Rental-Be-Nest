@@ -1,6 +1,6 @@
 import { RENTAL_ORDER_PRODUCT_INVALID } from '@/libs/constants/error.constants';
 import { Prisma } from '@generated/prisma/client';
-import { RentalOrderItemStatus } from '@generated/prisma/enums';
+import { CollateralType, RentalOrderItemStatus } from '@generated/prisma/enums';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProductsService } from '../../products/products.service';
 import { NormalizedRentalOrderItem, SystemSettingsForOrder } from './rental-order-availability.service';
@@ -109,7 +109,8 @@ export class RentalOrderPricingService {
     const damageFeeTotal = 0;
     const compensationFeeTotal = 0;
     const chargeTotal = Math.max(rentalFeeTotal + lateFeeTotal + damageFeeTotal + compensationFeeTotal + deliveryFeeTotal - discountTotal, 0);
-    const depositTotal = this.calculateProtectedDepositTotal(originalDepositTotal, chargeTotal);
+    const depositTotal = Math.round(originalDepositTotal);
+    const handoverTotals = this.calculateHandoverTotals(depositTotal, chargeTotal, CollateralType.NONE);
 
     return {
       rentalFeeTotal,
@@ -121,24 +122,36 @@ export class RentalOrderPricingService {
       compensationFeeTotal,
       bookingHoldTotal,
       chargeTotal,
-      estimatedRefundTotal: Math.max(depositTotal - chargeTotal, 0),
+      adjustedDepositTotal: handoverTotals.adjustedDepositTotal,
+      handoverRequiredTotal: handoverTotals.handoverRequiredTotal,
+      handoverAmountDue: handoverTotals.handoverRequiredTotal,
+      estimatedRefundTotal: Math.max(handoverTotals.handoverRequiredTotal - chargeTotal, 0),
       actualRefundTotal: 0,
     };
   }
 
   calculateProtectedDepositTotal(originalDepositTotal: number, chargeTotal: number): number {
+    return Math.round(Math.max(originalDepositTotal, 0));
+  }
+
+  calculateHandoverTotals(depositTotal: number, chargeTotal: number, collateralType: CollateralType) {
     const rentalCharge = Math.max(chargeTotal, 0);
-    let protectedDepositTotal = Math.max(originalDepositTotal, 0);
+    const baseDepositTotal = Math.max(depositTotal, 0);
+    const adjustedDepositTotal =
+      collateralType === CollateralType.VEHICLE_OR_HIGH_VALUE || collateralType === CollateralType.OTHER_ASSET
+        ? 0
+        : collateralType === CollateralType.IDENTITY_CARD
+          ? baseDepositTotal / 2
+          : baseDepositTotal;
+    const handoverRequiredTotal =
+      collateralType === CollateralType.NONE && adjustedDepositTotal / 2 >= rentalCharge
+        ? adjustedDepositTotal
+        : rentalCharge + adjustedDepositTotal;
 
-    if (protectedDepositTotal <= 0 && rentalCharge > 0) {
-      protectedDepositTotal = rentalCharge * 2;
-    }
-
-    while (protectedDepositTotal / 2 < rentalCharge) {
-      protectedDepositTotal *= 2;
-    }
-
-    return Math.round(protectedDepositTotal);
+    return {
+      adjustedDepositTotal: Math.round(adjustedDepositTotal),
+      handoverRequiredTotal: Math.round(handoverRequiredTotal),
+    };
   }
 
   toCreateOrderItemsData(items: PricedRentalOrderItem[]): Prisma.RentalOrderItemCreateWithoutOrderInput[] {
@@ -219,17 +232,19 @@ export class RentalOrderPricingService {
       pricingMode: RentalPricingBreakdown['pricingMode'],
       partialTotal = 0,
       partialHours = 0,
+      overageHours = partialHours > MIN_HALF_DAY_HOURS + EPSILON ? roundHours(partialHours - MIN_HALF_DAY_HOURS) : 0,
+      billableHalfDays = partialHours > EPSILON ? 1 : 0,
     ): RentalPricingBreakdown => {
       const appliedTier = this.findTier(product, billableDays);
       const dailyPrice = Number(appliedTier?.dailyPrice ?? product.dailyPrice);
 
       return {
         pricingMode,
-        pricingLabel: this.buildPricingLabel(appliedTier, billableDays, partialHours),
+        pricingLabel: this.buildPricingLabel(appliedTier, billableDays, partialHours, billableHalfDays, overageHours),
         durationHours: roundHours(durationHours),
         billableDays,
-        billableHalfDays: partialHours > EPSILON ? 1 : 0,
-        overageHours: partialHours > MIN_HALF_DAY_HOURS + EPSILON ? roundHours(partialHours - MIN_HALF_DAY_HOURS) : 0,
+        billableHalfDays,
+        overageHours,
         unitPrice: Math.round(billableDays * dailyPrice + partialTotal),
         appliedTierId: appliedTier?.id ?? null,
         appliedTier: appliedTier ? this.toTierSnapshot(appliedTier) : null,
@@ -268,9 +283,9 @@ export class RentalOrderPricingService {
         pricingMode: partial.mode,
         pricingLabel:
           partial.mode === 'DAILY_TIER'
-            ? this.buildPricingLabel(appliedTier, 1, 0)
+            ? this.buildPricingLabel(appliedTier, 1, 0, 0, 0)
             : partial.mode === 'HALF_DAY' || partial.mode === 'HOURLY_OVERAGE'
-              ? this.buildPartialPricingLabel(partial.mode)
+              ? this.buildPartialPricingLabel(1, partial.mode === 'HOURLY_OVERAGE' ? roundHours(durationHours - MIN_HALF_DAY_HOURS) : 0)
               : 'Gia thue',
         durationHours: roundHours(durationHours),
         billableDays: partial.mode === 'DAILY_TIER' ? 1 : 0,
@@ -287,6 +302,17 @@ export class RentalOrderPricingService {
 
     if (remainingHours >= FULL_DAY_THRESHOLD_HOURS - EPSILON) {
       return buildDailyPricing(fullDays + 1, 'DAILY_TIER');
+    }
+
+    if (remainingHours <= MIN_HALF_DAY_HOURS + EPSILON) {
+      return buildDailyPricing(
+        fullDays,
+        remainingHours > EPSILON ? 'MIXED' : 'DAILY_TIER',
+        remainingHours * hourlyOveragePrice,
+        remainingHours,
+        roundHours(remainingHours),
+        0,
+      );
     }
 
     const partial = buildPartialPricing(remainingHours);
@@ -359,17 +385,31 @@ export class RentalOrderPricingService {
     };
   }
 
-  private buildPricingLabel(tier: RentalProduct['rentalPriceTiers'][number] | null | undefined, billableDays: number, partialHours: number): string {
+  private buildPricingLabel(
+    tier: RentalProduct['rentalPriceTiers'][number] | null | undefined,
+    billableDays: number,
+    partialHours: number,
+    billableHalfDays: number,
+    overageHours: number,
+  ): string {
     const baseLabel = tier?.name ?? `Gia ${billableDays} ngay`;
 
     if (partialHours <= EPSILON) {
       return baseLabel;
     }
 
-    return `${baseLabel} + ${this.buildPartialPricingLabel(partialHours > MIN_HALF_DAY_HOURS ? 'HOURLY_OVERAGE' : 'HALF_DAY')}`;
+    return `${baseLabel} + ${this.buildPartialPricingLabel(billableHalfDays, overageHours)}`;
   }
 
-  private buildPartialPricingLabel(mode: 'HALF_DAY' | 'HOURLY_OVERAGE'): string {
-    return mode === 'HALF_DAY' ? 'Nua ngay' : 'Nua ngay + phu troi gio';
+  private buildPartialPricingLabel(billableHalfDays: number, overageHours: number): string {
+    if (billableHalfDays <= 0 && overageHours > 0) {
+      return `${overageHours} gio vuot gio`;
+    }
+
+    if (overageHours > 0) {
+      return `Nua ngay + ${overageHours} gio vuot gio`;
+    }
+
+    return 'Nua ngay';
   }
 }

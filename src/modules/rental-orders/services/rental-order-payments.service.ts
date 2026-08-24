@@ -185,6 +185,11 @@ export class RentalOrderPaymentsService {
       await this.rentalOrdersService.acquireAdvisoryLocks(tx, [`rental-order:${id}`]);
       const existingOrder = await this.rentalOrdersService.findExistingRentalOrderByIdInTransaction(tx, id);
       const refundRecordStatus = dto.status ?? PaymentRecordStatus.SUCCESS;
+      const existingBreakdown = this.rentalOrdersService.calculateFinancialBreakdown(existingOrder);
+
+      if (refundRecordStatus === PaymentRecordStatus.SUCCESS && dto.amount > existingBreakdown.refundDue) {
+        throw new BadRequestException(`So tien hoan khong duoc vuot qua ${existingBreakdown.refundDue}`);
+      }
 
       await tx.paymentRecord.create({
         data: {
@@ -201,7 +206,7 @@ export class RentalOrderPaymentsService {
 
       const nextEstimatedRefundTotal =
         refundRecordStatus === PaymentRecordStatus.SUCCESS
-          ? Math.max(Number(existingOrder.estimatedRefundTotal) - dto.amount, 0)
+          ? Math.max(existingBreakdown.refundDue - dto.amount, 0)
           : Number(existingOrder.estimatedRefundTotal);
       const nextActualRefundTotal =
         refundRecordStatus === PaymentRecordStatus.SUCCESS
@@ -266,9 +271,13 @@ export class RentalOrderPaymentsService {
   }> {
     const paidTotal = await this.getSuccessfulPaidTotal(tx, existingOrder.id);
     const payableTotal =
-      existingOrder.status === OrderStatus.RENTING && Number(existingOrder.handoverRequiredTotal) > 0
-        ? Number(existingOrder.handoverRequiredTotal)
-        : Number(existingOrder.depositTotal);
+      existingOrder.status === OrderStatus.CREATED
+        ? Number(existingOrder.bookingHoldTotal)
+        : (existingOrder.status === OrderStatus.CONFIRMED ||
+              existingOrder.status === OrderStatus.RENTING) &&
+            Number(existingOrder.handoverRequiredTotal) > 0
+          ? Number(existingOrder.handoverRequiredTotal)
+          : Number(existingOrder.chargeTotal);
     const paymentStatus = this.resolvePaymentStatus(paidTotal, payableTotal);
     const payment = await tx.paymentRecord.findUniqueOrThrow({
       where: {
@@ -325,6 +334,7 @@ export class RentalOrderPaymentsService {
         status: nextStatus,
         paidTotal,
         paymentStatus,
+        handoverAmountDue: Math.max(Number(existingOrder.handoverRequiredTotal) - paidTotal, 0),
       },
       include: this.rentalOrdersService.rentalOrderInclude(),
     });

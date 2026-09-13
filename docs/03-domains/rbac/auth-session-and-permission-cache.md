@@ -78,7 +78,6 @@ Security/rate limit keys:
 ```ts
 REDIS_KEYS.auth.loginAttemptUser(userId)
 REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail)
-REDIS_KEYS.auth.userLock(userId)
 REDIS_KEYS.auth.resetPasswordRateLimit(emailOrUserId)
 ```
 
@@ -162,7 +161,7 @@ Neu login sai:
 
 - Tang `auth:login-attempt:email:<email>`.
 - Neu user ton tai thi tang them `auth:login-attempt:user:<userId>`.
-- Vuot nguong thi set `auth:lock:user:<userId>` va cap nhat DB `activityStatus = LOCKED`.
+- Khi counter theo user dat nguong, cac lan login tiep theo bi tu choi cho den khi TTL counter het han.
 
 ---
 
@@ -374,4 +373,3 @@ Neu session bi revoke, socket moi khong connect duoc. Cac socket dang ket noi ca
 - Permissions van doc DB cho den khi co cache invalidate day du.
 - Moi Redis key phai di qua `REDIS_KEYS`.
 - Redis TTL cua session phai khop refresh token max age.
-

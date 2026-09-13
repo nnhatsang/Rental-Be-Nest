@@ -10,11 +10,11 @@ export const REDIS_KEYS = {
   auth: {
     passwordResetToken: (tokenHash: string) => `${REDIS_PREFIX.PASSWORD_RESET}:token:${tokenHash}`,
     passwordResetUser: (userId: string) => `${REDIS_PREFIX.PASSWORD_RESET}:user:${userId}`,
+    
     loginAttemptUser: (userId: string) => `${REDIS_PREFIX.LOGIN_ATTEMPT}:user:${userId}`,
     loginAttemptEmail: (normalizedEmail: string) => `${REDIS_PREFIX.LOGIN_ATTEMPT}:email:${normalizedEmail}`,
-    loginAttemptIp: (ip: string) => `${REDIS_PREFIX.LOGIN_ATTEMPT}:ip:${ip}`,
-    userLock: (userId: string) => `${REDIS_PREFIX.AUTH_LOCK}:user:${userId}`,
     resetPasswordRateLimit: (emailOrUserId: string) => `${REDIS_PREFIX.AUTH_RATE_LIMIT}:reset-password:${emailOrUserId}`,
+    
     session: (sessionId: string) => `${REDIS_PREFIX.AUTH}:session:${sessionId}`,
     userSessions: (userId: string) => `${REDIS_PREFIX.AUTH}:user-sessions:${userId}`,
   },

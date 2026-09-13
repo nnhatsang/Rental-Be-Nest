@@ -217,8 +217,6 @@ REDIS_KEYS.auth.passwordResetToken(tokenHash)
 REDIS_KEYS.auth.passwordResetUser(userId)
 REDIS_KEYS.auth.loginAttemptUser(userId)
 REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail)
-REDIS_KEYS.auth.loginAttemptIp(ip)
-REDIS_KEYS.auth.userLock(userId)
 REDIS_KEYS.auth.resetPasswordRateLimit(emailOrUserId)
 REDIS_KEYS.auth.session(sessionId)
 REDIS_KEYS.auth.userSessions(userId)
@@ -301,14 +299,14 @@ Can giu:
 Co the bo sung:
 
 - Rate limit gui email reset password.
-- Counter theo email/IP.
+- Counter theo email.
 
 ### 8.2 Login failed attempts
 
 Flow de xuat:
 
 1. Khi login sai, `incrWithTTL(auth:login-attempt:user:<userId>, 900)`.
-2. Neu vuot nguong, set `auth:lock:user:<userId>` TTL 15-30 phut hoac cap nhat DB status `LOCKED` tuy policy.
+2. Neu counter theo user dat nguong, tu choi cac lan login tiep theo cho den khi TTL counter het han.
 3. Khi login thanh cong, xoa counter.
 4. Neu dung DB status `LOCKED`, Redis chi nen lam bo dem/lock tam thoi; DB van ghi trang thai neu can hien thi/admin audit.
 

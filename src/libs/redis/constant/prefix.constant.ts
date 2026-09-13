@@ -8,7 +8,6 @@ export const REDIS_PREFIX = {
   AUTH: 'auth',
   PASSWORD_RESET: 'auth:password-reset',
   LOGIN_ATTEMPT: 'auth:login-attempt',
-  AUTH_LOCK: 'auth:lock',
   AUTH_RATE_LIMIT: 'auth:rate-limit',
 
   RENTAL_ORDER: 'rental:order',
@@ -31,7 +30,6 @@ export const REDIS_CHANNEL = {
 export const REDIS_EXPIRE = {
   PASSWORD_RESET_TOKEN: 30 * 60,
   LOGIN_ATTEMPT: 15 * 60,
-  AUTH_LOCK: 15 * 60,
   RESET_PASSWORD_RATE_LIMIT: 60,
 
   IDEMPOTENCY: 2 * 60,

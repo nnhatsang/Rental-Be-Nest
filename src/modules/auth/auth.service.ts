@@ -528,9 +528,9 @@ export class AuthService {
   }
 
   private async assertUserNotTemporarilyLocked(userId: string): Promise<void> {
-    const isLocked = await this.redis.exists(REDIS_KEYS.auth.userLock(userId));
+    const failureCount = Number(await this.redis.get(REDIS_KEYS.auth.loginAttemptUser(userId)));
 
-    if (isLocked) {
+    if (Number.isFinite(failureCount) && failureCount >= this.getMaxLoginFailures()) {
       throw new UnauthorizedException(USER_ACTIVITY_ERRORS[EUserActivityStatus.Locked]);
     }
   }
@@ -546,15 +546,10 @@ export class AuthService {
   }
 
   private async recordUserLoginFailure(userId: string, normalizedEmail: string): Promise<void> {
-    const maxFailures = this.getMaxLoginFailures();
-    const [userFailures] = await Promise.all([
+    await Promise.all([
       this.redis.incrWithTTL(REDIS_KEYS.auth.loginAttemptUser(userId), REDIS_EXPIRE.LOGIN_ATTEMPT),
       this.redis.incrWithTTL(REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail), REDIS_EXPIRE.LOGIN_ATTEMPT),
     ]);
-
-    if (userFailures === this.getMaxLoginFailures()) {
-      await this.redis.set(REDIS_KEYS.auth.userLock(userId), '1', REDIS_EXPIRE.AUTH_LOCK);
-    }
   }
 
   private async clearLoginFailureCounters(userId: string, normalizedEmail: string): Promise<void> {

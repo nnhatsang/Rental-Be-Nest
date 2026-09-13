@@ -1,6 +1,6 @@
 # Auth Session Redis & RBAC Permission Cache
 
-> Huong dan cach backend Rental Admin dung Redis cho phien dang nhap, refresh token rotation, revoke session, login security va dinh huong cache RBAC permissions cho phase sau.
+> Huong dan cach backend Rental Admin dung Redis cho phien dang nhap, refresh token rotation, revoke session, login security va RBAC permission cache theo user.
 
 ---
 
@@ -19,7 +19,7 @@ Y nghia:
 - Redis luu session theo `sid`, refresh token hash va metadata thiet bi.
 - PostgreSQL van la source of truth cho user, roles va permissions.
 
-Redis khong luu raw refresh token va khong luu permissions trong phase hien tai.
+Redis khong luu raw refresh token. RBAC luu effective roles/permissions theo user voi TTL ngan va PostgreSQL van la source of truth.
 
 ---
 
@@ -81,11 +81,10 @@ REDIS_KEYS.auth.loginAttemptEmail(normalizedEmail)
 REDIS_KEYS.auth.resetPasswordRateLimit(emailOrUserId)
 ```
 
-RBAC cache keys cho phase sau:
+RBAC cache key:
 
 ```ts
 REDIS_KEYS.rbac.userPermissions(userId)
-REDIS_KEYS.rbac.rolePermissions(roleId)
 ```
 
 ---
@@ -187,9 +186,10 @@ Trach nhiem cua strategy:
 
 1. Load `auth:session:<sid>`.
 2. Session phai ton tai va `session.userId === sub`.
-3. Query DB user + roles + permissions.
-4. User phai ton tai, chua deleted, va neu khong phai logout thi phai `ACTIVE`.
-5. Tra ve `AuthUser` gan vao `request.user`.
+3. Query DB user/status.
+4. Doc effective roles/permissions tu RBAC cache theo user; cache miss thi query DB quan he RBAC va set lai cache.
+5. User phai ton tai, chua deleted, va neu khong phai logout thi phai `ACTIVE`.
+6. Tra ve `AuthUser` gan vao `request.user`.
 
 Ghi chu:
 
@@ -299,26 +299,19 @@ Neu vuot gioi han, API van tra `{ success: true }` de khong lo email co ton tai 
 
 ## 10. RBAC permissions va Redis
 
-Hien tai `validateAccessUser` khong luu permissions vao Redis.
-
 Flow hien tai:
 
 ```text
-Access token -> Redis session check -> DB user roles permissions -> request.user
+Access token
+  -> Redis session check
+  -> DB user/status check
+  -> Redis rbac:user-permissions:<userId>
+  -> cache miss: DB UserRole/Role/RolePermission/Permission + SET cache
+  -> request.user
+  -> PermissionsGuard
 ```
 
-Ly do chua cache permissions:
-
-- Permissions la du lieu nhay cam.
-- Neu cache stale, user co the tiep tuc dung quyen da bi thu hoi.
-- Can invalidate day du truoc khi bat cache.
-
-Khi can toi uu, co the cache:
-
-```ts
-REDIS_KEYS.rbac.userPermissions(userId)
-REDIS_KEYS.rbac.rolePermissions(roleId)
-```
+Chi cache effective authorization theo user, khong cache rieng theo role. PostgreSQL van la source of truth; Redis chi la cache tam thoi voi TTL 10 phut.
 
 Payload:
 
@@ -331,18 +324,21 @@ Payload:
 }
 ```
 
-Dieu kien bat cache:
+Cache miss va Redis error:
 
-1. Invalidate user permission cache khi gan/xoa role cua user.
-2. Invalidate tat ca user thuoc role khi role permission thay doi.
-3. Invalidate khi user bi `BANNED`, `LOCKED`, `INACTIVE`, soft delete hoac hard delete.
-4. TTL ngan, 5-15 phut.
-5. DB van la source of truth khi cache miss.
+- Cache miss query PostgreSQL roi ghi lai cache voi TTL `RBAC_USER_PERMISSION_CACHE`.
+- Redis GET/SET loi khong lam request authorization that bai; dung ket qua PostgreSQL.
+- Cache JSON sai format bi xoa best-effort va load lai tu PostgreSQL.
 
-Khuyen nghi:
+Invalidation sau DB commit:
 
-- Chua bat RBAC cache neu traffic chua lon.
-- Neu bat cache, viet test invalidate truoc.
+1. Invalidate khi gan/xoa role cua user.
+2. Invalidate tat ca user thuoc role khi role code hoac role permission thay doi.
+3. Invalidate user cua role truoc khi role bi xoa.
+4. Invalidate khi user doi activity status hoac bi soft delete.
+5. TTL 10 phut; neu invalidation that bai, cache cu ton tai toi da theo TTL.
+
+Socket event `permissions:updated` chi de frontend refetch `/auth/me`; backend khong tin vao event nay de authorize request.
 
 ---
 

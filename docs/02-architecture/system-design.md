@@ -73,7 +73,7 @@ sequenceDiagram
 
 ## 3. Cơ chế Phân quyền (Role-Based Access Control - RBAC)
 
-Quyền hạn của người dùng được tải động từ database tại mỗi request được bảo vệ (sau khi qua JWT guard):
+Quyền hạn của người dùng được lấy từ PostgreSQL hoặc Redis effective-permission cache theo user tại mỗi request được bảo vệ (sau khi qua JWT guard):
 
 ```text
 User ── (UserRole) ── Role ── (RolePermission) ── Permission
@@ -86,6 +86,6 @@ User ── (UserRole) ── Role ── (RolePermission) ── Permission
    - Các bảng liên kết n-n: `UserRole` và `RolePermission`.
 
 2. **Cách thức hoạt động ở Backend**:
-   - Class `JwtStrategy` giải mã token, đọc `userId` từ payload, sau đó truy vấn PostgreSQL để lấy danh sách toàn bộ code của permissions mà user được hưởng qua các role.
+   - Class `JwtStrategy` giải mã token, kiểm tra Redis session, kiểm tra user/status từ PostgreSQL và lấy effective roles/permissions từ Redis cache theo user; cache miss thì truy vấn PostgreSQL.
    - Attach thông tin user và danh sách permissions vào object `request.user`.
    - `PermissionGuard` kiểm tra xem endpoint đích có yêu cầu quyền cụ thể nào không (qua Decorator `@RequirePermissions(PermissionCode.ProductsCreate)`). Nếu có, guard đối chiếu danh sách quyền của `request.user` để cho phép qua hoặc từ chối (`403 Forbidden`).

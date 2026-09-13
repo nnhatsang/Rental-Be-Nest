@@ -18,6 +18,7 @@ import {
 import { RoleCode } from '@/libs/constants/rbac.constant';
 import { SocketService } from '@/libs/socket/socket.service';
 import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
+import { RbacPermissionService } from '@modules/rbac/rbac-permission.service';
 
 type RoleWithRelations = Awaited<ReturnType<RolesService['findRoleById']>>;
 type ExistingRoleWithRelations = NonNullable<RoleWithRelations>;
@@ -27,6 +28,7 @@ export class RolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly socketService: SocketService,
+    private readonly rbacPermissionService: RbacPermissionService,
   ) {}
 
   async getAllRoles(query: GetAllRolesDto) {
@@ -106,7 +108,8 @@ export class RolesService {
     this.assertCustomRole(role);
 
     const code = dto.code ? dto.code.trim().toUpperCase() : undefined;
-    if (code && code !== role.code) {
+    const roleCodeChanged = code !== undefined && code !== role.code;
+    if (roleCodeChanged) {
       await this.ensureRoleCodeAvailable(code);
     }
 
@@ -151,12 +154,10 @@ export class RolesService {
       throw new NotFoundException(ROLE_NOT_FOUND);
     }
 
-    if (permissions !== undefined) {
-      const userRoles = await this.prisma.userRole.findMany({
-        where: { roleId: id },
-        select: { userId: true },
-      });
-      const userIds = userRoles.map((ur) => ur.userId);
+    if (roleCodeChanged || permissions !== undefined) {
+      const userIds = await this.findUserIdsByRoleId(id);
+      await this.rbacPermissionService.invalidateUsersPermissions(userIds);
+
       if (userIds.length > 0) {
         this.socketService.sendToUsers({
           userIds,
@@ -206,11 +207,9 @@ export class RolesService {
       throw new NotFoundException(ROLE_NOT_FOUND);
     }
 
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { roleId: id },
-      select: { userId: true },
-    });
-    const userIds = userRoles.map((ur) => ur.userId);
+    const userIds = await this.findUserIdsByRoleId(id);
+    await this.rbacPermissionService.invalidateUsersPermissions(userIds);
+
     if (userIds.length > 0) {
       this.socketService.sendToUsers({
         userIds,
@@ -284,6 +283,8 @@ export class RolesService {
       throw new NotFoundException(ROLE_NOT_FOUND);
     }
 
+    await this.rbacPermissionService.invalidateUsersPermissions(Array.from(affectedUserIds));
+
     if (affectedUserIds.size > 0) {
       this.socketService.sendToUsers({
         userIds: Array.from(affectedUserIds),
@@ -314,11 +315,22 @@ export class RolesService {
     }
 
     const existingIds = roles.map((r) => r.id);
+    const affectedUserRoles =
+      existingIds.length > 0
+        ? await this.prisma.userRole.findMany({
+            where: { roleId: { in: existingIds } },
+            select: { userId: true },
+          })
+        : [];
+    const affectedUserIds = [...new Set(affectedUserRoles.map(({ userId }) => userId))];
+
     if (existingIds.length > 0) {
       await this.prisma.role.deleteMany({
         where: { id: { in: existingIds } },
       });
     }
+
+    await this.rbacPermissionService.invalidateUsersPermissions(affectedUserIds);
 
     return { success: true };
   }
@@ -349,6 +361,15 @@ export class RolesService {
     if (existingRole) {
       throw new BadRequestException(ROLE_CODE_EXISTED);
     }
+  }
+
+  private async findUserIdsByRoleId(roleId: string): Promise<string[]> {
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { roleId },
+      select: { userId: true },
+    });
+
+    return [...new Set(userRoles.map(({ userId }) => userId))];
   }
 
   private async findPermissionsByCodesOrThrow(permissionCodes: string[]) {

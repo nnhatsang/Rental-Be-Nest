@@ -210,8 +210,8 @@ Mọi Redis key phải tạo qua Redis key constants/helper của dự án. Khô
 
 Quy ước prefix:
 
-- `auth:*` cho auth session, login attempt, lock, reset password rate limit.
-- `rbac:*` cho permission/role cache phase sau.
+- `auth:*` cho auth session, login attempt, reset password rate limit.
+- `rbac:*` cho effective permission cache theo user.
 - `cache:*` cho cache dữ liệu nghiệp vụ.
 - `rate-limit:*` cho rate limit tổng quát nếu có.
 
@@ -332,7 +332,7 @@ Quy ước:
 - Service vẫn có thể kiểm tra ownership/business rule nếu đó là rule nghiệp vụ, không phải permission tĩnh.
 - User bị `LOCKED`, `BANNED`, `INACTIVE` không được access protected API dù Redis session còn.
 
-RBAC permission cache trong Redis là phase sau; chỉ triển khai khi có invalidation strategy cho role/permission/user-role changes.
+RBAC permission cache dùng key theo user, TTL 10 phút và phải invalidate sau thay đổi role/permission/user-role. PostgreSQL vẫn là source of truth; Redis miss/error fallback về PostgreSQL.
 
 ---
 

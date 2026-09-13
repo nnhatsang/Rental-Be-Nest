@@ -22,6 +22,7 @@ import {
 import { buildUserSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
 import { SocketService } from '@/libs/socket/socket.service';
 import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
+import { RbacPermissionService } from '@modules/rbac/rbac-permission.service';
 
 type UserWithRoles = Awaited<ReturnType<UsersService['findUserWithRolesById']>>;
 type ExistingUserWithRoles = NonNullable<UserWithRoles>;
@@ -31,6 +32,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly socketService: SocketService,
+    private readonly rbacPermissionService: RbacPermissionService,
   ) {}
 
   async getAllUsers(query: GetAllUsersInDto) {
@@ -172,6 +174,8 @@ export class UsersService {
       include: this.userRolesInclude(),
     });
 
+    await this.rbacPermissionService.invalidateUserPermissions(id);
+
     // Push socket
     this.socketService.sendToUser({
       userId: id,
@@ -212,6 +216,8 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(INVALID_USER);
     }
+
+    await this.rbacPermissionService.invalidateUserPermissions(id);
 
     // Push socket
     this.socketService.sendToUser({
@@ -262,6 +268,8 @@ export class UsersService {
       },
     });
     // Phát tín hiệu logout cưỡng bức cho danh sách user bị xóa:
+    await this.rbacPermissionService.invalidateUsersPermissions(uniqueIds);
+
     this.socketService.sendToUsers({
       userIds: uniqueIds,
       eventName: ESocketEmit.PERMISSIONS_UPDATED,

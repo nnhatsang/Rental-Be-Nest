@@ -40,19 +40,9 @@ import { REDIS_KEYS } from '@/libs/redis/redis-key.constant';
 import { REDIS_EXPIRE } from '@/libs/redis/constant/prefix.constant';
 import { MailTemplateService } from '@/modules/mail-template/mail-template.service';
 import { MailTemplateKey } from '../mail-template/const/mail-template.const';
+import { RbacPermissionService } from '@modules/rbac/rbac-permission.service';
 
-type UserWithAuth = User & {
-  roles: {
-    role: {
-      code: string;
-      permissions: {
-        permission: {
-          code: string;
-        };
-      }[];
-    };
-  }[];
-};
+type AuthenticatedUser = Pick<User, 'id' | 'email' | 'fullName' | 'phone' | 'activityStatus' | 'deletedAt'>;
 
 @Injectable()
 export class AuthService {
@@ -66,6 +56,7 @@ export class AuthService {
     private readonly mailTemplateService: MailTemplateService,
     private readonly passwordResetTokenService: PasswordResetTokenService,
     private readonly redis: RedisService,
+    private readonly rbacPermissionService: RbacPermissionService,
   ) {}
 
   async login(dto: LoginDto): Promise<LoginResult> {
@@ -78,7 +69,7 @@ export class AuthService {
     });
 
     return {
-      user: this.toAuthUser(user, cookies.sessionId),
+      user: await this.toAuthUser(user, cookies.sessionId),
       cookies,
     };
   }
@@ -89,7 +80,7 @@ export class AuthService {
     const cookies = await this.rotateRefreshSession(user.id, user.email, session);
 
     return {
-      user: this.toAuthUser(user, session.sessionId),
+      user: await this.toAuthUser(user, session.sessionId),
       cookies,
     };
   }
@@ -135,7 +126,6 @@ export class AuthService {
           phone: nextPhone,
         }),
       },
-      include: this.userAuthInclude(),
     });
 
     return this.toAuthUser(user, currentUser.sessionId);
@@ -279,11 +269,10 @@ export class AuthService {
     return parseDurationMs(this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'));
   }
 
-  private async validateLoginCredentials(email: string, password: string): Promise<UserWithAuth> {
+  private async validateLoginCredentials(email: string, password: string): Promise<User> {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      include: this.userAuthInclude(),
     });
 
     if (!user || user.deletedAt) {
@@ -320,7 +309,7 @@ export class AuthService {
     return session;
   }
 
-  private async validateRefreshUser(refreshUser: RefreshRequestUser): Promise<UserWithAuth> {
+  private async validateRefreshUser(refreshUser: RefreshRequestUser): Promise<AuthenticatedUser> {
     const user = await this.findAuthUserById(refreshUser.sub);
 
     if (!user || user.deletedAt) {
@@ -437,14 +426,21 @@ export class AuthService {
     await this.redis.del(...sessionKeys, userSessionsKey);
   }
 
-  private async findAuthUserById(userId: string): Promise<UserWithAuth | null> {
+  private async findAuthUserById(userId: string): Promise<AuthenticatedUser | null> {
     return this.prisma.user.findUnique({
       where: { id: userId },
-      include: this.userAuthInclude(),
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        activityStatus: true,
+        deletedAt: true,
+      },
     });
   }
 
-  private async findExistingAuthUserById(userId: string): Promise<UserWithAuth> {
+  private async findExistingAuthUserById(userId: string): Promise<AuthenticatedUser> {
     const user = await this.findAuthUserById(userId);
 
     if (!user || user.deletedAt) {
@@ -564,17 +560,16 @@ export class AuthService {
     return this.configService.get<number>('AUTH_PASSWORD_RESET_RATE_LIMIT', 3);
   }
 
-  private toAuthUser(user: UserWithAuth, sessionId: string): AuthUser {
-    const roles = user.roles.map(({ role }) => role.code);
-    const permissions = [...new Set(user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.code)))];
+  private async toAuthUser(user: AuthenticatedUser | User, sessionId: string): Promise<AuthUser> {
+    const authorization = await this.rbacPermissionService.getUserAuthorization(user.id);
 
     const authUser = {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       phone: user.phone,
-      roles,
-      permissions,
+      roles: authorization.roles,
+      permissions: authorization.permissions,
     } as AuthUser;
 
     Object.defineProperty(authUser, 'sessionId', {
@@ -584,23 +579,5 @@ export class AuthService {
     });
 
     return authUser;
-  }
-
-  private userAuthInclude() {
-    return {
-      roles: {
-        include: {
-          role: {
-            include: {
-              permissions: {
-                include: {
-                  permission: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    } as const;
   }
 }

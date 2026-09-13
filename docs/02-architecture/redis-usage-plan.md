@@ -252,7 +252,6 @@ REDIS_KEYS.dashboard.revenue(dateRangeHash)
 
 ```ts
 REDIS_KEYS.rbac.userPermissions(userId)
-REDIS_KEYS.rbac.rolePermissions(roleId)
 ```
 
 ### 6.6 Pub/Sub channels
@@ -353,18 +352,17 @@ Ghi chu:
 
 ### 8.4 RBAC permission cache
 
-Trang thai: de phase sau, chua nen bat ngay neu chua co invalidate day du.
+Trang thai: da bat cache effective authorization theo user.
 
-Hien tai `validateAccessUser` nen tiep tuc doc roles/permissions tu DB de dam bao quyen la source of truth moi nhat. Redis chi dang dung cho auth session, refresh token hash, login counter va rate limit.
+`validateAccessUser` van query user/status tu PostgreSQL moi request. Roles va permissions duoc doc tu `rbac:user-permissions:<userId>`; cache miss hoac Redis error thi query PostgreSQL va fallback ket qua DB.
 
-Khi can toi uu RBAC, co the cache:
+Chi su dung mot key:
 
 ```ts
 REDIS_KEYS.rbac.userPermissions(userId)
-REDIS_KEYS.rbac.rolePermissions(roleId)
 ```
 
-Payload de xuat:
+Payload:
 
 ```json
 {
@@ -375,15 +373,15 @@ Payload de xuat:
 }
 ```
 
-Yeu cau truoc khi bat cache:
+Invalidation sau khi DB commit:
 
 1. Invalidate `rbac:user-permissions:<userId>` khi gan/xoa role cua user.
-2. Invalidate user permission cache cua tat ca user thuoc role khi role permission thay doi.
-3. Invalidate khi user bi `BANNED`, `LOCKED`, `INACTIVE` hoac bi xoa.
-4. TTL ngan, de xuat 5-15 phut.
-5. DB van la source of truth khi cache miss.
+2. Invalidate cache cua tat ca user thuoc role khi role code hoac role permission thay doi.
+3. Invalidate cache cua user truoc khi role bi xoa.
+4. Invalidate khi user doi activity status hoac bi soft delete.
+5. TTL 10 phut; DB van la source of truth khi cache miss/Redis error.
 
-Rui ro can tranh: permission cache stale lam user tiep tuc dung quyen cu sau khi admin da thu hoi quyen.
+Neu invalidation that bai, quyen cu co the ton tai toi da trong cua so TTL; socket event chi phuc vu frontend refresh, khong thay the backend guard.
 
 ### 8.5 Confirm rental order
 

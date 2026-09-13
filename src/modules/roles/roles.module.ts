@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { RolesService } from './roles.service';
 import { RolesController } from './roles.controller';
+import { RbacModule } from '@modules/rbac/rbac.module';
 
 @Module({
+  imports: [RbacModule],
   controllers: [RolesController],
   providers: [RolesService],
   exports: [RolesService],

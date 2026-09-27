@@ -24,7 +24,7 @@ export class AvailabilityController {
 
   @Post('check')
   @RequirePermissions(PermissionCode.OrdersRead)
-  @ApiOperation({ summary: 'Kiem tra danh sach serial co kha dung trong khoang thoi gian' })
+  @ApiOperation({ summary: 'Kiểm tra sản phẩm và số lượng còn khả dụng trong khoảng thời gian' })
   @ApiOkResponse({ type: RentalOrderAvailabilityResponseDto })
   async checkAvailability(@Body() dto: CheckRentalOrderAvailabilityDto) {
     return new ApiRes(await this.availabilityService.checkRentalOrderAvailability(dto), 'Kiem tra lich thue thanh cong');

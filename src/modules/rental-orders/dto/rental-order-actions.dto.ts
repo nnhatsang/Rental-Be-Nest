@@ -1,224 +1,79 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsEnum, IsIn, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
-import { CollateralType, PaymentKind, PaymentMethod, PaymentRecordStatus } from '@generated/prisma/enums';
-import { INVALID_DATE, INVALID_NUMBER, INVALID_STRING } from '@/libs/constants/invalid.constant';
+import { ArrayMinSize, IsArray, IsBoolean, IsDate, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import {
+  PaymentMethod,
+  RentalAccessoryStatus,
+  RentalInspectionCondition,
+  RentalIncidentType,
+  PaymentTransactionStatus,
+} from '@generated/prisma/enums';
+import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
-export enum RentalOrderLateFeePolicy {
-  CHARGE = 'CHARGE',
-  WAIVE = 'WAIVE',
-  CUSTOM = 'CUSTOM',
-}
+export class CancelRentalOrderDto {
+  @ApiProperty({ example: 'Khach huy lich' })
+  @IsString({ message: INVALID_STRING })
+  reason!: string;
 
-export class RentalOrderNoteDto {
-  @ApiPropertyOptional({ example: 'Da goi xac nhan voi khach' })
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  refundBookingHold?: boolean;
+
+  @ApiPropertyOptional({ example: 50000, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: INVALID_NUMBER })
+  @Min(0)
+  refundAmount?: number;
+
+  @ApiPropertyOptional({ example: 'Da thong bao cho khach' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;
 }
 
-export class CancelRentalOrderDto {
-  @ApiProperty({ example: 'Khach huy lich' })
-  @IsString({ message: INVALID_STRING })
-  cancelReason!: string;
-
-  @ApiPropertyOptional({ example: false, description: 'Hoan tien dat lich neu shop tu choi don' })
+export class HandoverRentalOrderDto {
+  @ApiPropertyOptional({ example: '2026-09-25T08:00:00.000Z' })
   @IsOptional()
-  @IsBoolean()
-  refundBookingHold?: boolean;
+  @Type(() => Date)
+  @IsDate({ message: INVALID_DATE })
+  actualPickupDate?: Date;
 
-  @ApiPropertyOptional({ example: 50000, description: 'So tien hoan lai cho khach khi huy don.' })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  refundAmount?: number;
-
-  @ApiPropertyOptional({ example: false, description: 'Giu tien da thu thanh phi phat huy lich.' })
-  @IsOptional()
-  @IsBoolean()
-  keepPaidAmountAsPenalty?: boolean;
-
-  @ApiPropertyOptional({ example: 'Khach bao huy truoc gio nhan may' })
+  @ApiPropertyOptional({ example: 'Giao du may va phu kien' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;
 }
 
 export class ReturnRentalOrderDto {
-  @ApiPropertyOptional({ example: '2026-06-10T09:30:00.000Z' })
-  @Type(() => Date)
+  @ApiPropertyOptional({ example: '2026-09-27T18:00:00.000Z' })
   @IsOptional()
+  @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   actualReturnDate?: Date;
 
-  @ApiPropertyOptional({ example: 'Khach tra tre 30 phut' })
+  @ApiPropertyOptional({ example: 'Khach tra dung han' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;
-}
-
-export class StartRentalOrderDto extends RentalOrderNoteDto {
-  @ApiPropertyOptional({ example: '2026-06-10T09:30:00.000Z' })
-  @Type(() => Date)
-  @IsOptional()
-  @IsDate({ message: INVALID_DATE })
-  actualPickupDate?: Date;
-}
-
-export class HandoverRentalOrderPaymentDto {
-  @ApiProperty({ enum: PaymentMethod, example: PaymentMethod.CASH })
-  @IsEnum(PaymentMethod)
-  method!: PaymentMethod;
-
-  @ApiProperty({ example: 1750000 })
-  @Type(() => Number)
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  amount!: number;
-
-  @ApiPropertyOptional({ example: 'CASH-001' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  referenceCode?: string;
-
-  @ApiPropertyOptional({ example: 'Khach thanh toan luc nhan may' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  note?: string;
-}
-
-export class HandoverRentalOrderDto extends RentalOrderNoteDto {
-  @ApiPropertyOptional({ example: '2026-06-10T09:30:00.000Z' })
-  @Type(() => Date)
-  @IsOptional()
-  @IsDate({ message: INVALID_DATE })
-  actualPickupDate?: Date;
-
-  @ApiPropertyOptional({ example: 'Giu CCCD ban goc' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  collateralDescription?: string;
-
-  @ApiPropertyOptional({ enum: CollateralType, example: CollateralType.IDENTITY_CARD, default: CollateralType.NONE })
-  @IsOptional()
-  @IsEnum(CollateralType)
-  collateralType?: CollateralType;
-
-  @ApiPropertyOptional({ example: 50000, description: 'Tong tien giam gia sau cung cua don tai thoi diem ban giao' })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  discountTotal?: number;
-
-  @ApiPropertyOptional({ type: HandoverRentalOrderPaymentDto })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => HandoverRentalOrderPaymentDto)
-  payment?: HandoverRentalOrderPaymentDto;
-}
-
-export class CompleteRentalOrderSettlementPaymentDto {
-  @ApiProperty({ enum: [PaymentKind.ADDITIONAL_CHARGE, PaymentKind.REFUND], example: PaymentKind.REFUND })
-  @IsIn([PaymentKind.ADDITIONAL_CHARGE, PaymentKind.REFUND])
-  kind!: Extract<PaymentKind, 'ADDITIONAL_CHARGE' | 'REFUND'>;
-
-  @ApiProperty({ enum: PaymentMethod, example: PaymentMethod.CASH })
-  @IsEnum(PaymentMethod)
-  method!: PaymentMethod;
-
-  @ApiProperty({ example: 600000 })
-  @Type(() => Number)
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  amount!: number;
-
-  @ApiPropertyOptional({ example: 'SETTLE-001' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  referenceCode?: string;
-
-  @ApiPropertyOptional({ example: 'Hoan coc sau khi tru phi' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  note?: string;
-}
-
-export class CompleteRentalOrderDto extends RentalOrderNoteDto {
-  @ApiPropertyOptional({ example: '2026-06-10T09:30:00.000Z' })
-  @Type(() => Date)
-  @IsOptional()
-  @IsDate({ message: INVALID_DATE })
-  actualReturnDate?: Date;
-
-  @ApiPropertyOptional({ example: 200000 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  damageFeeTotal?: number;
-
-  @ApiPropertyOptional({ example: 'Tray filter lens' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  damageNote?: string;
-
-  @ApiPropertyOptional({ example: 500000 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  compensationFeeTotal?: number;
-
-  @ApiPropertyOptional({ example: 'Mat lens Sony 35mm, tinh phi den bu' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  compensationNote?: string;
-
-  @ApiPropertyOptional({ enum: RentalOrderLateFeePolicy, default: RentalOrderLateFeePolicy.CHARGE })
-  @IsOptional()
-  @IsEnum(RentalOrderLateFeePolicy)
-  lateFeePolicy?: RentalOrderLateFeePolicy;
-
-  @ApiPropertyOptional({ example: 100000 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  customLateFeeTotal?: number;
-
-  @ApiPropertyOptional({ example: 'Khach quen, shop ho tro mien phi tre han' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  lateFeeNote?: string;
-
-  @ApiPropertyOptional({ type: CompleteRentalOrderSettlementPaymentDto })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CompleteRentalOrderSettlementPaymentDto)
-  settlementPayment?: CompleteRentalOrderSettlementPaymentDto;
 }
 
 export class RecordRentalOrderPaymentDto {
-  @ApiProperty({ enum: PaymentKind, example: PaymentKind.BOOKING_HOLD })
-  @IsEnum(PaymentKind)
-  kind!: PaymentKind;
-
-  @ApiProperty({ enum: PaymentMethod, example: PaymentMethod.BANK_TRANSFER })
-  @IsEnum(PaymentMethod)
-  method!: PaymentMethod;
-
-  @ApiPropertyOptional({ enum: PaymentRecordStatus, default: PaymentRecordStatus.SUCCESS })
-  @IsOptional()
-  @IsEnum(PaymentRecordStatus)
-  status?: PaymentRecordStatus;
-
-  @ApiProperty({ example: 500000 })
+  @ApiProperty({ example: 500000, minimum: 0.01 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @Min(0.01)
   amount!: number;
+
+  @ApiProperty({ enum: Object.values(PaymentMethod) })
+  @IsEnum(PaymentMethod, { message: INVALID_ENUM(Object.values(PaymentMethod), 'method') })
+  method!: PaymentMethod;
+
+  @ApiPropertyOptional({ enum: Object.values(PaymentTransactionStatus), default: PaymentTransactionStatus.PENDING })
+  @IsOptional()
+  @IsEnum(PaymentTransactionStatus)
+  status?: PaymentTransactionStatus;
 
   @ApiPropertyOptional({ example: 'BANK-FT-001' })
   @IsOptional()
@@ -229,31 +84,110 @@ export class RecordRentalOrderPaymentDto {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;
+
+  @ApiPropertyOptional({ example: 'payment-client-request-001' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  idempotencyKey?: string;
 }
 
-export class RefundRentalOrderPaymentDto {
-  @ApiProperty({ enum: PaymentMethod, example: PaymentMethod.BANK_TRANSFER })
-  @IsEnum(PaymentMethod)
-  method!: PaymentMethod;
-
-  @ApiPropertyOptional({ enum: PaymentRecordStatus, default: PaymentRecordStatus.SUCCESS })
-  @IsOptional()
-  @IsEnum(PaymentRecordStatus)
-  status?: PaymentRecordStatus;
-
-  @ApiProperty({ example: 300000 })
+export class CreateRefundDto {
+  @ApiProperty({ example: 300000, minimum: 0.01 })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
+  @Min(0.01)
   amount!: number;
+
+  @ApiProperty({ enum: Object.values(PaymentMethod) })
+  @IsEnum(PaymentMethod)
+  method!: PaymentMethod;
 
   @ApiPropertyOptional({ example: 'REFUND-001' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   referenceCode?: string;
 
-  @ApiPropertyOptional({ example: 'Hoan tien coc sau khi tru tien thue' })
+  @ApiPropertyOptional({ example: 'Hoan coc sau khi kiem tra may' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;
 }
+
+export class InspectionAccessoryDto {
+  @ApiProperty()
+  @IsString({ message: INVALID_STRING })
+  name!: string;
+
+  @ApiProperty({ example: 1, minimum: 0 })
+  @Type(() => Number)
+  @IsInt({ message: INVALID_NUMBER })
+  @Min(0)
+  expectedQuantity!: number;
+
+  @ApiProperty({ example: 1, minimum: 0 })
+  @Type(() => Number)
+  @IsInt({ message: INVALID_NUMBER })
+  @Min(0)
+  actualQuantity!: number;
+
+  @ApiProperty({ enum: Object.values(RentalAccessoryStatus) })
+  @IsEnum(RentalAccessoryStatus)
+  status!: RentalAccessoryStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string;
+}
+
+export class InspectionItemDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  @IsUUID('7', { message: INVALID_UUID })
+  allocationId!: string;
+
+  @ApiProperty({ enum: Object.values(RentalInspectionCondition) })
+  @IsEnum(RentalInspectionCondition)
+  condition!: RentalInspectionCondition;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string;
+
+  @ApiPropertyOptional({ type: [InspectionAccessoryDto] })
+  @IsOptional()
+  @IsArray({ message: INVALID_ARRAY })
+  @ValidateNested({ each: true })
+  @Type(() => InspectionAccessoryDto)
+  accessories?: InspectionAccessoryDto[];
+}
+
+export class InspectRentalOrderDto {
+  @ApiProperty({ type: [InspectionItemDto] })
+  @IsArray({ message: INVALID_ARRAY })
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => InspectionItemDto)
+  items!: InspectionItemDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string;
+}
+
+export class SettleRentalOrderDto {
+  @ApiPropertyOptional({ example: 'Da thu du tien phi phat sinh va hoan coc' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string;
+}
+
+export class RejectPaymentDto {
+  @ApiPropertyOptional({ example: 'Chuyen khoan khong hop le' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string;
+}
+
+export { RentalIncidentType };

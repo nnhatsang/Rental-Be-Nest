@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsDate, IsEnum, IsOptional, IsUUID } from 'class-validator';
-import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
+import { AssetCondition, AssetStatus, RentalAllocationStatus } from '@generated/prisma/enums';
 import { INVALID_DATE, INVALID_UUID } from '@/libs/constants/invalid.constant';
 import { ApiPagReq, Pagination } from '@/libs/types/custom-response.type';
 
@@ -21,24 +21,19 @@ export enum AssetAvailabilityReason {
   BOOKED = 'BOOKED',
   INACTIVE = 'INACTIVE',
   RESERVED = 'RESERVED',
-  RENTED = 'RENTED',
-  INSPECTING = 'INSPECTING',
   MAINTENANCE = 'MAINTENANCE',
-  CLEANING = 'CLEANING',
-  TRANSFERRING = 'TRANSFERRING',
-  RETIRED = 'RETIRED',
   LOST = 'LOST',
 }
 
 export class GetAvailabilityBaseDto extends ApiPagReq {
-  @ApiProperty({ example: '2026-07-20T01:00:00.000Z' })
+  @ApiProperty({ example: '2026-09-25T08:00:00.000Z' })
   @Type(() => Date)
-  @IsDate({ message: INVALID_DATE })
+  @IsDate()
   startDate!: Date;
 
-  @ApiProperty({ example: '2026-07-22T11:00:00.000Z' })
+  @ApiProperty({ example: '2026-09-27T18:00:00.000Z' })
   @Type(() => Date)
-  @IsDate({ message: INVALID_DATE })
+  @IsDate()
   endDate!: Date;
 
   @ApiPropertyOptional({ enum: AvailabilityFilter, default: AvailabilityFilter.ALL })
@@ -62,216 +57,99 @@ export class GetAvailabilityAssetsDto extends GetAvailabilityBaseDto {
 }
 
 export class GetAvailabilityProductAssetsDto extends GetAvailabilityBaseDto {}
-
 export class GetAvailabilityTimelineDto extends GetAvailabilityBaseDto {}
 
 export class AvailabilityProductPriceTierOutDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
-
-  @ApiProperty({ example: 3 })
-  minDays!: number;
-
-  @ApiProperty({ example: 6, nullable: true })
-  maxDays!: number | null;
-
-  @ApiProperty({ example: 180000 })
-  dailyPrice!: number;
-
-  @ApiProperty({ example: 'Combo 3-6 ngày', nullable: true })
-  name!: string | null;
-
-  @ApiProperty({ example: 0 })
-  sortOrder!: number;
+  @ApiProperty() minDays!: number;
+  @ApiProperty({ nullable: true }) maxDays!: number | null;
+  @ApiProperty() dailyPrice!: number;
+  @ApiProperty({ nullable: true }) name!: string | null;
+  @ApiProperty() sortOrder!: number;
 }
 
 export class AvailabilityProductInventoryOutDto {
-  @ApiProperty({ example: 5, description: 'Tổng máy có thể cho thuê' })
-  total!: number;
-
-  @ApiProperty({ example: 2, description: 'Số máy đã bị đơn khác giữ lịch' })
-  reserved!: number;
-
-  @ApiProperty({ example: 3, description: 'Số máy còn có thể đặt trong khoảng thời gian đang kiểm tra' })
-  available!: number;
+  @ApiProperty() total!: number;
+  @ApiProperty() reserved!: number;
+  @ApiProperty() available!: number;
 }
 
 export class AvailabilityProductOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  productId!: string;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty()
-  sku!: string;
-
-  @ApiProperty({ example: 250000 })
-  dailyPrice!: number;
-
-  @ApiProperty({ example: 150000 })
-  halfDayPrice!: number;
-
-  @ApiProperty({ example: 25000 })
-  hourlyOveragePrice!: number;
-
-  @ApiProperty({ type: [AvailabilityProductPriceTierOutDto] })
-  rentalPriceTiers!: AvailabilityProductPriceTierOutDto[];
-
-  @ApiProperty({ example: 2000000 })
-  depositAmount!: number;
-
-  @ApiProperty({ type: AvailabilityProductInventoryOutDto })
-  inventory!: AvailabilityProductInventoryOutDto;
-}
-
-export class AvailabilityAssetProductOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  productId!: string;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty()
-  sku!: string;
-
-  @ApiProperty({ example: 250000 })
-  dailyPrice!: number;
-
-  @ApiProperty({ example: 150000 })
-  halfDayPrice!: number;
-
-  @ApiProperty({ example: 25000 })
-  hourlyOveragePrice!: number;
-
-  @ApiProperty({ type: [AvailabilityProductPriceTierOutDto] })
-  rentalPriceTiers!: AvailabilityProductPriceTierOutDto[];
-
-  @ApiProperty({ example: 2000000 })
-  depositAmount!: number;
+  @ApiProperty({ type: String, format: 'uuid' }) productId!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() sku!: string;
+  @ApiProperty() dailyPrice!: number;
+  @ApiProperty() halfDayPrice!: number;
+  @ApiProperty({ nullable: true }) hourlyOveragePrice!: number | null;
+  @ApiProperty({ type: [AvailabilityProductPriceTierOutDto] }) rentalPriceTiers!: AvailabilityProductPriceTierOutDto[];
+  @ApiProperty() depositAmount!: number;
+  @ApiProperty({ type: AvailabilityProductInventoryOutDto }) inventory!: AvailabilityProductInventoryOutDto;
 }
 
 export class AvailabilityProductsOutDto {
-  @ApiProperty({ type: [AvailabilityProductOutDto] })
-  items!: AvailabilityProductOutDto[];
+  @ApiProperty({ type: [AvailabilityProductOutDto] }) items!: AvailabilityProductOutDto[];
+  @ApiProperty({ type: Pagination }) pagination!: Pagination;
+  @ApiProperty() startDate!: Date;
+  @ApiProperty() endDate!: Date;
+  @ApiProperty() blockedEndDate!: Date;
+}
 
-  @ApiProperty({ type: Pagination })
-  pagination!: Pagination;
-
-  @ApiProperty()
-  startDate!: Date;
-
-  @ApiProperty()
-  endDate!: Date;
-
-  @ApiProperty()
-  blockedEndDate!: Date;
-
-
+export class AvailabilityAssetProductOutDto {
+  @ApiProperty({ type: String, format: 'uuid' }) productId!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() sku!: string;
+  @ApiProperty() dailyPrice!: number;
+  @ApiProperty() halfDayPrice!: number;
+  @ApiProperty({ nullable: true }) hourlyOveragePrice!: number | null;
+  @ApiProperty({ type: [AvailabilityProductPriceTierOutDto] }) rentalPriceTiers!: AvailabilityProductPriceTierOutDto[];
+  @ApiProperty() depositAmount!: number;
 }
 
 export class AvailabilityAssetOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  assetUnitId!: string;
-
-  @ApiProperty()
-  serialNumber!: string;
-
-  @ApiProperty({ enum: AssetStatus })
-  status!: AssetStatus;
-
-  @ApiProperty({ enum: AssetCondition })
-  condition!: AssetCondition;
-
-  @ApiProperty({ enum: AssetAvailabilityState })
-  availability!: AssetAvailabilityState;
-
-  @ApiProperty({ enum: AssetAvailabilityReason, nullable: true })
-  reasonCode!: AssetAvailabilityReason | null;
-
-  @ApiProperty({ nullable: true })
-  conflictBlockedEndDate!: Date | null;
-
-  @ApiProperty({ type: AvailabilityAssetProductOutDto })
-  product!: AvailabilityAssetProductOutDto;
+  @ApiProperty({ type: String, format: 'uuid' }) assetUnitId!: string;
+  @ApiProperty() serialNumber!: string;
+  @ApiProperty({ enum: AssetStatus }) status!: AssetStatus;
+  @ApiProperty({ enum: AssetCondition }) condition!: AssetCondition;
+  @ApiProperty({ enum: AssetAvailabilityState }) availability!: AssetAvailabilityState;
+  @ApiProperty({ enum: AssetAvailabilityReason, nullable: true }) reasonCode!: AssetAvailabilityReason | null;
+  @ApiProperty({ nullable: true }) conflictBlockedEndDate!: Date | null;
+  @ApiProperty({ type: AvailabilityAssetProductOutDto }) product!: AvailabilityAssetProductOutDto;
+  @ApiProperty({ enum: RentalAllocationStatus, isArray: true, required: false }) blockingAllocationStatuses?: RentalAllocationStatus[];
 }
 
 export class AvailabilityAssetsOutDto {
-  @ApiProperty({ type: [AvailabilityAssetOutDto] })
-  items!: AvailabilityAssetOutDto[];
-
-  @ApiProperty({ type: Pagination })
-  pagination!: Pagination;
-
-  @ApiProperty()
-  availableQuantity!: number;
-
-  @ApiProperty()
-  selectionLimit!: number;
-
-  @ApiProperty()
-  blockedEndDate!: Date;
-
-  @ApiProperty({ example: 100000 })
-  bookingHoldAmountPerUnit!: number;
+  @ApiProperty({ type: [AvailabilityAssetOutDto] }) items!: AvailabilityAssetOutDto[];
+  @ApiProperty({ type: Pagination }) pagination!: Pagination;
+  @ApiProperty() availableQuantity!: number;
+  @ApiProperty() selectionLimit!: number;
+  @ApiProperty() blockedEndDate!: Date;
+  @ApiProperty() bookingHoldAmountPerUnit!: number;
 }
 
 export class AvailabilityTimelineBlockOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  orderId!: string;
-
-  @ApiProperty()
-  orderCode!: string;
-
-  @ApiProperty()
-  status!: string;
-
-  @ApiProperty()
-  customerName!: string;
-
-  @ApiProperty()
-  startDate!: Date;
-
-  @ApiProperty()
-  endDate!: Date;
-
-  @ApiProperty()
-  blockedEndDate!: Date;
+  @ApiProperty({ type: String, format: 'uuid' }) orderId!: string;
+  @ApiProperty() orderCode!: string;
+  @ApiProperty() status!: string;
+  @ApiProperty() customerName!: string;
+  @ApiProperty() startDate!: Date;
+  @ApiProperty() endDate!: Date;
+  @ApiProperty() blockedEndDate!: Date;
 }
 
 export class AvailabilityTimelineRowOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  assetUnitId!: string;
-
-  @ApiProperty()
-  serialNumber!: string;
-
-  @ApiProperty()
-  productName!: string;
-
-  @ApiProperty()
-  sku!: string;
-
-  @ApiProperty({ enum: AssetStatus })
-  status!: AssetStatus;
-
-  @ApiProperty({ enum: AssetCondition })
-  condition!: AssetCondition;
-
-  @ApiProperty({ type: [AvailabilityTimelineBlockOutDto] })
-  blocks!: AvailabilityTimelineBlockOutDto[];
+  @ApiProperty({ type: String, format: 'uuid' }) assetUnitId!: string;
+  @ApiProperty() serialNumber!: string;
+  @ApiProperty() productName!: string;
+  @ApiProperty() sku!: string;
+  @ApiProperty({ enum: AssetStatus }) status!: AssetStatus;
+  @ApiProperty({ enum: AssetCondition }) condition!: AssetCondition;
+  @ApiProperty({ type: [AvailabilityTimelineBlockOutDto] }) blocks!: AvailabilityTimelineBlockOutDto[];
 }
 
 export class AvailabilityTimelineOutDto {
-  @ApiProperty({ type: [AvailabilityTimelineRowOutDto] })
-  items!: AvailabilityTimelineRowOutDto[];
-
-  @ApiProperty({ type: Pagination })
-  pagination!: Pagination;
-
-  @ApiProperty()
-  startDate!: Date;
-
-  @ApiProperty()
-  endDate!: Date;
+  @ApiProperty({ type: [AvailabilityTimelineRowOutDto] }) items!: AvailabilityTimelineRowOutDto[];
+  @ApiProperty({ type: Pagination }) pagination!: Pagination;
+  @ApiProperty() startDate!: Date;
+  @ApiProperty() endDate!: Date;
 }

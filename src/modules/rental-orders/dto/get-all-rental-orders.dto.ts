@@ -1,9 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
-import { OrderSource, OrderStatus, PaymentStatus, PickupMethod, RefundStatus } from '@generated/prisma/enums';
+import { IsDate, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { OrderSource, OrderStatus, PickupMethod, RentalSettlementStatus } from '@generated/prisma/enums';
 import { ApiPagReq } from '@/libs/types/custom-response.type';
-import { INVALID_DATE, INVALID_ENUM, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { INVALID_DATE, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export enum RentalOrderSortBy {
   CREATED_AT = 'createdAt',
@@ -12,22 +12,8 @@ export enum RentalOrderSortBy {
   START_DATE = 'startDate',
   END_DATE = 'endDate',
   STATUS = 'status',
-  PAYMENT_STATUS = 'paymentStatus',
-  REFUND_STATUS = 'refundStatus',
-  SOURCE = 'source',
-  PICKUP_METHOD = 'pickupMethod',
-  RENTAL_FEE_TOTAL = 'rentalFeeTotal',
+  SETTLEMENT_STATUS = 'settlementStatus',
 }
-
-export const RENTAL_ORDER_FILTER_STATUSES = [
-  OrderStatus.CREATED,
-  OrderStatus.CONFIRMED,
-  OrderStatus.RENTING,
-  OrderStatus.RETURNED,
-  OrderStatus.DONE,
-  OrderStatus.CANCELLED,
-  OrderStatus.DISPUTED,
-] satisfies OrderStatus[];
 
 export class GetAllRentalOrdersDto extends ApiPagReq {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
@@ -35,48 +21,40 @@ export class GetAllRentalOrdersDto extends ApiPagReq {
   @IsUUID('7', { message: INVALID_UUID })
   customerId?: string;
 
-  @ApiPropertyOptional({ enum: RENTAL_ORDER_FILTER_STATUSES })
+  @ApiPropertyOptional({ enum: Object.values(OrderStatus) })
   @IsOptional()
-  @IsIn(RENTAL_ORDER_FILTER_STATUSES, { message: INVALID_ENUM(RENTAL_ORDER_FILTER_STATUSES, 'status') })
+  @IsEnum(OrderStatus)
   status?: OrderStatus;
 
-  @ApiPropertyOptional({ enum: Object.values(PaymentStatus) })
+  @ApiPropertyOptional({ enum: Object.values(RentalSettlementStatus) })
   @IsOptional()
-  @IsIn(Object.values(PaymentStatus), { message: INVALID_ENUM(Object.values(PaymentStatus), 'paymentStatus') })
-  paymentStatus?: PaymentStatus;
-
-  @ApiPropertyOptional({ enum: Object.values(RefundStatus) })
-  @IsOptional()
-  @IsIn(Object.values(RefundStatus), { message: INVALID_ENUM(Object.values(RefundStatus), 'refundStatus') })
-  refundStatus?: RefundStatus;
+  @IsEnum(RentalSettlementStatus)
+  settlementStatus?: RentalSettlementStatus;
 
   @ApiPropertyOptional({ enum: Object.values(OrderSource) })
   @IsOptional()
-  @IsIn(Object.values(OrderSource), { message: INVALID_ENUM(Object.values(OrderSource), 'source') })
+  @IsEnum(OrderSource)
   source?: OrderSource;
 
   @ApiPropertyOptional({ enum: Object.values(PickupMethod) })
   @IsOptional()
-  @IsIn(Object.values(PickupMethod), { message: INVALID_ENUM(Object.values(PickupMethod), 'pickupMethod') })
+  @IsEnum(PickupMethod)
   pickupMethod?: PickupMethod;
 
-  @ApiPropertyOptional({ example: '2026-06-01T00:00:00.000Z' })
-  @Type(() => Date)
+  @ApiPropertyOptional({ example: '2026-09-01T00:00:00.000Z' })
   @IsOptional()
+  @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   fromDate?: Date;
 
-  @ApiPropertyOptional({ example: '2026-06-30T23:59:59.000Z' })
-  @Type(() => Date)
+  @ApiPropertyOptional({ example: '2026-09-30T23:59:59.999Z' })
   @IsOptional()
+  @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   toDate?: Date;
 
-  @ApiPropertyOptional({
-    enum: RentalOrderSortBy,
-    default: RentalOrderSortBy.CREATED_AT,
-  })
-  @IsEnum(RentalOrderSortBy)
+  @ApiPropertyOptional({ enum: RentalOrderSortBy, default: RentalOrderSortBy.CREATED_AT })
   @IsOptional()
+  @IsEnum(RentalOrderSortBy)
   sortBy: RentalOrderSortBy = RentalOrderSortBy.CREATED_AT;
 }

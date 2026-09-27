@@ -263,7 +263,7 @@ model Product {
   brand               Brand?                   @relation(fields: [brandId], references: [id])
   category            ProductCategory?         @relation(fields: [categoryId], references: [id])
   rentalPriceTiers    ProductRentalPriceTier[]
-  orderItems          RentalOrderItem[]
+  rentalOrderLines    RentalOrderLine[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -299,28 +299,28 @@ model ProductRentalPriceTier {
 
 model AssetUnit {
   /// Primary asset unit id; represents one physical device.
-  id           String            @id @default(uuid(7)) @db.Uuid
+  id               String                  @id @default(uuid(7)) @db.Uuid
   /// Product model/type this unit belongs to.
-  productId    String            @db.Uuid
+  productId        String                  @db.Uuid
   /// Optional unique serial number for the physical device.
-  serialNumber String            @unique
+  serialNumber     String                  @unique
   /// Current operational status of this physical device.
-  status       AssetStatus       @default(AVAILABLE)
+  status           AssetStatus             @default(AVAILABLE)
   /// Current condition of this physical device.
-  condition    AssetCondition    @default(GOOD)
+  condition        AssetCondition          @default(GOOD)
   /// Internal note about this device.
-  note         String?
+  note             String?
   /// Whether this physical unit can be assigned to orders.
-  isActive     Boolean           @default(true)
-  searchText   String            @default("")
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  deletedAt    DateTime?
-  createdBy    String?           @map("created_by") @db.Uuid
-  updatedBy    String?           @map("updated_by") @db.Uuid
-  deletedBy    String?           @map("deleted_by") @db.Uuid
-  product      Product           @relation(fields: [productId], references: [id])
-  orderItems   RentalOrderItem[]
+  isActive         Boolean                 @default(true)
+  searchText       String                  @default("")
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  deletedAt        DateTime?
+  createdBy        String?                 @map("created_by") @db.Uuid
+  updatedBy        String?                 @map("updated_by") @db.Uuid
+  deletedBy        String?                 @map("deleted_by") @db.Uuid
+  product          Product                 @relation(fields: [productId], references: [id])
+  assetAllocations RentalAssetAllocation[]
 
   @@index([productId])
   @@index([status])
@@ -382,162 +382,84 @@ model StoreClosure {
 
 model RentalOrder {
   /// Mã định danh chính của đơn thuê.
-  id                    String         @id @default(uuid(7)) @db.Uuid
+  id               String                 @id @default(uuid(7)) @db.Uuid
   /// Mã đơn dễ đọc để admin tra cứu, ví dụ ORD-000001.
-  code                  String         @unique
+  code             String                 @unique
   /// Nguồn tạo đơn; giai đoạn 1 chủ yếu là ADMIN, WEBSITE để dành cho flow khách tự đặt sau này.
-  source                OrderSource    @default(ADMIN)
+  source           OrderSource            @default(ADMIN)
   /// Trạng thái vận hành của đơn thuê.
-  status                OrderStatus    @default(CREATED)
-  /// Trạng thái thanh toán tổng quát của đơn.
-  paymentStatus         PaymentStatus  @default(UNPAID)
-  refundStatus          RefundStatus   @default(NOT_REQUIRED)
+  status           OrderStatus            @default(CREATED)
+  handoverStatus   HandoverStatus         @default(PENDING_PAYMENT)
+  returnStatus     ReturnStatus           @default(NOT_RETURNED)
+  settlementStatus RentalSettlementStatus @default(NOT_STARTED)
   /// Chính sách thuê được áp dụng khi tạo đơn; order vẫn lưu snapshot để không bị ảnh hưởng khi policy thay đổi.
-  settingsSnapshot      Json
+  settingsSnapshot Json
+  policyVersion    String                 @default("v1")
   /// Khách hàng thuê thiết bị.
-  customerId            String         @db.Uuid
-  customerSnapshot      Json
-  //
-  collateralType        CollateralType @default(NONE)
-  collateralDescription String?
-
-  startDate DateTime
+  customerId       String                 @db.Uuid
+  customerSnapshot Json
+  startDate        DateTime
   /// Thời gian kết thúc thuê hoặc thời gian khách dự kiến trả máy.
-  endDate   DateTime
+  endDate          DateTime
 
   /// Thời gian khách nhận máy thực tế do admin nhập hoặc ghi nhận khi bắt đầu thuê.
-  actualPickupDate      DateTime?
+  actualPickupDate        DateTime?
   /// Thời gian khách trả máy thực tế do admin nhập.
-  actualReturnDate      DateTime?
+  actualReturnDate        DateTime?
   /// Hình thức nhận máy: khách nhận tại cửa hàng hoặc cửa hàng giao.
-  pickupMethod          PickupMethod         @default(PICKUP_AT_STORE)
+  pickupMethod            PickupMethod         @default(PICKUP_AT_STORE)
   /// Địa chỉ giao máy nếu pickupMethod là DELIVERY.
-  deliveryAddress       String?
+  deliveryAddress         String?
   /// Phí giao/nhận máy thu từ khách.
-  deliveryFeeTotal      Decimal              @default(0) @db.Decimal(12, 2)
+  deliveryFeeTotal        Decimal              @default(0) @db.Decimal(12, 2)
   /// Tổng tiền thuê cửa hàng sẽ giữ lại nếu không phát sinh hoàn/đền.
-  rentalFeeTotal        Decimal              @default(0) @db.Decimal(12, 2)
-  /// Tổng phần cọc có thể hoàn lại sau khi khách trả máy.
-  depositTotal          Decimal              @default(0) @db.Decimal(12, 2)
+  rentalFeeTotal          Decimal              @default(0) @db.Decimal(12, 2)
   /// Snapshot tổng tiền đặt lịch ban đầu để giữ máy, thường lấy từ RentalPolicy * số lượng thiết bị.
-  bookingHoldTotal      Decimal              @default(0) @db.Decimal(12, 2)
+  bookingHoldTotal        Decimal              @default(0) @db.Decimal(12, 2)
   /// Tổng phí trả trễ được tính sau khi khách trả máy.
-  lateFeeTotal          Decimal              @default(0) @db.Decimal(12, 2)
-  /// Tổng phí hư hỏng/mất phụ kiện được tính sau khi kiểm tra máy.
-  damageFeeTotal        Decimal              @default(0) @db.Decimal(12, 2)
-  /// Tổng giảm giá admin áp dụng thủ công.
-  discountTotal         Decimal              @default(0) @db.Decimal(12, 2)
-  /// Tổng tiền đã thu từ khách, cộng từ các PaymentRecord SUCCESS không phải REFUND.
-  compensationFeeTotal  Decimal              @default(0) @db.Decimal(12, 2)
-  chargeTotal           Decimal              @default(0) @db.Decimal(12, 2)
-  paidTotal             Decimal              @default(0) @db.Decimal(12, 2)
-  /// Số tiền cần hoàn lại cho khách sau khi trả máy và trừ các phí phát sinh.
-  estimatedRefundTotal  Decimal              @default(0) @db.Decimal(12, 2)
-  actualRefundTotal     Decimal              @default(0) @db.Decimal(12, 2)
-  adjustedDepositTotal  Decimal              @default(0) @db.Decimal(12, 2)
-  handoverRequiredTotal Decimal              @default(0) @db.Decimal(12, 2)
-  handoverAmountDue     Decimal              @default(0) @db.Decimal(12, 2)
+  lateFeeTotal            Decimal              @default(0) @db.Decimal(12, 2)
+  paidTotal               Decimal              @default(0) @db.Decimal(12, 2)
+  actualRefundTotal       Decimal              @default(0) @db.Decimal(12, 2)
+  securityDepositTotal    Decimal              @default(0) @db.Decimal(12, 2)
+  totalCustomerObligation Decimal              @default(0) @db.Decimal(12, 2)
+  amountDueAtBooking      Decimal              @default(0) @db.Decimal(12, 2)
+  amountDueBeforeHandover Decimal              @default(0) @db.Decimal(12, 2)
+  refundDue               Decimal              @default(0) @db.Decimal(12, 2)
+  additionalChargeDue     Decimal              @default(0) @db.Decimal(12, 2)
+  damageCompensationTotal Decimal              @default(0) @db.Decimal(12, 2)
   /// Ghi chú hiển thị cho khách hoặc dùng trên hợp đồng.
-  note                  String?
+  note                    String?
   /// Ghi chú nội bộ chỉ dành cho admin/staff.
-  internalNote          String?
+  internalNote            String?
   /// Lý do hủy đơn nếu đơn bị hủy.
-  cancelReason          String?
+  cancelReason            String?
   /// Admin/staff được phân công xử lý đơn.
-  searchText            String               @default("")
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  deletedAt             DateTime?
-  createdBy             String               @map("created_by") @db.Uuid
-  updatedBy             String?              @map("updated_by") @db.Uuid
-  deletedBy             String?              @map("deleted_by") @db.Uuid
-  statusHistories       OrderStatusHistory[]
-  payments              PaymentRecord[]
-  logs                  RentalOrderLog[]
-  customer              Customer             @relation(fields: [customerId], references: [id])
-  items                 RentalOrderItem[]
+  searchText              String               @default("")
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  deletedAt               DateTime?
+  createdBy               String               @map("created_by") @db.Uuid
+  updatedBy               String?              @map("updated_by") @db.Uuid
+  deletedBy               String?              @map("deleted_by") @db.Uuid
+  statusHistories         OrderStatusHistory[]
+  logs                    RentalOrderLog[]
+  customer                Customer             @relation(fields: [customerId], references: [id])
+  lines                   RentalOrderLine[]
+  charges                 RentalOrderCharge[]
+  paymentTransactions     PaymentTransaction[]
+  refunds                 Refund[]
+  inspections             RentalInspection[]
+  incidents               RentalIncident[]
+  quoteId                 String?              @unique @db.Uuid
+  quote                   RentalOrderQuote?    @relation(fields: [quoteId], references: [id])
 
   @@index([status])
-  @@index([paymentStatus])
-  @@index([refundStatus])
   @@index([customerId])
   @@index([createdBy])
   @@index([startDate, endDate])
   @@index([startDate])
   @@index([status, startDate, deletedAt])
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "RentalOrder_searchText_trgm_idx", type: Gin)
-}
-
-model RentalOrderItem {
-  id          String @id @default(uuid(7)) @db.Uuid
-  orderId     String @db.Uuid
-  productId   String @db.Uuid
-  assetUnitId String @db.Uuid
-
-  unitPrice         Decimal @db.Decimal(12, 2)
-  depositAmount     Decimal @db.Decimal(12, 2)
-  bookingHoldAmount Decimal @default(0) @db.Decimal(12, 2)
-  lineTotal         Decimal @db.Decimal(12, 2)
-
-  snapshot Json?
-
-  startDate      DateTime
-  endDate        DateTime
-  blockedEndDate DateTime
-
-  status RentalOrderItemStatus @default(ACTIVE)
-
-  note      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  createdBy String?   @map("created_by") @db.Uuid
-  updatedBy String?   @map("updated_by") @db.Uuid
-  deletedBy String?   @map("deleted_by") @db.Uuid
-
-  order     RentalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product     @relation(fields: [productId], references: [id])
-  assetUnit AssetUnit   @relation(fields: [assetUnitId], references: [id])
-
-  @@index([orderId])
-  @@index([productId])
-  @@index([assetUnitId])
-  @@index([assetUnitId, startDate, blockedEndDate])
-  @@index([status])
-  @@index([deletedAt])
-}
-
-model PaymentRecord {
-  /// Primary payment record id.
-  id            String              @id @default(uuid(7)) @db.Uuid
-  /// Rental order this payment/refund belongs to.
-  orderId       String              @db.Uuid
-  /// Business kind of the payment/refund.
-  kind          PaymentKind
-  /// Payment method used by the customer/admin.
-  method        PaymentMethod
-  /// Payment processing/recording status.
-  status        PaymentRecordStatus @default(SUCCESS)
-  /// Payment amount; refunds should still be positive and identified by kind REFUND.
-  amount        Decimal             @db.Decimal(12, 2)
-  /// Bank transfer code, receipt number, or external reference.
-  referenceCode String?
-  /// Admin note for this payment record.
-  note          String?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  deletedAt     DateTime?
-  createdBy     String              @map("created_by") @db.Uuid
-  updatedBy     String?             @map("updated_by") @db.Uuid
-  deletedBy     String?             @map("deleted_by") @db.Uuid
-  order         RentalOrder         @relation(fields: [orderId], references: [id])
-
-  @@index([orderId])
-  @@index([kind])
-  @@index([method])
-  @@index([status])
-  @@index([createdAt])
-  @@index([createdBy])
 }
 
 model OrderStatusHistory {
@@ -573,6 +495,216 @@ model RentalOrderLog {
   @@index([actorId])
   @@index([action])
   @@index([createdAt])
+}
+
+model RentalOrderQuote {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  customerId       String?      @db.Uuid
+  source           OrderSource  @default(ADMIN)
+  startDate        DateTime
+  endDate          DateTime
+  pickupMethod     PickupMethod
+  deliveryAddress  String?
+  requestSnapshot  Json
+  responseSnapshot Json
+  policyVersion    String
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  createdBy        String?      @db.Uuid
+  order            RentalOrder?
+
+  @@index([expiresAt])
+  @@index([customerId])
+}
+
+model RentalOrderLine {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  orderId               String   @db.Uuid
+  productId             String   @db.Uuid
+  quantity              Int
+  unitRentalFee         Decimal  @db.Decimal(12, 2)
+  unitDepositAmount     Decimal  @db.Decimal(12, 2)
+  unitBookingHoldAmount Decimal  @default(0) @db.Decimal(12, 2)
+  lineRentalTotal       Decimal  @db.Decimal(12, 2)
+  lineDepositTotal      Decimal  @db.Decimal(12, 2)
+  lineBookingHoldTotal  Decimal  @default(0) @db.Decimal(12, 2)
+  pricingSnapshot       Json
+  accessoriesSnapshot   Json?
+  note                  String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  order       RentalOrder             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product                 @relation(fields: [productId], references: [id])
+  allocations RentalAssetAllocation[]
+  charges     RentalOrderCharge[]
+
+  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productId])
+}
+
+model RentalAssetAllocation {
+  id             String                 @id @default(uuid(7)) @db.Uuid
+  orderLineId    String                 @db.Uuid
+  assetUnitId    String                 @db.Uuid
+  source         RentalAllocationSource @default(ADMIN_SELECTED)
+  status         RentalAllocationStatus @default(REQUESTED)
+  startDate      DateTime
+  endDate        DateTime
+  blockedEndDate DateTime
+  allocatedAt    DateTime?
+  releasedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  orderLine       RentalOrderLine        @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  assetUnit       AssetUnit              @relation(fields: [assetUnitId], references: [id])
+  inspectionItems RentalInspectionItem[]
+  incidents       RentalIncident[]
+
+  @@unique([orderLineId, assetUnitId])
+  @@index([assetUnitId, startDate, blockedEndDate])
+  @@index([status])
+}
+
+model RentalOrderCharge {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  orderId     String             @db.Uuid
+  orderLineId String?            @db.Uuid
+  kind        RentalChargeKind
+  amount      Decimal            @db.Decimal(12, 2)
+  status      RentalChargeStatus @default(OPEN)
+  refundable  Boolean            @default(false)
+  metadata    Json?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  order              RentalOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLine          RentalOrderLine?    @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
+  paymentAllocations PaymentAllocation[]
+
+  @@index([orderId, kind])
+  @@index([status])
+}
+
+model PaymentTransaction {
+  id             String                   @id @default(uuid(7)) @db.Uuid
+  orderId        String                   @db.Uuid
+  direction      PaymentDirection         @default(INBOUND)
+  amount         Decimal                  @db.Decimal(12, 2)
+  method         PaymentMethod
+  status         PaymentTransactionStatus @default(PENDING)
+  referenceCode  String?
+  idempotencyKey String?
+  metadata       Json?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  createdBy      String                   @db.Uuid
+
+  order       RentalOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  allocations PaymentAllocation[]
+  refund      Refund?
+
+  @@unique([orderId, idempotencyKey])
+  @@index([orderId, status])
+  @@index([referenceCode])
+}
+
+model PaymentAllocation {
+  paymentId String   @db.Uuid
+  chargeId  String   @db.Uuid
+  amount    Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  payment PaymentTransaction @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  charge  RentalOrderCharge  @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+
+  @@id([paymentId, chargeId])
+  @@index([chargeId])
+}
+
+model Refund {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  orderId       String             @db.Uuid
+  paymentId     String?            @unique @db.Uuid
+  amount        Decimal            @db.Decimal(12, 2)
+  status        RentalRefundStatus @default(PENDING)
+  method        PaymentMethod
+  referenceCode String?
+  note          String?
+  metadata      Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  createdBy     String             @db.Uuid
+
+  order   RentalOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment PaymentTransaction? @relation(fields: [paymentId], references: [id])
+
+  @@index([orderId, status])
+}
+
+model RentalInspection {
+  id          String               @id @default(uuid(7)) @db.Uuid
+  orderId     String               @db.Uuid
+  type        RentalInspectionType
+  inspectedBy String               @db.Uuid
+  inspectedAt DateTime             @default(now())
+  note        String?
+
+  order RentalOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items RentalInspectionItem[]
+
+  @@unique([orderId, type])
+}
+
+model RentalInspectionItem {
+  id           String                    @id @default(uuid(7)) @db.Uuid
+  inspectionId String                    @db.Uuid
+  allocationId String                    @db.Uuid
+  condition    RentalInspectionCondition
+  note         String?
+
+  inspection  RentalInspection            @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  allocation  RentalAssetAllocation       @relation(fields: [allocationId], references: [id])
+  accessories RentalInspectionAccessory[]
+
+  @@unique([inspectionId, allocationId])
+}
+
+model RentalInspectionAccessory {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  inspectionItemId String                @db.Uuid
+  name             String
+  expectedQuantity Int
+  actualQuantity   Int
+  status           RentalAccessoryStatus
+  note             String?
+
+  inspectionItem RentalInspectionItem @relation(fields: [inspectionItemId], references: [id], onDelete: Cascade)
+
+  @@index([inspectionItemId])
+}
+
+model RentalIncident {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  orderId      String               @db.Uuid
+  allocationId String?              @db.Uuid
+  type         RentalIncidentType
+  amount       Decimal              @default(0) @db.Decimal(12, 2)
+  note         String?
+  status       RentalIncidentStatus @default(OPEN)
+  metadata     Json?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  createdBy    String               @db.Uuid
+
+  order      RentalOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  allocation RentalAssetAllocation? @relation(fields: [allocationId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, type])
+  @@index([allocationId])
 }
 
 model EmailLayout {
@@ -675,11 +807,113 @@ enum OrderStatus {
   CREATED
   CONFIRMED
   RENTING
-  OVERDUE
   RETURNED
   DONE
   CANCELLED
   DISPUTED
+}
+
+enum HandoverStatus {
+  PENDING_PAYMENT
+  READY
+  HANDED_OVER
+}
+
+enum ReturnStatus {
+  NOT_RETURNED
+  RETURNED
+  INSPECTED
+}
+
+enum RentalSettlementStatus {
+  NOT_STARTED
+  PAYMENT_DUE
+  REFUND_DUE
+  SETTLED
+  DISPUTED
+}
+
+enum RentalChargeKind {
+  BOOKING_HOLD
+  RENTAL_FEE
+  LATE_FEE
+  DELIVERY_FEE
+  SECURITY_DEPOSIT
+  DAMAGE_COMPENSATION
+  CANCELLATION_FEE
+  OTHER_CHARGE
+}
+
+enum RentalChargeStatus {
+  OPEN
+  PARTIALLY_SETTLED
+  SETTLED
+  WAIVED
+  CANCELLED
+}
+
+enum PaymentDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum PaymentTransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum RentalRefundStatus {
+  PENDING
+  PROCESSING
+  REFUNDED
+  FAILED
+}
+
+enum RentalAllocationSource {
+  ADMIN_SELECTED
+  AUTO_ALLOCATED
+}
+
+enum RentalAllocationStatus {
+  REQUESTED
+  RESERVED
+  HANDED_OVER
+  RETURNED
+  RELEASED
+}
+
+enum RentalInspectionType {
+  HANDOVER
+  RETURN
+}
+
+enum RentalInspectionCondition {
+  GOOD
+  DAMAGED
+  MISSING
+  NEEDS_MAINTENANCE
+}
+
+enum RentalAccessoryStatus {
+  OK
+  MISSING
+  DAMAGED
+}
+
+enum RentalIncidentType {
+  DAMAGE
+  LOSS
+  MISSING_ACCESSORY
+  LATE_RETURN
+}
+
+enum RentalIncidentStatus {
+  OPEN
+  WAIVED
+  CHARGED
+  RESOLVED
 }
 
 enum PickupMethod {
@@ -687,50 +921,6 @@ enum PickupMethod {
   PICKUP_AT_STORE
   /// Shop delivers equipment to customer.
   DELIVERY
-}
-
-enum CollateralType {
-  NONE
-  IDENTITY_CARD
-  VEHICLE_OR_HIGH_VALUE
-  OTHER_ASSET
-}
-
-enum PaymentStatus {
-  /// No successful payment has been recorded.
-  UNPAID
-  /// Some but not all payable amount has been collected.
-  PARTIALLY_PAID
-  /// Payable amount has been fully collected.
-  PAID
-}
-
-enum RefundStatus {
-  /// No refund is needed for this order.
-  NOT_REQUIRED
-  /// Some but not all refund amount has been returned to customer.
-  PARTIALLY_REFUNDED
-  /// Refund has been fully returned to customer.
-  REFUNDED
-  /// Refund attempt failed or was rejected.
-  FAILED
-}
-
-enum PaymentKind {
-  BOOKING_HOLD // tiền giữ lịch
-  DEPOSIT // tiền cọc máy
-  RENTAL_PAYMENT // tiền thuê
-  HANDOVER_PAYMENT // khoản thu tổng lúc giao, nếu không muốn tách nhỏ
-  ADDITIONAL_CHARGE // thu thêm sau trả
-  OTHER
-  REFUND
-}
-
-enum RentalOrderItemStatus {
-  PENDING // item mới tạo trong order CREATED, chưa giữ lịch
-  ACTIVE // item đã được giữ lịch sau khi khách thanh toán booking hold / order CONFIRMED
-  RETURNED // asset của item này đã được trả
-  CANCELLED // item bị hủy khỏi đơn
 }
 
 enum PaymentMethod {
@@ -744,15 +934,4 @@ enum PaymentMethod {
   E_WALLET
   /// Other payment method.
   OTHER
-}
-
-enum PaymentRecordStatus {
-  /// Payment is waiting to be confirmed.
-  PENDING
-  /// Payment was successfully recorded.
-  SUCCESS
-  /// Payment failed or was rejected.
-  FAILED
-  /// Payment record was cancelled.
-  CANCELLED
 }

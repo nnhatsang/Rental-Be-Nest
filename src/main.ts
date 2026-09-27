@@ -11,11 +11,12 @@ async function bootstrap() {
   // const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
   //   rawBody: true,
   // });
-  const adminWebOrigin = process.env.ADMIN_WEB_ORIGIN ?? 'http://localhost:3000';
+  // const adminWebOrigin = process.env.ADMIN_WEB_ORIGIN ?? 'http://localhost:3000';
+  const adminWebOrigins = ['http://localhost:3000', process.env.ADMIN_WEB_ORIGIN].filter(Boolean) as string[];
 
   app.setGlobalPrefix('api');
   app.enableCors({
-    origin: adminWebOrigin,
+    origin: adminWebOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
     allowedHeaders: 'Content-Type, Accept, Authorization',

@@ -1,1207 +1,777 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@generated/prisma/client';
 import {
+  CustomerStatus,
+  HandoverStatus,
+  OrderSource,
+  OrderStatus,
+  PaymentDirection,
+  PaymentMethod,
+  PaymentTransactionStatus,
+  PickupMethod,
+  RentalAllocationStatus,
+  RentalChargeKind,
+  RentalChargeStatus,
+  RentalInspectionCondition,
+  RentalInspectionType,
+  RentalRefundStatus,
+  RentalSettlementStatus,
+  ReturnStatus,
+} from '@generated/prisma/enums';
+import {
+  INCORRECT_INPUT,
   RENTAL_ORDER_CUSTOMER_INVALID,
-  RENTAL_ORDER_ASSET_UNIT_INVALID,
+  RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT,
   RENTAL_ORDER_NOT_FOUND,
   RENTAL_ORDER_PRODUCT_INVALID,
-  RENTAL_ORDER_STATUS_TRANSITION_INVALID,
   RENTAL_ORDER_UNAVAILABLE,
 } from '@/libs/constants/error.constants';
 import { buildRentalOrderSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
-import { Prisma } from '@generated/prisma/client';
-import { CollateralType, CustomerStatus, OrderSource, OrderStatus, PaymentStatus, PickupMethod, RefundStatus, RentalOrderItemStatus } from '@generated/prisma/enums';
-import { AuthUser } from '@modules/auth/types/auth-user.type';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
-import { ProductsService } from '../products/products.service';
-import { SystemSettingsService } from '../system-settings/system-settings.service';
-import { RentalOrderAvailabilityOutDto } from './dto/check-rental-order-availability.dto';
-import { CreateRentalOrderDto, RentalOrderItemInDto } from './dto/create-rental-order.dto';
-import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
-import { GetAllRentalOrdersDto } from './dto/get-all-rental-orders.dto';
-import { RentalOrderListItemOutDto, RentalOrderOutDto } from './dto/rental-order-out.dto';
-import { UpdateRentalOrderDto } from './dto/update-rental-order.dto';
-import { NormalizedRentalOrderItem, RentalOrderAvailabilityService } from './services/rental-order-availability.service';
-import { RentalOrderEventsService } from './services/rental-order-events.service';
-import { RentalOrderLogAction, RentalOrderLogChange, RentalOrderLogsService } from './services/rental-order-logs.service';
+import { AuthUser } from '@/modules/auth/types/auth-user.type';
+import { PrismaService } from '@/modules/database/prisma.service';
+import { SystemSettingsService } from '@/modules/system-settings/system-settings.service';
+import { assertRentalOrderTransition, getRentalOrderOverdue } from './domain/rental-order-state-machine';
+import { RentalOrderAvailabilityService } from './services/rental-order-availability.service';
+import { RentalOrderFinancialService } from './services/rental-order-financial.service';
 import { RentalOrderPricingService } from './services/rental-order-pricing.service';
+import { CreateRentalOrderDto, CreateRentalQuoteDto, RentalOrderItemDto } from './dto/create-rental-order.dto';
+import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
+import { GetAllRentalOrdersDto, RentalOrderSortBy } from './dto/get-all-rental-orders.dto';
+import {
+  CancelRentalOrderDto,
+  CreateRefundDto,
+  HandoverRentalOrderDto,
+  InspectRentalOrderDto,
+  RecordRentalOrderPaymentDto,
+  RejectPaymentDto,
+  ReturnRentalOrderDto,
+  SettleRentalOrderDto,
+} from './dto/rental-order-actions.dto';
+import {
+  RentalOrderChargeOutDto,
+  RentalOrderFinancialsOutDto,
+  RentalOrderLineOutDto,
+  RentalOrderListItemOutDto,
+  RentalOrderOutDto,
+  RentalOrderPaymentOutDto,
+  RentalOrderQuoteOutDto,
+  RentalOrderRefundOutDto,
+} from './dto/rental-order-out.dto';
+import { UpdateRentalOrderCustomerSnapshotDto, UpdateRentalOrderDto } from './dto/update-rental-order.dto';
 
-const SOFT_DELETABLE_STATUSES = [OrderStatus.CREATED, OrderStatus.CANCELLED];
-
-const rentalOrderInclude = {
+const orderDetailInclude = {
   customer: true,
-  items: {
-    orderBy: {
-      createdAt: 'asc',
-    },
+  lines: {
+    orderBy: { createdAt: 'asc' },
     include: {
-      product: {
-        select: {
-          id: true,
-          name: true,
-          sku: true,
-        },
-      },
-      assetUnit: {
-        select: {
-          id: true,
-          serialNumber: true,
-        },
+      product: { select: { id: true, name: true, sku: true } },
+      allocations: {
+        orderBy: { createdAt: 'asc' },
+        include: { assetUnit: { select: { id: true, serialNumber: true } } },
       },
     },
   },
-  payments: {
-    where: {
-      deletedAt: null,
-    },
-    orderBy: {
-      createdAt: 'asc',
-    },
+  charges: { orderBy: { createdAt: 'asc' } },
+  paymentTransactions: { orderBy: { createdAt: 'asc' } },
+  refunds: { orderBy: { createdAt: 'asc' } },
+  inspections: {
+    orderBy: { inspectedAt: 'asc' },
+    include: { items: { include: { accessories: true } } },
   },
-  statusHistories: {
-    orderBy: {
-      createdAt: 'asc',
-    },
-  },
-  logs: {
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: 50,
-  },
+  statusHistories: { orderBy: { createdAt: 'asc' } },
 } as const satisfies Prisma.RentalOrderInclude;
 
-const rentalOrderListSelect = {
-  id: true,
-  code: true,
-  source: true,
-  status: true,
-  paymentStatus: true,
-  refundStatus: true,
-  customerSnapshot: true,
-  startDate: true,
-  endDate: true,
-  deliveryFeeTotal: true,
-  rentalFeeTotal: true,
-  depositTotal: true,
-  bookingHoldTotal: true,
-  lateFeeTotal: true,
-  damageFeeTotal: true,
-  discountTotal: true,
-  compensationFeeTotal: true,
-  chargeTotal: true,
-  paidTotal: true,
-  estimatedRefundTotal: true,
-  actualRefundTotal: true,
-  handoverRequiredTotal: true,
-  handoverAmountDue: true,
-  createdAt: true,
-  updatedAt: true,
-} as const satisfies Prisma.RentalOrderSelect;
-
-type RentalOrderWithRelations = Prisma.RentalOrderGetPayload<{ include: typeof rentalOrderInclude }>;
-type RentalOrderListItemWithRelations = Prisma.RentalOrderGetPayload<{ select: typeof rentalOrderListSelect }>;
-type RentalProduct = Awaited<ReturnType<ProductsService['getActiveProductsForRental']>>[number];
-type RentalOrderFinancialBreakdownInput = Pick<
-  RentalOrderWithRelations,
-  | 'rentalFeeTotal'
-  | 'deliveryFeeTotal'
-  | 'discountTotal'
-  | 'lateFeeTotal'
-  | 'damageFeeTotal'
-  | 'compensationFeeTotal'
-  | 'chargeTotal'
-  | 'paidTotal'
-  | 'actualRefundTotal'
->;
-
-export type RentalOrderSettlementStatus = 'NEED_COLLECT' | 'NEED_REFUND' | 'SETTLED';
+type RentalOrderDetailRecord = Prisma.RentalOrderGetPayload<{ include: typeof orderDetailInclude }>;
+type PreparedQuote = Awaited<ReturnType<RentalOrdersService['prepareQuote']>>;
+type DbClient = Prisma.TransactionClient;
+type RentalOrderCustomerSnapshotValue = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  identityNumber: string | null;
+};
 
 @Injectable()
 export class RentalOrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly productsService: ProductsService,
-    private readonly systemSettingsService: SystemSettingsService,
     private readonly availabilityService: RentalOrderAvailabilityService,
     private readonly pricingService: RentalOrderPricingService,
-    private readonly eventsService: RentalOrderEventsService,
-    private readonly logsService: RentalOrderLogsService,
+    private readonly financialService: RentalOrderFinancialService,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   async getAllRentalOrders(query: GetAllRentalOrdersDto) {
-    const { search, customerId, status, paymentStatus, refundStatus, source, pickupMethod, fromDate, toDate, page, perPage, sort, sortBy } = query;
-    const skip = (page - 1) * perPage;
-    const searchText = normalizeSearchText(search);
-
+    const searchText = normalizeSearchText(query.search);
     const where: Prisma.RentalOrderWhereInput = {
       deletedAt: null,
-      ...(customerId && { customerId }),
-      ...(status && { status }),
-      ...(paymentStatus && { paymentStatus }),
-      ...(refundStatus && { refundStatus }),
-      ...(source && { source }),
-      ...(pickupMethod && { pickupMethod }),
-      ...(searchText && {
-        searchText: {
-          contains: searchText,
-        },
-      }),
-      ...(fromDate &&
-        toDate && {
-          startDate: {
-            lt: toDate,
-          },
-          endDate: {
-            gt: fromDate,
-          },
-        }),
-      ...(fromDate &&
-        !toDate && {
-          endDate: {
-            gt: fromDate,
-          },
-        }),
-      ...(!fromDate &&
-        toDate && {
-          startDate: {
-            lt: toDate,
-          },
-        }),
+      ...(query.customerId ? { customerId: query.customerId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.settlementStatus ? { settlementStatus: query.settlementStatus } : {}),
+      ...(query.source ? { source: query.source } : {}),
+      ...(query.pickupMethod ? { pickupMethod: query.pickupMethod } : {}),
+      ...(query.fromDate || query.toDate
+        ? { startDate: { ...(query.fromDate ? { gte: query.fromDate } : {}), ...(query.toDate ? { lte: query.toDate } : {}) } }
+        : {}),
+      ...(searchText ? { searchText: { contains: searchText } } : {}),
     };
-
+    const field = this.sortField(query.sortBy);
+    const orderBy = { [field]: query.sort } as Prisma.RentalOrderOrderByWithRelationInput;
+    const skip = (query.page - 1) * query.perPage;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.rentalOrder.findMany({
         where,
         skip,
-        take: perPage,
-        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
-        select: this.rentalOrderListSelect(),
+        take: query.perPage,
+        orderBy: [orderBy, { id: 'asc' }],
+        select: {
+          id: true,
+          code: true,
+          source: true,
+          status: true,
+          handoverStatus: true,
+          returnStatus: true,
+          settlementStatus: true,
+          customerSnapshot: true,
+          startDate: true,
+          endDate: true,
+          actualReturnDate: true,
+          rentalFeeTotal: true,
+          deliveryFeeTotal: true,
+          bookingHoldTotal: true,
+          securityDepositTotal: true,
+          totalCustomerObligation: true,
+          paidTotal: true,
+          amountDueBeforeHandover: true,
+          refundDue: true,
+          additionalChargeDue: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
       this.prisma.rentalOrder.count({ where }),
     ]);
 
-    return {
-      items: items.map((item) => this.toRentalOrderListItemOut(item)),
-      total,
-      page,
-      perPage,
-    };
+    return { items: items.map((item) => this.toListOut(item)), total, page: query.page, perPage: query.perPage };
   }
 
   async getRentalOrderById(id: string): Promise<RentalOrderOutDto> {
-    const order = await this.findExistingRentalOrderById(id);
-
-    return this.toRentalOrderOut(order);
+    return this.toDetailOut(await this.findDetailOrThrow(id));
   }
 
-  async createRentalOrder(dto: CreateRentalOrderDto, currentUser: AuthUser): Promise<RentalOrderOutDto> {
-    const systemSettings = await this.systemSettingsService.getDefaultSettingsForOrder();
-    const normalizedItems = this.normalizeItems(dto.items);
-    const availability = await this.availabilityService.evaluateAvailability({
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      items: normalizedItems,
-      systemSettings,
+  async createRentalQuote(dto: CreateRentalQuoteDto, user: AuthUser): Promise<RentalOrderQuoteOutDto> {
+    const prepared = await this.prepareQuote(dto);
+    const expiresAt = new Date(Date.now() + 15 * 60_000);
+    const quote = await this.prisma.rentalOrderQuote.create({
+      data: {
+        customerId: dto.customerId,
+        source: OrderSource.ADMIN,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        pickupMethod: dto.pickupMethod as PickupMethod,
+        deliveryAddress: dto.deliveryAddress,
+        requestSnapshot: this.jsonValue(this.quoteRequestSnapshot(dto)),
+        responseSnapshot: this.jsonValue({
+          availability: prepared.availability,
+          lines: prepared.lines.map((line) => this.quoteLineOut(line)),
+          summary: prepared.totals,
+        }),
+        policyVersion: prepared.policyVersion,
+        expiresAt,
+        createdBy: user.id,
+      },
     });
 
-    this.assertAvailable(availability);
+    return {
+      quoteId: quote.id,
+      expiresAt: quote.expiresAt,
+      policyVersion: quote.policyVersion,
+      availability: prepared.availability,
+      lines: prepared.lines.map((line) => this.quoteLineOut(line)),
+      summary: prepared.totals,
+    };
+  }
 
-    const [customer, products, assetUnits] = await Promise.all([
-      this.findCustomerForRental(dto.customerId),
-      this.findProductsForItems(normalizedItems),
-      this.findAssetUnitsForItems(normalizedItems),
-    ]);
-    const pricedItems = this.pricingService.priceItems(
-      normalizedItems,
-      products,
-      assetUnits,
-      systemSettings,
-      dto.startDate,
-      dto.endDate,
-      availability.blockedEndDate,
-    );
-    const totals = this.pricingService.calculateTotals(pricedItems, dto.deliveryFeeTotal ?? 0, dto.discountTotal ?? 0);
-
-    const order = await this.prisma.$transaction(async (tx) => {
-      const code = await this.generateOrderCode(tx);
-
+  async createRentalOrder(dto: CreateRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    const quote = await this.prisma.rentalOrderQuote.findUnique({ where: { id: dto.quoteId } });
+    if (!quote || quote.consumedAt || quote.expiresAt <= new Date()) {
+      throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
+    }
+    const request = this.parseQuoteRequest(quote.requestSnapshot);
+    if (!request.customerId) {
+      throw new BadRequestException(RENTAL_ORDER_CUSTOMER_INVALID);
+    }
+    const prepared = await this.prepareQuote({ ...request, excludeOrderId: undefined });
+    if (!prepared.availability.available) {
+      throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
+    }
+    const customer = await this.findCustomerOrThrow(request.customerId);
+    const orderId = await this.prisma.$transaction(async (tx) => {
+      const code = await this.generateOrderCode();
       const order = await tx.rentalOrder.create({
         data: {
           code,
           source: OrderSource.ADMIN,
           status: OrderStatus.CREATED,
-          paymentStatus: PaymentStatus.UNPAID,
-          refundStatus: RefundStatus.NOT_REQUIRED,
-          settingsSnapshot: this.buildSettingsSnapshot(systemSettings),
+          handoverStatus: HandoverStatus.PENDING_PAYMENT,
+          returnStatus: ReturnStatus.NOT_RETURNED,
+          settlementStatus: RentalSettlementStatus.NOT_STARTED,
+          settingsSnapshot: this.jsonValue(prepared.settingsSnapshot),
+          policyVersion: prepared.policyVersion,
           customerId: customer.id,
-          customerSnapshot: this.buildCustomerSnapshot(customer),
-          startDate: dto.startDate,
-          endDate: dto.endDate,
-          pickupMethod: dto.pickupMethod ?? PickupMethod.PICKUP_AT_STORE,
-          deliveryAddress: dto.deliveryAddress,
-          deliveryFeeTotal: totals.deliveryFeeTotal,
-          rentalFeeTotal: totals.rentalFeeTotal,
-          depositTotal: totals.depositTotal,
-          bookingHoldTotal: totals.bookingHoldTotal,
-          lateFeeTotal: totals.lateFeeTotal,
-          damageFeeTotal: totals.damageFeeTotal,
-          compensationFeeTotal: totals.compensationFeeTotal,
-          chargeTotal: totals.chargeTotal,
-          discountTotal: totals.discountTotal,
-          paidTotal: 0,
-          estimatedRefundTotal: totals.estimatedRefundTotal,
-          actualRefundTotal: totals.actualRefundTotal,
-          adjustedDepositTotal: totals.adjustedDepositTotal,
-          handoverRequiredTotal: totals.handoverRequiredTotal,
-          handoverAmountDue: totals.handoverAmountDue,
+          customerSnapshot: this.jsonValue(this.customerSnapshot(customer)),
+          startDate: request.startDate,
+          endDate: request.endDate,
+          pickupMethod: request.pickupMethod as PickupMethod,
+          deliveryAddress: request.deliveryAddress,
           note: dto.note,
           internalNote: dto.internalNote,
-          createdBy: currentUser.id,
-          searchText: this.buildOrderSearchText({
+          searchText: buildRentalOrderSearchText({
             code,
-            customer,
-            deliveryAddress: dto.deliveryAddress,
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            customerEmail: customer.email,
+            customerIdentityNumber: customer.identityNumber,
+            deliveryAddress: request.deliveryAddress,
             note: dto.note,
             internalNote: dto.internalNote,
           }),
-          items: {
-            create: this.pricingService.toCreateOrderItemsData(pricedItems),
+          createdBy: user.id,
+          quoteId: quote.id,
+          lines: {
+            create: prepared.lines.map((line) => ({
+              productId: line.product.id,
+              quantity: line.quantity,
+              unitRentalFee: line.pricing.unitRentalFee,
+              unitDepositAmount: line.pricing.unitDepositAmount,
+              unitBookingHoldAmount: line.pricing.unitBookingHoldAmount,
+              lineRentalTotal: line.pricing.lineRentalTotal,
+              lineDepositTotal: line.pricing.lineDepositTotal,
+              lineBookingHoldTotal: line.pricing.lineBookingHoldTotal,
+              pricingSnapshot: this.jsonValue(line.pricing),
+              accessoriesSnapshot: line.product.includedAccessories ? this.jsonValue({ text: line.product.includedAccessories }) : undefined,
+              note: line.note,
+              allocations: {
+                create: line.assetUnitIds.map((assetUnitId) => ({
+                  assetUnitId,
+                  source: 'AUTO_ALLOCATED' as const,
+                  status: RentalAllocationStatus.RESERVED,
+                  startDate: request.startDate,
+                  endDate: request.endDate,
+                  blockedEndDate: prepared.blockedEndDate,
+                  allocatedAt: new Date(),
+                })),
+              },
+            })),
           },
         },
-        include: this.rentalOrderInclude(),
+        include: { lines: true },
       });
-
-      await this.eventsService.appendStatusChange(tx, {
-        orderId: order.id,
-        fromStatus: null,
-        toStatus: OrderStatus.CREATED,
-        createdBy: currentUser.id,
-        note: 'Order created',
-      });
-
-      await this.logsService.appendLog(tx, {
-        orderId: order.id,
-        actor: currentUser,
-        action: RentalOrderLogAction.CreateOrder,
-        changes: [
-          { field: 'code', label: 'Mã đơn', oldValue: null, newValue: code },
-          { field: 'status', label: 'Trang thái', oldValue: null, newValue: OrderStatus.CREATED },
-          { field: 'customerId', label: 'Khách hàng', oldValue: null, newValue: customer.id },
-          { field: 'rentalPeriod.startDate', label: 'Giờ nhận', oldValue: null, newValue: dto.startDate },
-          { field: 'rentalPeriod.endDate', label: 'Giờ trả', oldValue: null, newValue: dto.endDate },
-          { field: 'financials.rentalFeeTotal', label: 'Tiền thuê', oldValue: null, newValue: totals.rentalFeeTotal },
-          { field: 'financials.depositTotal', label: 'Cọc theo thiết bị', oldValue: null, newValue: totals.depositTotal },
-          { field: 'items', label: 'Thiết bị', oldValue: null, newValue: pricedItems.map((item) => item.assetUnitId) },
+      await tx.rentalOrderCharge.createMany({
+        data: [
+          ...order.lines.flatMap((line) => [
+            { orderId: order.id, orderLineId: line.id, kind: RentalChargeKind.RENTAL_FEE, amount: line.lineRentalTotal, status: RentalChargeStatus.OPEN, refundable: false },
+            { orderId: order.id, orderLineId: line.id, kind: RentalChargeKind.BOOKING_HOLD, amount: line.lineBookingHoldTotal, status: RentalChargeStatus.OPEN, refundable: false },
+            { orderId: order.id, orderLineId: line.id, kind: RentalChargeKind.SECURITY_DEPOSIT, amount: line.lineDepositTotal, status: RentalChargeStatus.OPEN, refundable: true },
+          ]),
+          ...(prepared.totals.deliveryFeeTotal > 0
+            ? [{ orderId: order.id, kind: RentalChargeKind.DELIVERY_FEE, amount: prepared.totals.deliveryFeeTotal, status: RentalChargeStatus.OPEN, refundable: false }]
+            : []),
         ],
-        note: dto.note,
       });
-
-      return tx.rentalOrder.findFirstOrThrow({
-        where: { id: order.id },
-        include: this.rentalOrderInclude(),
-      });
+      await tx.orderStatusHistory.create({ data: { orderId: order.id, fromStatus: null, toStatus: OrderStatus.CREATED, note: 'Order created from quote', createdBy: user.id } });
+      await tx.rentalOrderQuote.update({ where: { id: quote.id }, data: { consumedAt: new Date() } });
+      await this.financialService.recalculateOrder(order.id, tx);
+      return order.id;
     });
 
-    return this.toRentalOrderOut(order);
+    return this.getRentalOrderById(orderId);
   }
 
-  async updateRentalOrder(id: string, dto: UpdateRentalOrderDto, currentUser: AuthUser): Promise<RentalOrderOutDto> {
-    const existingOrder = await this.findExistingRentalOrderById(id);
-    this.assertStatusIn(existingOrder.status, [OrderStatus.CREATED, OrderStatus.CONFIRMED]);
+  async updateRentalOrder(id: string, dto: UpdateRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    const existing = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+    if (!existing) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+    if (existing.status !== OrderStatus.CREATED) throw new BadRequestException(INCORRECT_INPUT);
+    const successfulPayment = await this.prisma.paymentTransaction.count({ where: { orderId: id, status: PaymentTransactionStatus.SUCCESS } });
+    if (successfulPayment > 0) throw new BadRequestException(INCORRECT_INPUT);
 
-    const startDate = dto.startDate ?? existingOrder.startDate;
-    const endDate = dto.endDate ?? existingOrder.endDate;
-    const shouldReprice = Boolean(dto.startDate || dto.endDate || dto.items);
-    const normalizedItems = dto.items
-      ? this.normalizeItems(dto.items).map((item) => {
-          const existingItem = existingOrder.items.find(
-            (orderItem) =>
-              orderItem.productId === item.productId &&
-              orderItem.assetUnitId === item.assetUnitId &&
-              orderItem.deletedAt === null &&
-              orderItem.status !== RentalOrderItemStatus.CANCELLED,
-          );
+    const existingCustomerSnapshot = existing.customerSnapshot as unknown as RentalOrderCustomerSnapshotValue;
+    const nextCustomerSnapshot = dto.customerSnapshot
+      ? this.customerSnapshotFromUpdate(dto.customerSnapshot)
+      : existingCustomerSnapshot;
+    const nextNote = dto.note !== undefined ? dto.note : existing.note;
+    const nextInternalNote = dto.internalNote !== undefined ? dto.internalNote : existing.internalNote;
+    const hasScheduleChange = Boolean(dto.quoteId || dto.items || dto.startDate || dto.endDate || dto.pickupMethod || dto.deliveryAddress !== undefined);
+    if (hasScheduleChange && !dto.quoteId) throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
 
-          return {
-            ...item,
-            id: existingItem?.id,
-          };
-        })
-      : this.normalizeExistingItems(existingOrder.items.filter((item) => item.deletedAt === null && item.status !== RentalOrderItemStatus.CANCELLED));
-    const systemSettings = await this.systemSettingsService.getDefaultSettingsForOrder();
-    const availability = shouldReprice
-      ? await this.availabilityService.evaluateAvailability({
-          startDate,
-          endDate,
-          items: normalizedItems,
-          excludeOrderId: id,
-          systemSettings,
-        })
-      : null;
-
-    if (availability) {
-      this.assertAvailable(availability);
-    }
-
-    const customer = existingOrder.customer;
-    const pricedItems = shouldReprice
-      ? this.pricingService.priceItems(
-          normalizedItems,
-          ...(await Promise.all([this.findProductsForItems(normalizedItems), this.findAssetUnitsForItems(normalizedItems)])),
-          systemSettings,
-          startDate,
-          endDate,
-          availability!.blockedEndDate,
-        )
-      : [];
-    const deliveryAddress = this.hasOwn(dto, 'deliveryAddress') ? (dto.deliveryAddress ?? null) : existingOrder.deliveryAddress;
-    const note = this.hasOwn(dto, 'note') ? (dto.note ?? null) : existingOrder.note;
-    const internalNote = this.hasOwn(dto, 'internalNote') ? (dto.internalNote ?? null) : existingOrder.internalNote;
-    const deliveryFeeTotal = dto.deliveryFeeTotal ?? Number(existingOrder.deliveryFeeTotal);
-    const discountTotal = dto.discountTotal ?? Number(existingOrder.discountTotal);
-    const nonRepricedChargeTotal = Math.max(
-      Number(existingOrder.rentalFeeTotal) +
-        Number(existingOrder.lateFeeTotal) +
-        Number(existingOrder.damageFeeTotal) +
-        Number(existingOrder.compensationFeeTotal) +
-        deliveryFeeTotal -
-        discountTotal,
-      0,
-    );
-    const nonRepricedOriginalDepositTotal = existingOrder.items
-      .filter((item) => item.deletedAt === null && item.status !== RentalOrderItemStatus.CANCELLED)
-      .reduce((total, item) => total + Number(item.depositAmount), 0);
-    const nonRepricedDepositTotal = this.pricingService.calculateProtectedDepositTotal(nonRepricedOriginalDepositTotal, nonRepricedChargeTotal);
-    const nonRepricedHandoverTotals = this.pricingService.calculateHandoverTotals(
-      nonRepricedDepositTotal,
-      nonRepricedChargeTotal,
-      existingOrder.collateralType,
-    );
-    const totals = shouldReprice
-      ? this.pricingService.calculateTotals(pricedItems, deliveryFeeTotal, discountTotal)
-      : {
-          deliveryFeeTotal,
-          rentalFeeTotal: Number(existingOrder.rentalFeeTotal),
-          depositTotal: nonRepricedDepositTotal,
-          bookingHoldTotal: Number(existingOrder.bookingHoldTotal),
-          lateFeeTotal: Number(existingOrder.lateFeeTotal),
-          damageFeeTotal: Number(existingOrder.damageFeeTotal),
-          compensationFeeTotal: Number(existingOrder.compensationFeeTotal),
-          chargeTotal: nonRepricedChargeTotal,
-          discountTotal,
-          adjustedDepositTotal: nonRepricedHandoverTotals.adjustedDepositTotal,
-          handoverRequiredTotal: nonRepricedHandoverTotals.handoverRequiredTotal,
-          handoverAmountDue: Math.max(nonRepricedHandoverTotals.handoverRequiredTotal - Number(existingOrder.paidTotal), 0),
-          estimatedRefundTotal: Math.max(nonRepricedHandoverTotals.handoverRequiredTotal - nonRepricedChargeTotal, 0),
-          actualRefundTotal: Number(existingOrder.actualRefundTotal),
-        };
-    const customerSnapshot = this.mergeJsonObject(existingOrder.customerSnapshot, dto.customerSnapshot);
-
-    const order = await this.prisma.$transaction(async (tx) => {
-      if (shouldReprice && dto.items && existingOrder.status === OrderStatus.CREATED) {
-        await tx.rentalOrderItem.deleteMany({
-          where: {
-            orderId: id,
-          },
-        });
-
-        await tx.rentalOrderItem.createMany({
-          data: this.pricingService.toCreateManyOrderItemsData(id, pricedItems),
-        });
-      } else if (shouldReprice && dto.items && existingOrder.status === OrderStatus.CONFIRMED) {
-        const nextActiveItemIds = new Set(pricedItems.filter((item) => item.id).map((item) => item.id!));
-
-        await tx.rentalOrderItem.updateMany({
-          where: {
-            orderId: id,
-            deletedAt: null,
-            status: {
-              in: [RentalOrderItemStatus.PENDING, RentalOrderItemStatus.ACTIVE],
-            },
-            id: {
-              notIn: [...nextActiveItemIds],
-            },
-          },
-          data: {
-            status: RentalOrderItemStatus.CANCELLED,
-            updatedBy: currentUser.id,
-          },
-        });
-
-        for (const item of pricedItems) {
-          if (item.id) {
-            await tx.rentalOrderItem.update({
-              where: {
-                id: item.id,
-              },
-              data: {
-                ...this.pricingService.toUpdateOrderItemData(item),
-                status: RentalOrderItemStatus.ACTIVE,
-                updatedBy: currentUser.id,
-              },
-            });
-          } else {
-            await tx.rentalOrderItem.create({
-              data: {
-                ...this.pricingService.toCreateManyOrderItemsData(id, [item])[0],
-                status: RentalOrderItemStatus.ACTIVE,
-                createdBy: currentUser.id,
-              },
-            });
-          }
-        }
-      } else if (shouldReprice) {
-        for (const item of pricedItems) {
-          if (!item.id) continue;
-
-          await tx.rentalOrderItem.update({
-            where: { id: item.id },
-            data: this.pricingService.toUpdateOrderItemData(item),
-          });
-        }
-      }
-
-      const updatedOrder = await tx.rentalOrder.update({
+    if (!dto.quoteId) {
+      await this.prisma.rentalOrder.update({
         where: { id },
         data: {
-          customerSnapshot,
-          startDate,
-          endDate,
-          settingsSnapshot: this.buildSettingsSnapshot(systemSettings),
-          pickupMethod: dto.pickupMethod,
-          deliveryAddress,
-          deliveryFeeTotal: totals.deliveryFeeTotal,
-          rentalFeeTotal: totals.rentalFeeTotal,
-          depositTotal: totals.depositTotal,
-          bookingHoldTotal: totals.bookingHoldTotal,
-          lateFeeTotal: totals.lateFeeTotal,
-          damageFeeTotal: totals.damageFeeTotal,
-          compensationFeeTotal: totals.compensationFeeTotal,
-          chargeTotal: totals.chargeTotal,
-          discountTotal: totals.discountTotal,
-          estimatedRefundTotal: totals.estimatedRefundTotal,
-          actualRefundTotal: totals.actualRefundTotal,
-          adjustedDepositTotal: totals.adjustedDepositTotal,
-          handoverRequiredTotal: totals.handoverRequiredTotal,
-          handoverAmountDue: Math.max(totals.handoverRequiredTotal - Number(existingOrder.paidTotal), 0),
-          note,
-          internalNote,
-          updatedBy: currentUser.id,
-          searchText: this.buildOrderSearchText({
-            code: existingOrder.code,
-            customer: this.getCustomerForSearch(customerSnapshot, customer),
-            deliveryAddress,
-            note,
-            internalNote,
-            cancelReason: existingOrder.cancelReason,
+          ...(dto.customerSnapshot ? { customerSnapshot: this.jsonValue(nextCustomerSnapshot) } : {}),
+          note: nextNote,
+          internalNote: nextInternalNote,
+          updatedBy: user.id,
+          searchText: buildRentalOrderSearchText({
+            code: existing.code,
+            customerName: nextCustomerSnapshot.name,
+            customerPhone: nextCustomerSnapshot.phone,
+            customerEmail: nextCustomerSnapshot.email,
+            customerIdentityNumber: nextCustomerSnapshot.identityNumber,
+            deliveryAddress: existing.deliveryAddress,
+            note: nextNote,
+            internalNote: nextInternalNote,
+            cancelReason: existing.cancelReason,
           }),
         },
-        include: this.rentalOrderInclude(),
       });
-
-      await this.logsService.appendLog(tx, {
-        orderId: id,
-        actor: currentUser,
-        action: RentalOrderLogAction.UpdateOrder,
-        changes: this.buildUpdateOrderChanges(existingOrder, updatedOrder),
-        note: dto.note ?? dto.internalNote,
-        skipIfNoChanges: true,
-      });
-
-      return tx.rentalOrder.findFirstOrThrow({
-        where: { id },
-        include: this.rentalOrderInclude(),
-      });
-    });
-
-    return this.toRentalOrderOut(order);
-  }
-
-  async deleteRentalOrders(dto: DeleteRentalOrdersDto, currentUser: AuthUser): Promise<{ success: true }> {
-    const uniqueIds = [...new Set(dto.rentalOrderIds)];
-    if (uniqueIds.length === 0) {
-      return { success: true };
+      return this.getRentalOrderById(id);
     }
 
-    const orders = await this.prisma.rentalOrder.findMany({
-      where: { id: { in: uniqueIds } },
-      select: { id: true, code: true, status: true, deletedAt: true },
-    });
-
-    for (const order of orders) {
-      this.assertStatusIn(order.status, SOFT_DELETABLE_STATUSES);
-    }
+    const quote = await this.prisma.rentalOrderQuote.findUnique({ where: { id: dto.quoteId } });
+    if (!quote || quote.expiresAt <= new Date() || quote.consumedAt) throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
+    const request = this.parseQuoteRequest(quote.requestSnapshot);
+    if (request.customerId !== existing.customerId) throw new BadRequestException(INCORRECT_INPUT);
+    const prepared = await this.prepareQuote({ ...request, customerId: existing.customerId, excludeOrderId: id });
+    if (!prepared.availability.available) throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
 
     await this.prisma.$transaction(async (tx) => {
-      const deletedAt = new Date();
-
-      await tx.rentalOrderItem.updateMany({
-        where: {
-          orderId: { in: uniqueIds },
-          deletedAt: null,
-        },
+      await tx.rentalOrderCharge.deleteMany({ where: { orderId: id } });
+      await tx.rentalOrderLine.deleteMany({ where: { orderId: id } });
+      const lines = await Promise.all(prepared.lines.map((line) => tx.rentalOrderLine.create({
         data: {
-          status: RentalOrderItemStatus.CANCELLED,
-          deletedAt,
-          deletedBy: currentUser.id,
+          orderId: id,
+          productId: line.product.id,
+          quantity: line.quantity,
+          unitRentalFee: line.pricing.unitRentalFee,
+          unitDepositAmount: line.pricing.unitDepositAmount,
+          unitBookingHoldAmount: line.pricing.unitBookingHoldAmount,
+          lineRentalTotal: line.pricing.lineRentalTotal,
+          lineDepositTotal: line.pricing.lineDepositTotal,
+          lineBookingHoldTotal: line.pricing.lineBookingHoldTotal,
+          pricingSnapshot: this.jsonValue(line.pricing),
+          accessoriesSnapshot: line.product.includedAccessories ? this.jsonValue({ text: line.product.includedAccessories }) : undefined,
+          note: line.note,
+          allocations: { create: line.assetUnitIds.map((assetUnitId) => ({ assetUnitId, source: 'AUTO_ALLOCATED' as const, status: RentalAllocationStatus.RESERVED, startDate: request.startDate, endDate: request.endDate, blockedEndDate: prepared.blockedEndDate, allocatedAt: new Date() })) },
+        },
+      })));
+      await tx.rentalOrderCharge.createMany({
+        data: [
+          ...lines.flatMap((line) => [
+            { orderId: id, orderLineId: line.id, kind: RentalChargeKind.RENTAL_FEE, amount: line.lineRentalTotal, status: RentalChargeStatus.OPEN, refundable: false },
+            { orderId: id, orderLineId: line.id, kind: RentalChargeKind.BOOKING_HOLD, amount: line.lineBookingHoldTotal, status: RentalChargeStatus.OPEN, refundable: false },
+            { orderId: id, orderLineId: line.id, kind: RentalChargeKind.SECURITY_DEPOSIT, amount: line.lineDepositTotal, status: RentalChargeStatus.OPEN, refundable: true },
+          ]),
+          ...(prepared.totals.deliveryFeeTotal > 0 ? [{ orderId: id, kind: RentalChargeKind.DELIVERY_FEE, amount: prepared.totals.deliveryFeeTotal, status: RentalChargeStatus.OPEN, refundable: false }] : []),
+        ],
+      });
+      await tx.rentalOrder.update({
+        where: { id },
+        data: {
+          customerSnapshot: this.jsonValue(nextCustomerSnapshot),
+          startDate: request.startDate,
+          endDate: request.endDate,
+          pickupMethod: request.pickupMethod as PickupMethod,
+          deliveryAddress: request.deliveryAddress,
+          note: nextNote,
+          internalNote: nextInternalNote,
+          quoteId: quote.id,
+          updatedBy: user.id,
+          searchText: buildRentalOrderSearchText({
+            code: existing.code,
+            customerName: nextCustomerSnapshot.name,
+            customerPhone: nextCustomerSnapshot.phone,
+            customerEmail: nextCustomerSnapshot.email,
+            customerIdentityNumber: nextCustomerSnapshot.identityNumber,
+            deliveryAddress: request.deliveryAddress,
+            note: nextNote,
+            internalNote: nextInternalNote,
+            cancelReason: existing.cancelReason,
+          }),
         },
       });
-
-      await tx.rentalOrder.updateMany({
-        where: { id: { in: uniqueIds } },
-        data: {
-          deletedAt,
-          deletedBy: currentUser.id,
-        },
-      });
-
-      for (const order of orders) {
-        await this.logsService.appendLog(tx, {
-          orderId: order.id,
-          actor: currentUser,
-          action: RentalOrderLogAction.DeleteOrder,
-          changes: [
-            { field: 'deletedAt', label: 'Xóa mềm', oldValue: order.deletedAt, newValue: deletedAt },
-            { field: 'status', label: 'Trạng thái', oldValue: order.status, newValue: order.status },
-          ],
-          note: `Xoa don ${order.code}`,
-        });
-      }
+      await tx.rentalOrderQuote.update({ where: { id: quote.id }, data: { consumedAt: new Date() } });
+      await this.financialService.recalculateOrder(id, tx);
     });
 
+    return this.getRentalOrderById(id);
+  }
+
+  async deleteRentalOrders(dto: DeleteRentalOrdersDto, user: AuthUser): Promise<{ success: true }> {
+    const ids = [...new Set(dto.rentalOrderIds)];
+    await this.prisma.$transaction(async (tx) => {
+      const orders = await tx.rentalOrder.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true, status: true } });
+      if (orders.some((order) => order.status !== OrderStatus.CREATED && order.status !== OrderStatus.CANCELLED)) throw new BadRequestException(INCORRECT_INPUT);
+      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: { in: ids } } }, data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() } });
+      await tx.rentalOrder.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date(), deletedBy: user.id, updatedBy: user.id } });
+    });
     return { success: true };
   }
 
-  async transitionOrderStatusInTransaction(
-    tx: Prisma.TransactionClient,
-    params: {
-      order: RentalOrderWithRelations;
-      nextStatus: OrderStatus;
-      currentUserId: string;
-      note?: string | null;
-    },
-  ): Promise<RentalOrderWithRelations> {
-    await this.eventsService.appendStatusChange(tx, {
-      orderId: params.order.id,
-      fromStatus: params.order.status,
-      toStatus: params.nextStatus,
-      createdBy: params.currentUserId,
-      note: params.note,
+  async cancelRentalOrder(id: string, dto: CancelRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+    if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+    if (order.status !== OrderStatus.CREATED && order.status !== OrderStatus.CONFIRMED) throw new BadRequestException(INCORRECT_INPUT);
+
+    await this.prisma.$transaction(async (tx) => {
+      const bookingCharges = await tx.rentalOrderCharge.findMany({ where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD }, include: { paymentAllocations: true } });
+      if (dto.refundBookingHold) {
+        await tx.rentalOrderCharge.updateMany({ where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD }, data: { status: RentalChargeStatus.CANCELLED } });
+        const paidBookingHold = bookingCharges.reduce((total, charge) => total + charge.paymentAllocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0), 0);
+        const refundAmount = Math.min(dto.refundAmount ?? paidBookingHold, paidBookingHold);
+        if (refundAmount > 0) {
+          await tx.refund.create({ data: { orderId: id, amount: refundAmount, status: RentalRefundStatus.PENDING, method: PaymentMethod.BANK_TRANSFER, note: dto.note, createdBy: user.id } });
+        }
+      } else {
+        await tx.rentalOrderCharge.updateMany({ where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD }, data: { kind: RentalChargeKind.CANCELLATION_FEE, refundable: false } });
+      }
+      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: id } }, data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() } });
+      assertRentalOrderTransition(order.status, OrderStatus.CANCELLED);
+      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.CANCELLED, cancelReason: dto.reason, updatedBy: user.id } });
+      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.CANCELLED, note: dto.note ?? dto.reason, createdBy: user.id } });
+      await this.financialService.recalculateOrder(id, tx);
     });
+    return this.getRentalOrderById(id);
+  }
 
-    return tx.rentalOrder.update({
-      where: {
-        id: params.order.id,
-      },
-      data: {
-        status: params.nextStatus,
-      },
-      include: this.rentalOrderInclude(),
+  async recordPayment(id: string, dto: RecordRentalOrderPaymentDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.findActionableOrder(id);
+    const status = dto.status ?? PaymentTransactionStatus.PENDING;
+    const paymentId = await this.prisma.$transaction(async (tx) => {
+      if (dto.idempotencyKey) {
+        const existing = await tx.paymentTransaction.findFirst({ where: { orderId: id, idempotencyKey: dto.idempotencyKey } });
+        if (existing) return existing.id;
+      }
+      const payment = await tx.paymentTransaction.create({ data: { orderId: id, direction: PaymentDirection.INBOUND, amount: dto.amount, method: dto.method, status, referenceCode: dto.referenceCode, idempotencyKey: dto.idempotencyKey, metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined, createdBy: user.id } });
+      if (status === PaymentTransactionStatus.SUCCESS) await this.financialService.allocatePayment(payment.id, tx);
+      await this.financialService.recalculateOrder(id, tx);
+      if (status === PaymentTransactionStatus.SUCCESS) await this.promoteToConfirmedIfReady(id, user.id, tx);
+      return payment.id;
     });
+    void paymentId;
+    return this.getRentalOrderById(id);
   }
 
-  async acquireAdvisoryLocks(tx: Prisma.TransactionClient, keys: string[]): Promise<void> {
-    for (const key of [...new Set(keys)].sort()) {
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
-    }
+  async confirmPayment(id: string, paymentId: string, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.paymentTransaction.findFirst({ where: { id: paymentId, orderId: id } });
+      if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
+      await tx.paymentTransaction.update({ where: { id: paymentId }, data: { status: PaymentTransactionStatus.SUCCESS, updatedAt: new Date() } });
+      await this.financialService.allocatePayment(paymentId, tx);
+      await this.financialService.recalculateOrder(id, tx);
+      await this.promoteToConfirmedIfReady(id, user.id, tx);
+    });
+    return this.getRentalOrderById(id);
   }
 
-  private normalizeItems(items: RentalOrderItemInDto[]): NormalizedRentalOrderItem[] {
-    return items.map((item) => ({
-      productId: item.productId,
-      assetUnitId: item.assetUnitId,
-      note: item.note,
-    }));
+  async rejectPayment(id: string, paymentId: string, dto: RejectPaymentDto): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.paymentTransaction.findFirst({ where: { id: paymentId, orderId: id } });
+      if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
+      await tx.paymentTransaction.update({ where: { id: paymentId }, data: { status: PaymentTransactionStatus.FAILED, metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined } });
+    });
+    return this.getRentalOrderById(id);
   }
 
-  normalizeExistingItems(items: RentalOrderWithRelations['items']): NormalizedRentalOrderItem[] {
-    return items.map((item) => ({
-      id: item.id,
-      productId: item.productId,
-      assetUnitId: item.assetUnitId,
-      note: item.note,
-    }));
+  async createRefund(id: string, dto: CreateRefundDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.financialService.recalculateOrder(id);
+    const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+    if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+    const pendingRefundStatuses: RentalRefundStatus[] = [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING];
+    const pendingRefunds = await this.prisma.refund.aggregate({ where: { orderId: id, status: { in: pendingRefundStatuses } }, _sum: { amount: true } });
+    const available = Number(order.refundDue) - Number(pendingRefunds._sum.amount ?? 0);
+    if (dto.amount > available) throw new BadRequestException(INCORRECT_INPUT);
+    await this.prisma.refund.create({ data: { orderId: id, amount: dto.amount, status: RentalRefundStatus.PENDING, method: dto.method, referenceCode: dto.referenceCode, note: dto.note, createdBy: user.id } });
+    return this.getRentalOrderById(id);
   }
 
-  assertAvailable(availability: RentalOrderAvailabilityOutDto): void {
-    if (!availability.isAvailable) {
-      throw new BadRequestException({
-        ...RENTAL_ORDER_UNAVAILABLE,
-        error: availability.unavailableItems,
+  async confirmRefund(id: string, refundId: string): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      const refund = await tx.refund.findFirst({ where: { id: refundId, orderId: id } });
+      if (!refund || (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING)) throw new BadRequestException(INCORRECT_INPUT);
+      await tx.refund.update({ where: { id: refundId }, data: { status: RentalRefundStatus.REFUNDED } });
+      await this.financialService.recalculateOrder(id, tx);
+    });
+    return this.getRentalOrderById(id);
+  }
+
+  async handoverOrder(id: string, dto: HandoverRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, include: { lines: { include: { allocations: true } } } });
+      if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      if (order.status !== OrderStatus.CONFIRMED) throw new BadRequestException(INCORRECT_INPUT);
+      const allocationCount = order.lines.reduce((total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length, 0);
+      const requiredCount = order.lines.reduce((total, line) => total + line.quantity, 0);
+      if (allocationCount < requiredCount || Number(order.amountDueBeforeHandover) > 0) throw new BadRequestException(RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT);
+      assertRentalOrderTransition(order.status, OrderStatus.RENTING);
+      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: id } }, data: { status: RentalAllocationStatus.HANDED_OVER } });
+      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.RENTING, handoverStatus: HandoverStatus.HANDED_OVER, actualPickupDate: dto.actualPickupDate ?? new Date(), updatedBy: user.id } });
+      await tx.rentalInspection.create({ data: { orderId: id, type: RentalInspectionType.HANDOVER, inspectedBy: user.id, note: dto.note, items: { create: order.lines.flatMap((line) => line.allocations.map((allocation) => ({ allocationId: allocation.id, condition: RentalInspectionCondition.GOOD }))) } } });
+      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RENTING, note: dto.note ?? 'Handover completed', createdBy: user.id } });
+    });
+    return this.getRentalOrderById(id);
+  }
+
+  async returnOrder(id: string, dto: ReturnRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+      if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      if (order.status !== OrderStatus.RENTING) throw new BadRequestException(INCORRECT_INPUT);
+      assertRentalOrderTransition(order.status, OrderStatus.RETURNED);
+      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: id }, status: RentalAllocationStatus.HANDED_OVER }, data: { status: RentalAllocationStatus.RETURNED } });
+      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.RETURNED, returnStatus: ReturnStatus.RETURNED, actualReturnDate: dto.actualReturnDate ?? new Date(), updatedBy: user.id } });
+      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RETURNED, note: dto.note ?? 'Equipment returned', createdBy: user.id } });
+    });
+    return this.getRentalOrderById(id);
+  }
+
+  async inspectOrder(id: string, dto: InspectRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, include: { lines: { include: { allocations: { include: { orderLine: { include: { product: true } } } } } } } });
+      if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      if (order.status !== OrderStatus.RETURNED || order.returnStatus !== ReturnStatus.RETURNED) throw new BadRequestException(INCORRECT_INPUT);
+      const allocations = order.lines.flatMap((line) => line.allocations);
+      const allocationIds = new Set(allocations.map((allocation) => allocation.id));
+      const inspectedAllocationIds = new Set(dto.items.map((item) => item.allocationId));
+      if (dto.items.length !== allocations.length || inspectedAllocationIds.size !== allocations.length || dto.items.some((item) => !allocationIds.has(item.allocationId))) throw new BadRequestException(INCORRECT_INPUT);
+      if (dto.items.some((item) => item.accessories?.some((accessory) => accessory.actualQuantity > accessory.expectedQuantity))) throw new BadRequestException(INCORRECT_INPUT);
+      const existingInspection = await tx.rentalInspection.findFirst({ where: { orderId: id, type: RentalInspectionType.RETURN } });
+      if (existingInspection) throw new BadRequestException(INCORRECT_INPUT);
+      await tx.rentalInspection.create({ data: { orderId: id, type: RentalInspectionType.RETURN, inspectedBy: user.id, note: dto.note, items: { create: dto.items.map((item) => ({ allocationId: item.allocationId, condition: item.condition, note: item.note, accessories: { create: (item.accessories ?? []).map((accessory) => ({ name: accessory.name, expectedQuantity: accessory.expectedQuantity, actualQuantity: accessory.actualQuantity, status: accessory.status, note: accessory.note })) } })) } } });
+
+      const allocationById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
+      const incidents: Array<{ orderId: string; allocationId: string; type: 'DAMAGE' | 'LOSS' | 'LATE_RETURN' | 'MISSING_ACCESSORY'; amount: number; note?: string; createdBy: string; metadata?: Prisma.InputJsonValue }> = [];
+      for (const item of dto.items) {
+        const allocation = allocationById.get(item.allocationId);
+        if (!allocation) continue;
+        const replacementValue = Number(allocation.orderLine.product.replacementValue ?? 0);
+        if (item.condition === RentalInspectionCondition.DAMAGED || item.condition === RentalInspectionCondition.MISSING) {
+          incidents.push({ orderId: id, allocationId: item.allocationId, type: item.condition === RentalInspectionCondition.MISSING ? 'LOSS' : 'DAMAGE', amount: item.condition === RentalInspectionCondition.MISSING ? replacementValue : Math.round(replacementValue * 0.25 * 100) / 100, note: item.note, createdBy: user.id });
+        }
+        for (const accessory of item.accessories ?? []) {
+          if (accessory.actualQuantity < accessory.expectedQuantity || accessory.status === 'DAMAGED') {
+            incidents.push({ orderId: id, allocationId: item.allocationId, type: 'MISSING_ACCESSORY', amount: 0, note: accessory.note ?? accessory.name, createdBy: user.id, metadata: this.jsonValue({ name: accessory.name, expectedQuantity: accessory.expectedQuantity, actualQuantity: accessory.actualQuantity }) });
+          }
+        }
+      }
+      const actualReturnDate = order.actualReturnDate ?? new Date();
+      if (actualReturnDate > order.endDate) {
+        const hoursLate = Math.ceil((actualReturnDate.getTime() - order.endDate.getTime()) / 3_600_000);
+        for (const allocation of allocations) {
+          const hourlyRate = Number(allocation.orderLine.product.hourlyOveragePrice ?? Number(allocation.orderLine.product.dailyPrice) / 24);
+          incidents.push({ orderId: id, allocationId: allocation.id, type: 'LATE_RETURN', amount: Math.round(hourlyRate * hoursLate * 100) / 100, note: `Late ${hoursLate} hour(s)`, createdBy: user.id });
+        }
+      }
+      if (incidents.length) {
+        await tx.rentalIncident.createMany({ data: incidents });
+        const chargeRows = incidents.filter((incident) => incident.amount > 0).map((incident) => ({ orderId: id, kind: incident.type === 'LATE_RETURN' ? RentalChargeKind.LATE_FEE : RentalChargeKind.DAMAGE_COMPENSATION, amount: incident.amount, status: RentalChargeStatus.OPEN, refundable: false, metadata: incident.metadata ?? this.jsonValue({ incidentType: incident.type, allocationId: incident.allocationId }) }));
+        if (chargeRows.length) await tx.rentalOrderCharge.createMany({ data: chargeRows });
+      }
+      await tx.rentalOrder.update({ where: { id }, data: { returnStatus: ReturnStatus.INSPECTED, updatedBy: user.id } });
+      await this.financialService.recalculateOrder(id, tx);
+    });
+    return this.getRentalOrderById(id);
+  }
+
+  async settleOrder(id: string, dto: SettleRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.financialService.recalculateOrder(id);
+    const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+    if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+    if (order.returnStatus !== ReturnStatus.INSPECTED || order.settlementStatus !== RentalSettlementStatus.SETTLED || Number(order.additionalChargeDue) > 0 || Number(order.refundDue) > 0) throw new BadRequestException(INCORRECT_INPUT);
+    if (order.status !== OrderStatus.RETURNED) throw new BadRequestException(INCORRECT_INPUT);
+    await this.prisma.$transaction(async (tx) => {
+      assertRentalOrderTransition(order.status, OrderStatus.DONE);
+      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.DONE, settlementStatus: RentalSettlementStatus.SETTLED, updatedBy: user.id } });
+      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.DONE, note: dto.note ?? 'Order settled', createdBy: user.id } });
+    });
+    return this.getRentalOrderById(id);
+  }
+
+  private async prepareQuote(input: CreateRentalQuoteDto): Promise<{
+    blockedEndDate: Date;
+    availability: { available: boolean; conflicts: unknown[] };
+    lines: Array<ReturnType<RentalOrderPricingService['buildQuoteLines']>[number]>;
+    totals: ReturnType<RentalOrderPricingService['calculateTotals']>;
+    settingsSnapshot: unknown;
+    policyVersion: string;
+  }> {
+    const settings = await this.systemSettingsService.getDefaultSettingsForOrder();
+    const itemsByProduct = new Map<string, RentalOrderItemDto>();
+    for (const item of input.items) {
+      const current = itemsByProduct.get(item.productId);
+      itemsByProduct.set(item.productId, {
+        productId: item.productId,
+        quantity: (current?.quantity ?? 0) + item.quantity,
+        note: item.note ?? current?.note,
       });
     }
-  }
-
-  assertStatusIn(status: OrderStatus, allowedStatuses: OrderStatus[]): void {
-    if (!allowedStatuses.includes(status)) {
-      throw new BadRequestException(RENTAL_ORDER_STATUS_TRANSITION_INVALID);
-    }
-  }
-
-  private async findCustomerForRental(customerId: string) {
-    const customer = await this.prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        deletedAt: null,
-        status: {
-          not: CustomerStatus.BLOCKED,
-        },
-      },
+    const requestedItems = [...itemsByProduct.values()];
+    const productIds = requestedItems.map((item) => item.productId);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, deletedAt: null, isActive: true },
+      include: { rentalPriceTiers: { where: { deletedAt: null }, orderBy: [{ minDays: 'asc' }, { id: 'asc' }] } },
     });
+    if (products.length !== productIds.length) throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const availability = await this.availabilityService.selectAvailableAssets({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      items: requestedItems,
+      excludeOrderId: input.excludeOrderId,
+    });
+    const allocationByProduct = new Map(availability.allocations.map((allocation) => [allocation.productId, allocation]));
+    const selections = requestedItems.map((item) => {
+      const product = productById.get(item.productId);
+      const allocation = allocationByProduct.get(item.productId);
+      if (!product || !allocation) throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
+      return { product, assetUnitIds: allocation.assetUnitIds, quantity: item.quantity, note: item.note };
+    });
+    const lines = this.pricingService.buildQuoteLines({ selections, startDate: input.startDate, endDate: input.endDate, bookingHoldPerUnit: Number(settings.bookingHoldPricePerUnit) });
+    return {
+      blockedEndDate: availability.blockedEndDate,
+      availability: { available: availability.isAvailable, conflicts: availability.unavailableItems },
+      lines,
+      totals: this.pricingService.calculateTotals(lines, 0),
+      settingsSnapshot: { bookingHoldPricePerUnit: Number(settings.bookingHoldPricePerUnit), bookingBufferTimeMinutes: settings.bookingBufferTimeMinutes, maxRentalTimeDays: settings.maxRentalTimeDays, maxLateReturnTimeHours: settings.maxLateReturnTimeHours },
+      policyVersion: 'v1',
+    };
+  }
 
-    if (!customer) {
-      throw new BadRequestException(RENTAL_ORDER_CUSTOMER_INVALID);
-    }
+  private async findDetailOrThrow(id: string): Promise<RentalOrderDetailRecord> {
+    const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null }, include: orderDetailInclude });
+    if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+    return order;
+  }
 
+  private async findActionableOrder(id: string) {
+    const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+    if (!order || order.status === OrderStatus.CANCELLED || order.status === OrderStatus.DONE) throw new BadRequestException(INCORRECT_INPUT);
+    return order;
+  }
+
+  private async findCustomerOrThrow(id: string) {
+    const customer = await this.prisma.customer.findFirst({ where: { id, deletedAt: null, status: CustomerStatus.ACTIVE } });
+    if (!customer) throw new BadRequestException(RENTAL_ORDER_CUSTOMER_INVALID);
     return customer;
   }
 
-  private async findProductsForItems(items: NormalizedRentalOrderItem[]): Promise<RentalProduct[]> {
-    const productIds = [...new Set(items.map((item) => item.productId))];
-    const products = await this.productsService.getActiveProductsForRental(productIds);
-
-    if (products.length !== productIds.length) {
-      throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
-    }
-
-    return products;
+  private async promoteToConfirmedIfReady(id: string, userId: string, tx: DbClient): Promise<void> {
+    const order = await tx.rentalOrder.findUnique({ where: { id }, include: { lines: { include: { allocations: true } } } });
+    if (!order || order.status !== OrderStatus.CREATED || Number(order.amountDueBeforeHandover) > 0) return;
+    const allocated = order.lines.reduce((total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length, 0);
+    const required = order.lines.reduce((total, line) => total + line.quantity, 0);
+    if (allocated < required) return;
+    assertRentalOrderTransition(order.status, OrderStatus.CONFIRMED);
+    await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.CONFIRMED, handoverStatus: HandoverStatus.READY, updatedBy: userId } });
+    await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: OrderStatus.CREATED, toStatus: OrderStatus.CONFIRMED, note: 'Payment obligation completed', createdBy: userId } });
   }
 
-  private async findAssetUnitsForItems(items: NormalizedRentalOrderItem[]) {
-    const assetUnitIds = [...new Set(items.map((item) => item.assetUnitId))];
-
-    if (assetUnitIds.length === 0) {
-      return [];
-    }
-
-    const assetUnits = await this.prisma.assetUnit.findMany({
-      where: {
-        id: {
-          in: assetUnitIds,
-        },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        serialNumber: true,
-      },
-    });
-
-    if (assetUnits.length !== assetUnitIds.length) {
-      throw new BadRequestException(RENTAL_ORDER_ASSET_UNIT_INVALID);
-    }
-
-    return assetUnits;
+  private async generateOrderCode(): Promise<string> {
+    return `ORD-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 10_000).toString().padStart(4, '0')}`;
   }
 
-  async findExistingRentalOrderById(id: string): Promise<RentalOrderWithRelations> {
-    const order = await this.findRentalOrderById(id);
-
-    if (!order) {
-      throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
-    }
-
-    return order;
+  private sortField(sortBy?: RentalOrderSortBy): RentalOrderSortBy {
+    return sortBy ?? RentalOrderSortBy.CREATED_AT;
   }
 
-  async findExistingRentalOrderByIdInTransaction(tx: Prisma.TransactionClient, id: string): Promise<RentalOrderWithRelations> {
-    const order = await tx.rentalOrder.findFirst({
-      where: {
-        id,
-        deletedAt: null,
-      },
-      include: this.rentalOrderInclude(),
-    });
-
-    if (!order) {
-      throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
-    }
-
-    return order;
+  private quoteRequestSnapshot(dto: CreateRentalQuoteDto) {
+    return { customerId: dto.customerId, startDate: dto.startDate.toISOString(), endDate: dto.endDate.toISOString(), pickupMethod: dto.pickupMethod, deliveryAddress: dto.deliveryAddress, excludeOrderId: dto.excludeOrderId, items: dto.items };
   }
 
-  async findRentalOrderById(id: string) {
-    return this.prisma.rentalOrder.findFirst({
-      where: {
-        id,
-        deletedAt: null,
-      },
-      include: this.rentalOrderInclude(),
-    });
+  private parseQuoteRequest(snapshot: Prisma.JsonValue): CreateRentalQuoteDto {
+    const value = snapshot as unknown as { customerId?: string; startDate: string; endDate: string; pickupMethod: 'PICKUP_AT_STORE' | 'DELIVERY'; deliveryAddress?: string; excludeOrderId?: string; items: RentalOrderItemDto[] };
+    return { customerId: value.customerId, startDate: new Date(value.startDate), endDate: new Date(value.endDate), pickupMethod: value.pickupMethod, deliveryAddress: value.deliveryAddress, excludeOrderId: value.excludeOrderId, items: value.items };
   }
 
-  rentalOrderInclude() {
-    return rentalOrderInclude;
+  private quoteLineOut(line: PreparedQuote['lines'][number]) {
+    return { productId: line.product.id, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, ...line.pricing };
   }
 
-  rentalOrderListSelect() {
-    return rentalOrderListSelect;
+  private customerSnapshot(customer: { name: string; phone: string | null; email: string | null; address: string | null; identityNumber: string | null }) {
+    return { name: customer.name, phone: customer.phone, email: customer.email, address: customer.address, identityNumber: customer.identityNumber };
   }
 
-  private async generateOrderCode(tx: Prisma.TransactionClient): Promise<string> {
-    const latestOrder = await tx.rentalOrder.findFirst({
-      where: {
-        code: {
-          startsWith: 'ORD-',
-        },
-      },
-      orderBy: {
-        code: 'desc',
-      },
-      select: {
-        code: true,
-      },
-    });
-    const latestNumber = latestOrder?.code ? Number(latestOrder.code.replace('ORD-', '')) || 0 : 0;
-
-    return `ORD-${String(latestNumber + 1).padStart(6, '0')}`;
-  }
-
-  buildOrderSearchText(input: {
-    code: string;
-    customer: {
-      name: string;
-      phone?: string | null;
-      email?: string | null;
-      identityNumber?: string | null;
-    };
-    deliveryAddress?: string | null;
-    note?: string | null;
-    internalNote?: string | null;
-    cancelReason?: string | null;
-  }): string {
-    return buildRentalOrderSearchText({
-      code: input.code,
-      customerName: input.customer.name,
-      customerPhone: input.customer.phone,
-      customerEmail: input.customer.email,
-      customerIdentityNumber: input.customer.identityNumber,
-      deliveryAddress: input.deliveryAddress,
-      note: input.note,
-      internalNote: input.internalNote,
-      cancelReason: input.cancelReason,
-    });
-  }
-
-  private buildSettingsSnapshot(systemSettings: Awaited<ReturnType<SystemSettingsService['getDefaultSettingsForOrder']>>): Prisma.InputJsonObject {
+  private customerSnapshotFromUpdate(snapshot: UpdateRentalOrderCustomerSnapshotDto): RentalOrderCustomerSnapshotValue {
     return {
-      id: systemSettings.id,
-      bookingHoldPricePerUnit: Number(systemSettings.bookingHoldPricePerUnit),
-      bookingBufferTimeMinutes: systemSettings.bookingBufferTimeMinutes,
-      maxRentalTimeDays: systemSettings.maxRentalTimeDays,
-      maxLateReturnTimeHours: systemSettings.maxLateReturnTimeHours,
+      name: snapshot.name.trim(),
+      phone: snapshot.phone?.trim() || null,
+      email: snapshot.email?.trim() || null,
+      address: snapshot.address?.trim() || null,
+      identityNumber: snapshot.identityNumber?.trim() || null,
     };
   }
 
-  private buildCustomerSnapshot(customer: {
-    id: string;
-    code?: string | null;
-    name: string;
-    phone?: string | null;
-    email?: string | null;
-    address?: string | null;
-    identityNumber?: string | null;
-    socialContact?: string | null;
-  }): Prisma.InputJsonObject {
-    return {
-      id: customer.id,
-      name: customer.name,
-      phone: customer.phone ?? null,
-      email: customer.email ?? null,
-      address: customer.address ?? null,
-      identityNumber: customer.identityNumber ?? null,
-      socialContact: customer.socialContact ?? null,
+  private toListOut(order: {
+    id: string; code: string; source: OrderSource; status: OrderStatus; handoverStatus: HandoverStatus; returnStatus: ReturnStatus; settlementStatus: RentalSettlementStatus; customerSnapshot: Prisma.JsonValue; startDate: Date; endDate: Date; actualReturnDate: Date | null; rentalFeeTotal: Prisma.Decimal; deliveryFeeTotal: Prisma.Decimal; bookingHoldTotal: Prisma.Decimal; securityDepositTotal: Prisma.Decimal; totalCustomerObligation: Prisma.Decimal; paidTotal: Prisma.Decimal; amountDueBeforeHandover: Prisma.Decimal; refundDue: Prisma.Decimal; additionalChargeDue: Prisma.Decimal; createdAt: Date; updatedAt: Date;
+  }): RentalOrderListItemOutDto {
+    const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
+    return { ...order, customerSnapshot: order.customerSnapshot as unknown as RentalOrderListItemOutDto['customerSnapshot'], rentalFeeTotal: Number(order.rentalFeeTotal), deliveryFeeTotal: Number(order.deliveryFeeTotal), bookingHoldTotal: Number(order.bookingHoldTotal), securityDepositTotal: Number(order.securityDepositTotal), totalCustomerObligation: Number(order.totalCustomerObligation), paidTotal: Number(order.paidTotal), amountDueBeforeHandover: Number(order.amountDueBeforeHandover), refundDue: Number(order.refundDue), additionalChargeDue: Number(order.additionalChargeDue), ...overdue };
+  }
+
+  private toDetailOut(order: RentalOrderDetailRecord): RentalOrderOutDto {
+    const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
+    const financials: RentalOrderFinancialsOutDto = {
+      rentalFeeTotal: Number(order.rentalFeeTotal),
+      deliveryFeeTotal: Number(order.deliveryFeeTotal),
+      bookingHoldTotal: Number(order.bookingHoldTotal),
+      securityDepositTotal: Number(order.securityDepositTotal),
+      lateFeeTotal: Number(order.lateFeeTotal),
+      damageCompensationTotal: Number(order.damageCompensationTotal),
+      cancellationFeeTotal: Number(order.charges.filter((charge) => charge.kind === RentalChargeKind.CANCELLATION_FEE).reduce((sum, charge) => sum + Number(charge.amount), 0)),
+      totalCustomerObligation: Number(order.totalCustomerObligation),
+      paidTotal: Number(order.paidTotal),
+      amountDueAtBooking: Number(order.amountDueAtBooking),
+      amountDueBeforeHandover: Number(order.amountDueBeforeHandover),
+      refundDue: Number(order.refundDue),
+      additionalChargeDue: Number(order.additionalChargeDue),
+      actualRefundTotal: Number(order.actualRefundTotal),
     };
-  }
-
-  private mergeJsonObject(base: unknown, patch?: object): Prisma.InputJsonObject {
-    const baseObject = this.isRecord(base) ? base : {};
-
-    return {
-      ...baseObject,
-      ...(patch ?? {}),
-    } as Prisma.InputJsonObject;
-  }
-
-  private getCustomerForSearch(
-    snapshot: Prisma.InputJsonObject,
-    fallback: {
-      name: string;
-      phone?: string | null;
-      email?: string | null;
-      identityNumber?: string | null;
-    },
-  ) {
-    return {
-      name: typeof snapshot.name === 'string' ? snapshot.name : fallback.name,
-      phone: typeof snapshot.phone === 'string' ? snapshot.phone : fallback.phone,
-      email: typeof snapshot.email === 'string' ? snapshot.email : fallback.email,
-      identityNumber: typeof snapshot.identityNumber === 'string' ? snapshot.identityNumber : fallback.identityNumber,
-    };
-  }
-
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
-
-  private normalizeMoneyValue(value: unknown): unknown {
-    if (typeof value !== 'string') return value;
-
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-
-  private normalizeSettingsSnapshot(snapshot: unknown): unknown {
-    if (!this.isRecord(snapshot)) return snapshot;
-
-    return {
-      ...snapshot,
-      bookingHoldPricePerUnit: this.normalizeMoneyValue(snapshot.bookingHoldPricePerUnit),
-    };
-  }
-
-  private normalizeItemSnapshot(snapshot: unknown): unknown {
-    if (!this.isRecord(snapshot)) return snapshot;
-
-    const product = this.isRecord(snapshot.product)
-      ? {
-          ...snapshot.product,
-          dailyPrice: this.normalizeMoneyValue(snapshot.product.dailyPrice),
-          halfDayPrice: this.normalizeMoneyValue(snapshot.product.halfDayPrice),
-          hourlyOveragePrice: this.normalizeMoneyValue(snapshot.product.hourlyOveragePrice),
-          depositAmount: this.normalizeMoneyValue(snapshot.product.depositAmount),
-          rentalPriceTiers: Array.isArray(snapshot.product.rentalPriceTiers)
-            ? snapshot.product.rentalPriceTiers.map((tier) =>
-                this.isRecord(tier)
-                  ? {
-                      ...tier,
-                      dailyPrice: this.normalizeMoneyValue(tier.dailyPrice),
-                    }
-                  : tier,
-              )
-            : [],
-        }
-      : snapshot.product;
-
-    const pricing = this.isRecord(snapshot.pricing)
-      ? {
-          ...snapshot.pricing,
-          durationHours: this.normalizeMoneyValue(snapshot.pricing.durationHours),
-          billableDays: this.normalizeMoneyValue(snapshot.pricing.billableDays),
-          billableHalfDays: this.normalizeMoneyValue(snapshot.pricing.billableHalfDays),
-          overageHours: this.normalizeMoneyValue(snapshot.pricing.overageHours),
-          unitPrice: this.normalizeMoneyValue(snapshot.pricing.unitPrice),
-          depositAmount: this.normalizeMoneyValue(snapshot.pricing.depositAmount),
-          bookingHoldAmount: this.normalizeMoneyValue(snapshot.pricing.bookingHoldAmount),
-          lineTotal: this.normalizeMoneyValue(snapshot.pricing.lineTotal),
-          appliedTier: this.isRecord(snapshot.pricing.appliedTier)
-            ? {
-                ...snapshot.pricing.appliedTier,
-                dailyPrice: this.normalizeMoneyValue(snapshot.pricing.appliedTier.dailyPrice),
-              }
-            : snapshot.pricing.appliedTier,
-        }
-      : snapshot.pricing;
-
-    return {
-      ...snapshot,
-      product,
-      pricing,
-    };
-  }
-
-  toRentalOrderOut(order: RentalOrderWithRelations): RentalOrderOutDto {
-    const financialBreakdown = this.calculateFinancialBreakdown(order);
-
     return {
       id: order.id,
       code: order.code,
       source: order.source,
       status: order.status,
-      paymentStatus: order.paymentStatus,
-      refundStatus: order.refundStatus,
+      handoverStatus: order.handoverStatus,
+      returnStatus: order.returnStatus,
+      settlementStatus: order.settlementStatus,
+      ...overdue,
       customerId: order.customerId,
-      customerSnapshot: order.customerSnapshot,
-      settingsSnapshot: this.normalizeSettingsSnapshot(order.settingsSnapshot),
-      rentalPeriod: {
-        startDate: order.startDate,
-        endDate: order.endDate,
-        actualPickupDate: order.actualPickupDate,
-        actualReturnDate: order.actualReturnDate,
-      },
-      fulfillment: {
-        pickupMethod: order.pickupMethod,
-        deliveryAddress: order.deliveryAddress,
-        collateralDescription: order.collateralDescription,
-        collateralType: order.collateralType ?? CollateralType.NONE,
-      },
-      financials: {
-        deliveryFeeTotal: Number(order.deliveryFeeTotal),
-        rentalFeeTotal: Number(order.rentalFeeTotal),
-        depositTotal: Number(order.depositTotal),
-        bookingHoldTotal: Number(order.bookingHoldTotal),
-        lateFeeTotal: Number(order.lateFeeTotal),
-        damageFeeTotal: Number(order.damageFeeTotal),
-        discountTotal: Number(order.discountTotal),
-        compensationFeeTotal: Number(order.compensationFeeTotal),
-        chargeTotal: Number(order.chargeTotal),
-        paidTotal: Number(order.paidTotal),
-        estimatedRefundTotal: Number(order.estimatedRefundTotal),
-        actualRefundTotal: Number(order.actualRefundTotal),
-        adjustedDepositTotal: Number(order.adjustedDepositTotal),
-        handoverRequiredTotal: Number(order.handoverRequiredTotal),
-        handoverAmountDue: Number(order.handoverAmountDue),
-        ...financialBreakdown,
-      },
-      notes: {
-        customerNote: order.note,
-        internalNote: order.internalNote,
-        cancelReason: order.cancelReason,
-      },
-      createdBy: order.createdBy,
-      items: order.items.map((item) => this.toRentalOrderItemOut(item)),
-      payments: order.payments.map((payment) => ({
-        id: payment.id,
-        kind: payment.kind,
-        method: payment.method,
-        status: payment.status,
-        amount: Number(payment.amount),
-        referenceCode: payment.referenceCode,
-        note: payment.note,
-        createdAt: payment.createdAt,
-      })),
-      statusHistories: order.statusHistories.map((history) => ({
-        id: history.id,
-        fromStatus: history.fromStatus,
-        toStatus: history.toStatus,
-        note: history.note,
-        createdAt: history.createdAt,
-      })),
-      logs: order.logs.map((log) => this.toRentalOrderLogOut(log)),
+      customerSnapshot: order.customerSnapshot as unknown as RentalOrderOutDto['customerSnapshot'],
+      settingsSnapshot: order.settingsSnapshot,
+      rentalPeriod: { startDate: order.startDate, endDate: order.endDate, actualPickupDate: order.actualPickupDate, actualReturnDate: order.actualReturnDate },
+      fulfillment: { pickupMethod: order.pickupMethod, deliveryAddress: order.deliveryAddress },
+      financials,
+      notes: { customerNote: order.note, internalNote: order.internalNote, cancelReason: order.cancelReason },
+      lines: order.lines.map((line) => this.toLineOut(line)),
+      charges: order.charges.map((charge) => this.toChargeOut(charge)),
+      payments: order.paymentTransactions.map((payment) => this.toPaymentOut(payment)),
+      refunds: order.refunds.map((refund) => this.toRefundOut(refund)),
+      inspections: order.inspections.map((inspection) => ({ id: inspection.id, type: inspection.type, inspectedAt: inspection.inspectedAt, note: inspection.note, items: inspection.items.map((item) => ({ allocationId: item.allocationId, condition: item.condition, note: item.note, accessories: item.accessories })) })),
+      statusHistories: order.statusHistories,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       deletedAt: order.deletedAt,
     };
   }
 
-  private toRentalOrderLogOut(log: RentalOrderWithRelations['logs'][number]) {
-    return {
-      id: log.id,
-      orderId: log.orderId,
-      actorId: log.actorId,
-      action: log.action,
-      entity: log.entity,
-      changes: Array.isArray(log.changes) ? (log.changes as RentalOrderLogChange[]) : [],
-      actorSnapshot: log.actorSnapshot,
-      note: log.note,
-      createdAt: log.createdAt,
-    };
+  private toLineOut(line: RentalOrderDetailRecord['lines'][number]): RentalOrderLineOutDto {
+    return { id: line.id, productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, unitRentalFee: Number(line.unitRentalFee), unitDepositAmount: Number(line.unitDepositAmount), unitBookingHoldAmount: Number(line.unitBookingHoldAmount), lineRentalTotal: Number(line.lineRentalTotal), lineDepositTotal: Number(line.lineDepositTotal), lineBookingHoldTotal: Number(line.lineBookingHoldTotal), accessoriesSnapshot: line.accessoriesSnapshot, note: line.note, allocations: line.allocations.map((allocation) => ({ id: allocation.id, assetUnitId: allocation.assetUnitId, serialNumber: allocation.assetUnit.serialNumber, source: allocation.source, status: allocation.status, startDate: allocation.startDate, endDate: allocation.endDate, blockedEndDate: allocation.blockedEndDate })) };
   }
 
-  private toRentalOrderItemOut(item: RentalOrderWithRelations['items'][number]) {
-    const snapshot = this.normalizeItemSnapshot(item.snapshot);
-    const productSnapshot = this.isRecord(snapshot) && this.isRecord(snapshot.product)
-      ? snapshot.product
-      : {
-          id: item.product.id,
-          name: item.product.name,
-          sku: item.product.sku,
-          rentalPriceTiers: [],
-        };
-    const assetUnitSnapshot = this.isRecord(snapshot) && this.isRecord(snapshot.assetUnit)
-      ? snapshot.assetUnit
-      : {
-          id: item.assetUnit.id,
-          serialNumber: item.assetUnit.serialNumber,
-        };
-    const pricingSnapshot = this.isRecord(snapshot) && this.isRecord(snapshot.pricing) ? snapshot.pricing : {};
-
-    return {
-      id: item.id,
-      productId: item.productId,
-      assetUnitId: item.assetUnitId,
-      status: item.status,
-      productSnapshot,
-      assetUnitSnapshot,
-      rentalPeriod: {
-        startDate: item.startDate,
-        endDate: item.endDate,
-        blockedEndDate: item.blockedEndDate,
-      },
-      pricing: {
-        pricingMode: typeof pricingSnapshot.pricingMode === 'string' ? pricingSnapshot.pricingMode : 'UNKNOWN',
-        pricingLabel: typeof pricingSnapshot.pricingLabel === 'string' ? pricingSnapshot.pricingLabel : 'Gia thue',
-        durationHours: this.toNumberOrDefault(pricingSnapshot.durationHours, this.calculateDurationHours(item.startDate, item.endDate)),
-        billableDays: this.toNumberOrDefault(pricingSnapshot.billableDays, 0),
-        billableHalfDays: this.toNumberOrDefault(pricingSnapshot.billableHalfDays, 0),
-        overageHours: this.toNumberOrDefault(pricingSnapshot.overageHours, 0),
-        unitPrice: Number(item.unitPrice),
-        depositAmount: Number(item.depositAmount),
-        bookingHoldAmount: Number(item.bookingHoldAmount),
-        lineTotal: Number(item.lineTotal),
-        appliedTierId: typeof pricingSnapshot.appliedTierId === 'string' ? pricingSnapshot.appliedTierId : null,
-        appliedTier: pricingSnapshot.appliedTier ?? null,
-      },
-      note: item.note,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-    };
+  private toChargeOut(charge: RentalOrderDetailRecord['charges'][number]): RentalOrderChargeOutDto {
+    return { id: charge.id, kind: charge.kind, amount: Number(charge.amount), status: charge.status, refundable: charge.refundable, metadata: charge.metadata };
   }
 
-  toRentalOrderListItemOut(order: RentalOrderListItemWithRelations): RentalOrderListItemOutDto {
-    const financialBreakdown = this.calculateFinancialBreakdown(order);
-
-    return {
-      id: order.id,
-      code: order.code,
-      source: order.source,
-      status: order.status,
-      paymentStatus: order.paymentStatus,
-      refundStatus: order.refundStatus,
-      customerSnapshot: order.customerSnapshot,
-      startDate: order.startDate,
-      endDate: order.endDate,
-      deliveryFeeTotal: Number(order.deliveryFeeTotal),
-      rentalFeeTotal: Number(order.rentalFeeTotal),
-      depositTotal: Number(order.depositTotal),
-      bookingHoldTotal: Number(order.bookingHoldTotal),
-      lateFeeTotal: Number(order.lateFeeTotal),
-      damageFeeTotal: Number(order.damageFeeTotal),
-      discountTotal: Number(order.discountTotal),
-      compensationFeeTotal: Number(order.compensationFeeTotal),
-      chargeTotal: Number(order.chargeTotal),
-      paidTotal: Number(order.paidTotal),
-      estimatedRefundTotal: Number(order.estimatedRefundTotal),
-      actualRefundTotal: Number(order.actualRefundTotal),
-      handoverRequiredTotal: Number(order.handoverRequiredTotal),
-      handoverAmountDue: Number(order.handoverAmountDue),
-      ...financialBreakdown,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-    };
+  private toPaymentOut(payment: RentalOrderDetailRecord['paymentTransactions'][number]): RentalOrderPaymentOutDto {
+    return { id: payment.id, direction: payment.direction, amount: Number(payment.amount), method: payment.method, status: payment.status, referenceCode: payment.referenceCode, idempotencyKey: payment.idempotencyKey, createdAt: payment.createdAt };
   }
 
-  calculateFinancialBreakdown(order: RentalOrderFinancialBreakdownInput): {
-    rentalRevenueTotal: number;
-    incidentFeeTotal: number;
-    finalPayableTotal: number;
-    refundDue: number;
-    additionalChargeDue: number;
-    settlementStatus: RentalOrderSettlementStatus;
-  } {
-    const rentalRevenueTotal = Math.max(
-      Number(order.rentalFeeTotal) + Number(order.deliveryFeeTotal) - Number(order.discountTotal),
-      0,
-    );
-    const incidentFeeTotal = Math.max(
-      Number(order.lateFeeTotal) + Number(order.damageFeeTotal) + Number(order.compensationFeeTotal),
-      0,
-    );
-    const finalPayableTotal = Math.max(rentalRevenueTotal + incidentFeeTotal, 0);
-    const refundDue = Math.max(Number(order.paidTotal) - finalPayableTotal - Number(order.actualRefundTotal), 0);
-    const additionalChargeDue = Math.max(finalPayableTotal + Number(order.actualRefundTotal) - Number(order.paidTotal), 0);
-    const settlementStatus: RentalOrderSettlementStatus =
-      additionalChargeDue > 0 ? 'NEED_COLLECT' : refundDue > 0 ? 'NEED_REFUND' : 'SETTLED';
-
-    return {
-      rentalRevenueTotal: Math.round(rentalRevenueTotal),
-      incidentFeeTotal: Math.round(incidentFeeTotal),
-      finalPayableTotal: Math.round(finalPayableTotal),
-      refundDue: Math.round(refundDue),
-      additionalChargeDue: Math.round(additionalChargeDue),
-      settlementStatus,
-    };
+  private toRefundOut(refund: RentalOrderDetailRecord['refunds'][number]): RentalOrderRefundOutDto {
+    return { id: refund.id, amount: Number(refund.amount), status: refund.status, method: refund.method, referenceCode: refund.referenceCode, createdAt: refund.createdAt };
   }
 
-  private buildUpdateOrderChanges(before: RentalOrderWithRelations, after: RentalOrderWithRelations): RentalOrderLogChange[] {
-    return this.logsService.diffFields([
-      {
-        field: 'customerSnapshot.name',
-        label: 'Tên khách',
-        oldValue: this.getJsonPath(before.customerSnapshot, 'name'),
-        newValue: this.getJsonPath(after.customerSnapshot, 'name'),
-      },
-      {
-        field: 'customerSnapshot.phone',
-        label: 'Số điện thoại',
-        oldValue: this.getJsonPath(before.customerSnapshot, 'phone'),
-        newValue: this.getJsonPath(after.customerSnapshot, 'phone'),
-      },
-      {
-        field: 'customerSnapshot.email',
-        label: 'Email',
-        oldValue: this.getJsonPath(before.customerSnapshot, 'email'),
-        newValue: this.getJsonPath(after.customerSnapshot, 'email'),
-      },
-      {
-        field: 'customerSnapshot.address',
-        label: 'Địa chỉ',
-        oldValue: this.getJsonPath(before.customerSnapshot, 'address'),
-        newValue: this.getJsonPath(after.customerSnapshot, 'address'),
-      },
-      {
-        field: 'customerSnapshot.identityNumber',
-        label: 'CCCD',
-        oldValue: this.getJsonPath(before.customerSnapshot, 'identityNumber'),
-        newValue: this.getJsonPath(after.customerSnapshot, 'identityNumber'),
-      },
-      {
-        field: 'customerSnapshot.socialContact',
-        label: 'Liên hệ MXH',
-        oldValue: this.getJsonPath(before.customerSnapshot, 'socialContact'),
-        newValue: this.getJsonPath(after.customerSnapshot, 'socialContact'),
-      },
-      { field: 'rentalPeriod.startDate', label: 'Giờ nhận', oldValue: before.startDate, newValue: after.startDate },
-      { field: 'rentalPeriod.endDate', label: 'Giờ trả', oldValue: before.endDate, newValue: after.endDate },
-      { field: 'fulfillment.pickupMethod', label: 'Hình thức nhận', oldValue: before.pickupMethod, newValue: after.pickupMethod },
-      { field: 'fulfillment.deliveryAddress', label: 'Địa chỉ giao', oldValue: before.deliveryAddress, newValue: after.deliveryAddress },
-      { field: 'financials.deliveryFeeTotal', label: 'Phí giao hàng', oldValue: before.deliveryFeeTotal, newValue: after.deliveryFeeTotal },
-      { field: 'financials.rentalFeeTotal', label: 'Tiền thuê', oldValue: before.rentalFeeTotal, newValue: after.rentalFeeTotal },
-      { field: 'financials.depositTotal', label: 'Cọc theo thiết bị', oldValue: before.depositTotal, newValue: after.depositTotal },
-      { field: 'financials.bookingHoldTotal', label: 'Tiền giữ lịch', oldValue: before.bookingHoldTotal, newValue: after.bookingHoldTotal },
-      { field: 'financials.discountTotal', label: 'Giảm giá', oldValue: before.discountTotal, newValue: after.discountTotal },
-      { field: 'financials.chargeTotal', label: 'Tiền thuê cần thanh toán', oldValue: before.chargeTotal, newValue: after.chargeTotal },
-      {
-        field: 'financials.estimatedRefundTotal',
-        label: 'Hoàn cọc dự tính',
-        oldValue: before.estimatedRefundTotal,
-        newValue: after.estimatedRefundTotal,
-      },
-      {
-        field: 'financials.handoverRequiredTotal',
-        label: 'Tổng cần thu khi bàn giao',
-        oldValue: before.handoverRequiredTotal,
-        newValue: after.handoverRequiredTotal,
-      },
-      { field: 'notes.customerNote', label: 'Ghi chú khách', oldValue: before.note, newValue: after.note },
-      { field: 'notes.internalNote', label: 'Ghi chú nội bộ', oldValue: before.internalNote, newValue: after.internalNote },
-      { field: 'items', label: 'Danh sách thiết bị', oldValue: this.getActiveItemAssetIds(before), newValue: this.getActiveItemAssetIds(after) },
-    ]);
-  }
-
-  private getActiveItemAssetIds(order: RentalOrderWithRelations): string[] {
-    return order.items
-      .filter((item) => item.deletedAt === null && item.status !== RentalOrderItemStatus.CANCELLED)
-      .map((item) => item.assetUnitId)
-      .sort();
-  }
-
-  private getJsonPath(value: Prisma.JsonValue, key: string): unknown {
-    if (!this.isRecord(value)) return null;
-    return value[key] ?? null;
-  }
-
-  private hasOwn<T extends object>(value: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(value, key);
-  }
-
-  private toNumberOrDefault(value: unknown, fallback: number): number {
-    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
-
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  private calculateDurationHours(startDate: Date, endDate: Date): number {
-    return Math.round(((endDate.getTime() - startDate.getTime()) / (60 * 60 * 1000)) * 100) / 100;
+  private jsonValue(value: unknown): Prisma.InputJsonValue {
+    return value as Prisma.InputJsonValue;
   }
 }

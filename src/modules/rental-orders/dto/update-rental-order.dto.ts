@@ -1,105 +1,88 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDate, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDate, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, ValidateNested } from 'class-validator';
 import { PickupMethod } from '@generated/prisma/enums';
-import { RentalOrderItemInDto } from './create-rental-order.dto';
-import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { INVALID_ARRAY, INVALID_DATE, INVALID_EMAIL, INVALID_PHONE_NUMBER, INVALID_REQUIRED, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { RentalOrderItemDto } from './create-rental-order.dto';
 
 export class UpdateRentalOrderCustomerSnapshotDto {
-  @ApiPropertyOptional({ example: 'Nguyen Van A' })
-  @IsOptional()
+  @ApiProperty({ example: 'Nguyen Van A' })
   @IsString({ message: INVALID_STRING })
-  name?: string;
+  @IsNotEmpty({ message: INVALID_REQUIRED })
+  name!: string;
 
   @ApiPropertyOptional({ example: '0900000000', nullable: true })
   @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  phone?: string;
+  @Matches(/^(?:\+84|0)(3[2-9]|5[6|8|9]|7[0|6-9]|8[1-9]|9[0-9]|2[0-9]{1,2})[0-9]{7}$/, {
+    message: INVALID_PHONE_NUMBER,
+  })
+  phone?: string | null;
 
-  @ApiPropertyOptional({ example: 'customer@example.com', nullable: true })
+  @ApiPropertyOptional({ example: 'nguyenvana@example.com', nullable: true })
   @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  email?: string;
+  @IsEmail({}, { message: INVALID_EMAIL })
+  email?: string | null;
 
   @ApiPropertyOptional({ example: '123 Nguyen Trai, Quan 1, TP.HCM', nullable: true })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
-  address?: string;
+  address?: string | null;
 
-  @ApiPropertyOptional({ example: '079200000001', nullable: true })
+  @ApiPropertyOptional({ example: '079000000001', nullable: true })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
-  identityNumber?: string;
-
-  @ApiPropertyOptional({ example: 'https://facebook.com/nguyenvana', nullable: true })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  socialContact?: string;
+  identityNumber?: string | null;
 }
 
 export class UpdateRentalOrderDto {
-  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'A fresh quote is required when schedule/assets change.' })
   @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })
-  customerId?: string;
+  quoteId?: string;
 
-  @ApiPropertyOptional({ type: UpdateRentalOrderCustomerSnapshotDto })
+  @ApiPropertyOptional({ type: UpdateRentalOrderCustomerSnapshotDto, description: 'Updates the customer information stored on this order only.' })
   @IsOptional()
   @ValidateNested()
   @Type(() => UpdateRentalOrderCustomerSnapshotDto)
   customerSnapshot?: UpdateRentalOrderCustomerSnapshotDto;
 
-  @ApiPropertyOptional({ example: '2026-06-10T07:00:00.000Z' })
-  @Type(() => Date)
+  @ApiPropertyOptional({ example: '2026-09-25T08:00:00.000Z' })
   @IsOptional()
+  @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   startDate?: Date;
 
-  @ApiPropertyOptional({ example: '2026-06-10T09:00:00.000Z' })
-  @Type(() => Date)
+  @ApiPropertyOptional({ example: '2026-09-27T18:00:00.000Z' })
   @IsOptional()
+  @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   endDate?: Date;
 
-  @ApiPropertyOptional({ enum: Object.values(PickupMethod), example: PickupMethod.DELIVERY })
+  @ApiPropertyOptional({ enum: Object.values(PickupMethod) })
   @IsOptional()
-  @IsIn(Object.values(PickupMethod), { message: INVALID_ENUM(Object.values(PickupMethod), 'pickupMethod') })
+  @IsEnum(PickupMethod)
   pickupMethod?: PickupMethod;
 
   @ApiPropertyOptional({ example: '123 Nguyen Trai, Quan 1, TP.HCM', nullable: true })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
-  deliveryAddress?: string;
+  deliveryAddress?: string | null;
 
-  @ApiPropertyOptional({ example: 30000 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  deliveryFeeTotal?: number;
-
-  @ApiPropertyOptional({ example: 0 })
-  @Type(() => Number)
-  @IsOptional()
-  @IsNumber({}, { message: INVALID_NUMBER })
-  @Min(0)
-  discountTotal?: number;
-
-  @ApiPropertyOptional({ example: 'Khach doi gio nhan may' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  note?: string;
-
-  @ApiPropertyOptional({ example: 'Da goi xac nhan voi khach' })
-  @IsOptional()
-  @IsString({ message: INVALID_STRING })
-  internalNote?: string;
-
-  @ApiPropertyOptional({ type: [RentalOrderItemInDto], description: 'Replace draft order items when provided.' })
+  @ApiPropertyOptional({ type: [RentalOrderItemDto] })
   @IsOptional()
   @IsArray({ message: INVALID_ARRAY })
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => RentalOrderItemInDto)
-  items?: RentalOrderItemInDto[];
+  @Type(() => RentalOrderItemDto)
+  items?: RentalOrderItemDto[];
+
+  @ApiPropertyOptional({ example: 'Khach doi ngay nhan may' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string | null;
+
+  @ApiPropertyOptional({ example: 'Uu tien may co serial moi' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  internalNote?: string | null;
 }

@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsDate, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDate, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
 import { INVALID_ARRAY, INVALID_DATE, INVALID_NUMBER, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export class CheckRentalOrderAvailabilityItemDto {
@@ -8,32 +8,25 @@ export class CheckRentalOrderAvailabilityItemDto {
   @IsUUID('7', { message: INVALID_UUID })
   productId!: string;
 
-  @ApiProperty({ example: 2, minimum: 1 })
+  @ApiProperty({ example: 1, minimum: 1 })
   @Type(() => Number)
   @IsInt({ message: INVALID_NUMBER })
-  @Min(1, { message: 'Số lượng phải tối thiểu 1' })
+  @Min(1)
   quantity!: number;
-
-  @ApiProperty({ type: [String], format: 'uuid', example: ['0190f9ff-8a88-7000-8000-000000000001'] })
-  @IsArray({ message: INVALID_ARRAY })
-  @ArrayMinSize(1)
-  @ArrayUnique()
-  @IsUUID('7', { each: true, message: INVALID_UUID })
-  assetUnitIds!: string[];
 }
 
 export class CheckRentalOrderAvailabilityDto {
-  @ApiProperty({ example: '2026-06-10T07:00:00.000Z' })
+  @ApiProperty({ example: '2026-09-25T08:00:00.000Z' })
   @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   startDate!: Date;
 
-  @ApiProperty({ example: '2026-06-10T09:00:00.000Z' })
+  @ApiProperty({ example: '2026-09-27T18:00:00.000Z' })
   @Type(() => Date)
   @IsDate({ message: INVALID_DATE })
   endDate!: Date;
 
-  @ApiProperty({ type: String, format: 'uuid', required: false })
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID('7', { message: INVALID_UUID })
   excludeOrderId?: string;
@@ -50,15 +43,12 @@ export class RentalOrderUnavailableItemDto {
   @ApiProperty({ type: String, format: 'uuid' })
   productId!: string;
 
-  @ApiProperty({ type: String, format: 'uuid', nullable: true })
-  assetUnitId!: string | null;
-
-  @ApiProperty({ example: 'Asset unit is already booked in this time range' })
+  @ApiProperty()
   reason!: string;
 }
 
 export class RentalOrderAvailabilityOutDto {
-  @ApiProperty({ example: true })
+  @ApiProperty()
   isAvailable!: boolean;
 
   @ApiProperty({ type: Date, format: 'date-time' })
@@ -70,7 +60,7 @@ export class RentalOrderAvailabilityOutDto {
   @ApiProperty({ type: Date, format: 'date-time' })
   blockedEndDate!: Date;
 
-  @ApiProperty({ example: 60 })
+  @ApiProperty()
   turnaroundMinutes!: number;
 
   @ApiProperty({ type: [RentalOrderUnavailableItemDto] })

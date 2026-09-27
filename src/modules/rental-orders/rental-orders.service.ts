@@ -66,7 +66,22 @@ const orderDetailInclude = {
   lines: {
     orderBy: { createdAt: 'asc' },
     include: {
-      product: { select: { id: true, name: true, sku: true } },
+      product: {
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          _count: {
+            select: {
+              assetUnits: {
+                where: {
+                  deletedAt: null,
+                },
+              },
+            },
+          },
+        },
+      },
       allocations: {
         orderBy: { createdAt: 'asc' },
         include: { assetUnit: { select: { id: true, serialNumber: true } } },
@@ -1173,6 +1188,7 @@ export class RentalOrdersService {
       productId: line.productId,
       productName: line.product.name,
       sku: line.product.sku,
+      assetUnitCount: line.product._count.assetUnits,
       quantity: line.quantity,
       unitRentalFee: Number(line.unitRentalFee),
       unitDepositAmount: Number(line.unitDepositAmount),

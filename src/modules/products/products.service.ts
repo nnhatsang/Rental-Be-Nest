@@ -363,6 +363,15 @@ export class ProductsService {
           minDays: 'asc',
         },
       },
+      _count: {
+        select: {
+          assetUnits: {
+            where: {
+              deletedAt: null,
+            },
+          },
+        },
+      },
     };
   }
 
@@ -412,6 +421,7 @@ export class ProductsService {
             name: product.brand.name,
           }
         : null,
+      assetUnitCount: product._count.assetUnits,
       dailyPrice: Number(product.dailyPrice),
       halfDayPrice: Number(product.halfDayPrice),
       hourlyOveragePrice: product.hourlyOveragePrice === null ? null : Number(product.hourlyOveragePrice),

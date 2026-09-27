@@ -34,6 +34,9 @@ export class ProductOutDto {
   @ApiProperty({ type: ProductRelationOutDto, nullable: true })
   brand!: ProductRelationOutDto | null;
 
+  @ApiProperty({ example: 3, description: 'Số asset unit chưa bị xóa thuộc product.' })
+  assetUnitCount!: number;
+
   @ApiProperty({ example: 500000 })
   dailyPrice!: number;
 

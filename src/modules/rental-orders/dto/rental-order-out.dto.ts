@@ -83,6 +83,8 @@ export class RentalOrderLineOutDto {
   @ApiProperty() productId!: string;
   @ApiProperty() productName!: string;
   @ApiProperty() sku!: string;
+  @ApiProperty({ example: 3, description: 'Số asset unit chưa bị xóa thuộc product.' })
+  assetUnitCount!: number;
   @ApiProperty() quantity!: number;
   @ApiProperty() unitRentalFee!: number;
   @ApiProperty() unitDepositAmount!: number;

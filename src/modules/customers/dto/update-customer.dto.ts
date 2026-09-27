@@ -1,6 +1,6 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, Matches } from 'class-validator';
-import { INVALID_EMAIL, INVALID_PHONE_NUMBER, INVALID_STRING } from '@/libs/constants/invalid.constant';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import { INVALID_EMAIL, INVALID_PHONE_NUMBER, INVALID_REQUIRED, INVALID_STRING } from '@/libs/constants/invalid.constant';
 
 export class UpdateCustomerDto {
   @ApiPropertyOptional({ example: 'Nguyen Van A' })
@@ -30,10 +30,10 @@ export class UpdateCustomerDto {
   @IsString({ message: INVALID_STRING })
   identityNumber?: string;
 
-  @ApiPropertyOptional({ example: 'zalo.me/0900000000' })
-  @IsOptional()
+  @ApiProperty({ example: 'zalo.me/0900000000' })
   @IsString({ message: INVALID_STRING })
-  socialContact?: string;
+  @IsNotEmpty({ message: INVALID_REQUIRED })
+  socialContact!: string;
 
   @ApiPropertyOptional({ example: 'Khach quen' })
   @IsOptional()

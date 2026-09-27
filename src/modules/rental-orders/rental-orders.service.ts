@@ -107,6 +107,7 @@ type RentalOrderCustomerSnapshotValue = {
   email: string | null;
   address: string | null;
   identityNumber: string | null;
+  socialContact: string | null;
 };
 
 @Injectable()
@@ -1063,8 +1064,16 @@ export class RentalOrdersService {
     email: string | null;
     address: string | null;
     identityNumber: string | null;
+    socialContact: string | null;
   }) {
-    return { name: customer.name, phone: customer.phone, email: customer.email, address: customer.address, identityNumber: customer.identityNumber };
+    return {
+      name: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+      address: customer.address,
+      identityNumber: customer.identityNumber,
+      socialContact: customer.socialContact,
+    };
   }
 
   private customerSnapshotFromUpdate(snapshot: UpdateRentalOrderCustomerSnapshotDto): RentalOrderCustomerSnapshotValue {
@@ -1074,6 +1083,16 @@ export class RentalOrdersService {
       email: snapshot.email?.trim() || null,
       address: snapshot.address?.trim() || null,
       identityNumber: snapshot.identityNumber?.trim() || null,
+      socialContact: snapshot.socialContact.trim(),
+    };
+  }
+
+  private customerSnapshotOut(snapshot: Prisma.JsonValue): RentalOrderOutDto['customerSnapshot'] {
+    const value = snapshot as unknown as RentalOrderOutDto['customerSnapshot'];
+
+    return {
+      ...value,
+      socialContact: value.socialContact ?? null,
     };
   }
 
@@ -1104,7 +1123,7 @@ export class RentalOrdersService {
     const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
     return {
       ...order,
-      customerSnapshot: order.customerSnapshot as unknown as RentalOrderListItemOutDto['customerSnapshot'],
+      customerSnapshot: this.customerSnapshotOut(order.customerSnapshot),
       rentalFeeTotal: Number(order.rentalFeeTotal),
       deliveryFeeTotal: Number(order.deliveryFeeTotal),
       bookingHoldTotal: Number(order.bookingHoldTotal),
@@ -1148,7 +1167,7 @@ export class RentalOrdersService {
       settlementStatus: order.settlementStatus,
       ...overdue,
       customerId: order.customerId,
-      customerSnapshot: order.customerSnapshot as unknown as RentalOrderOutDto['customerSnapshot'],
+      customerSnapshot: this.customerSnapshotOut(order.customerSnapshot),
       settingsSnapshot: order.settingsSnapshot,
       rentalPeriod: {
         startDate: order.startDate,

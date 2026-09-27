@@ -65,6 +65,8 @@ export class RentalOrderCustomerSnapshotOutDto {
   @ApiPropertyOptional({ nullable: true }) email!: string | null;
   @ApiPropertyOptional({ nullable: true }) address!: string | null;
   @ApiPropertyOptional({ nullable: true }) identityNumber!: string | null;
+  @ApiPropertyOptional({ nullable: true, example: 'zalo.me/0900000000' })
+  socialContact!: string | null;
 }
 
 export class RentalOrderAllocationOutDto {

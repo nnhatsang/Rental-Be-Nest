@@ -32,6 +32,11 @@ export class UpdateRentalOrderCustomerSnapshotDto {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   identityNumber?: string | null;
+
+  @ApiProperty({ example: 'zalo.me/0900000000' })
+  @IsString({ message: INVALID_STRING })
+  @IsNotEmpty({ message: INVALID_REQUIRED })
+  socialContact!: string;
 }
 
 export class UpdateRentalOrderDto {

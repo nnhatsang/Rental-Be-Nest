@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import {
+  OrderStatus,
   PaymentDirection,
   PaymentTransactionStatus,
   RentalChargeKind,
@@ -67,6 +68,7 @@ export class RentalOrderFinancialService {
     ]);
     if (!order) return;
 
+    const isCancelled = order.status === OrderStatus.CANCELLED;
     const inactiveChargeStatuses: RentalChargeStatus[] = [RentalChargeStatus.CANCELLED, RentalChargeStatus.WAIVED];
     const activeCharges = charges.filter((charge) => !inactiveChargeStatuses.includes(charge.status));
     const chargeTotal = money(
@@ -82,7 +84,7 @@ export class RentalOrderFinancialService {
     const actualRefundTotal = money(
       refunds.filter((refund) => refund.status === RentalRefundStatus.REFUNDED).reduce((total, refund) => total + numberOf(refund.amount), 0),
     );
-    const sumKind = (kind: RentalChargeKind) => money(activeCharges.filter((charge) => charge.kind === kind).reduce((total, charge) => total + numberOf(charge.amount), 0));
+    const sumKind = (kind: RentalChargeKind) => money(charges.filter((charge) => charge.kind === kind).reduce((total, charge) => total + numberOf(charge.amount), 0));
     const rentalFeeTotal = sumKind(RentalChargeKind.RENTAL_FEE);
     const deliveryFeeTotal = sumKind(RentalChargeKind.DELIVERY_FEE);
     const bookingHoldTotal = sumKind(RentalChargeKind.BOOKING_HOLD);
@@ -90,16 +92,18 @@ export class RentalOrderFinancialService {
     const lateFeeTotal = sumKind(RentalChargeKind.LATE_FEE);
     const damageCompensationTotal = sumKind(RentalChargeKind.DAMAGE_COMPENSATION);
     const cancellationFeeTotal = sumKind(RentalChargeKind.CANCELLATION_FEE);
-    const totalCustomerObligation = calculateHandoverRequiredTotal(chargeTotal, securityDepositTotal);
-    const amountDueAtBooking = this.outstandingForKind(activeCharges, RentalChargeKind.BOOKING_HOLD);
-    const amountDueBeforeHandover = money(Math.max(0, totalCustomerObligation - inboundPaid));
-    const refundDue = order.returnStatus === ReturnStatus.INSPECTED
+    const totalCustomerObligation = isCancelled ? chargeTotal : calculateHandoverRequiredTotal(chargeTotal, securityDepositTotal);
+    const amountDueAtBooking = isCancelled ? 0 : this.outstandingForKind(activeCharges, RentalChargeKind.BOOKING_HOLD);
+    const amountDueBeforeHandover = isCancelled ? 0 : money(Math.max(0, totalCustomerObligation - inboundPaid));
+    const refundDue = isCancelled || order.returnStatus === ReturnStatus.INSPECTED
       ? money(Math.max(0, inboundPaid - chargeTotal - actualRefundTotal))
       : 0;
-    const additionalChargeDue = order.returnStatus === ReturnStatus.INSPECTED
+    const additionalChargeDue = !isCancelled && order.returnStatus === ReturnStatus.INSPECTED
       ? money(Math.max(0, chargeTotal + actualRefundTotal - inboundPaid))
       : 0;
-    const settlementStatus = order.returnStatus !== ReturnStatus.INSPECTED
+    const settlementStatus = isCancelled
+      ? refundDue > 0 ? RentalSettlementStatus.REFUND_DUE : RentalSettlementStatus.SETTLED
+      : order.returnStatus !== ReturnStatus.INSPECTED
       ? inboundPaid < totalCustomerObligation ? RentalSettlementStatus.PAYMENT_DUE : RentalSettlementStatus.NOT_STARTED
       : additionalChargeDue > 0 ? RentalSettlementStatus.PAYMENT_DUE : refundDue > 0 ? RentalSettlementStatus.REFUND_DUE : RentalSettlementStatus.SETTLED;
     await Promise.all(

@@ -226,6 +226,11 @@ export const RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT = new ErrorResponse({
   message: 'Số tiền khách đã thanh toán chưa đủ để bàn giao thiết bị',
 });
 
+export const RENTAL_ORDER_REFUND_AMOUNT_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_REFUND_AMOUNT_INVALID',
+  message: 'Số tiền hoàn không được vượt quá số tiền khách đã thanh toán chưa hoàn',
+});
+
 export const ROLE_NOT_FOUND = new ErrorResponse({
   code: 'ROLE_NOT_FOUND',
   message: 'Không tìm thấy vai trò phù hợp',

@@ -7,6 +7,7 @@ import {
   IsDate,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -26,6 +27,7 @@ import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRI
 export class CancelRentalOrderDto {
   @ApiProperty({ example: 'Khach huy lich' })
   @IsString({ message: INVALID_STRING })
+  @IsNotEmpty({ message: INVALID_STRING })
   reason!: string;
 
   @ApiPropertyOptional({ default: false, description: 'Cho phép tạo yêu cầu hoàn tiền theo chính sách hủy đơn.' })

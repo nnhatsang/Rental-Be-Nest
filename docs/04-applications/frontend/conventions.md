@@ -221,6 +221,7 @@ Checklist dialog:
 
 - `DialogFooter` nằm ngoài `ScrollArea`, không bị bóp bởi container chung;
 - scroll body có `min-h-0 flex-1` và parent có chiều cao giới hạn;
+- `ScrollArea` của dự án đã custom vùng scrollbar với offset âm; không thêm `pr-4` chỉ để chừa chỗ cho scrollbar. Chỉ dùng padding khi đó là spacing thực sự của nội dung;
 - Popover/Select/Combobox/DatePicker truyền đúng `portalContainer` khi mở trong dialog;
 - không lồng nhiều `ScrollArea` nếu không cần;
 - header mô tả mục tiêu, body nhóm theo `FieldGroup`, footer giữ action chính;

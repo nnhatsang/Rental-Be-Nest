@@ -1,399 +1,320 @@
-# Quy chuẩn phát triển Frontend (Next.js Conventions)
+# Frontend module skill — Next.js + TanStack Query + shadcn
 
-> Tài liệu hướng dẫn lập trình, cấu trúc thư mục và các nguyên tắc phát triển giao diện Admin Console bằng Next.js App Router.
+Tài liệu này là playbook để dựng module frontend nhanh nhưng vẫn đúng design system của `rental-admin-fe`. Mỗi module phải được xây theo feature-first: API, model, query state, form và UI nằm trong cùng domain; component dùng lại đặt ở `components/shared` hoặc `components/ui` theo phạm vi sử dụng.
 
----
+## 0. Nguyên tắc bắt buộc
 
-## 1. Thứ tự xây dựng tính năng
+1. Chốt API contract và capability matrix trước khi thiết kế UI.
+2. `index.tsx` chỉ compose provider, table, bulk action và dialog; không chứa business logic dài.
+3. Component không gọi Axios/fetch trực tiếp. Component gọi hook; hook gọi service.
+4. TanStack Query quản lý server state; React Hook Form quản lý form state; state mở/đóng dialog và filter giữ ở nơi gần nhất có thể.
+5. `display-config.ts` chứa mapping status/type → label, icon, tone/class. `display-utils.ts` chỉ chứa hàm format/derive thuần.
+6. Không để label, màu status, error message và format tiền/ngày rải rác trong JSX.
+7. Dùng primitive shadcn và component đã có trong repo trước khi tạo component mới. Nếu thiếu component, đọc `.agents/skills/shadcn/SKILL.md`, kiểm tra registry và thêm đúng primitive cần thiết.
+8. UI ưu tiên hierarchy, whitespace và semantic token; không bọc mọi vùng bằng border/card.
+9. Không để frontend tự quyết định business rule về tiền, trạng thái, availability hoặc quyền. FE hiển thị và validate trải nghiệm; BE là nguồn sự thật.
 
-Khi xây dựng hoặc cập nhật tính năng frontend, triển khai theo thứ tự phân tầng dưới đây. Không gọi API trực tiếp từ component.
+### Definition of Done
 
-```text
-1. Types -> 2. Schema Zod -> 3. Service API -> 4. React Hook -> 5. Component/Page
+Một module chỉ được xem là hoàn tất khi có đủ:
+
+- model type/schema, API service, query key, query/mutation hooks;
+- list/table có pagination, filter, sort và empty/loading/error state;
+- create/update/detail/delete hoặc capability tương ứng;
+- columns có ngữ nghĩa rõ, display config riêng và action theo permission;
+- debounce cho search combobox; query invalidation sau mutation;
+- dialog có scroll đúng, footer không bị bóp và popover/combobox đúng portal;
+- toast/error message ổn định, không lộ raw error;
+- `pnpm exec tsc --noEmit`, `pnpm run lint`, `pnpm run build` chạy đạt.
+
+## 1. Quy trình dựng module trong 8 bước
+
+### Bước 1 — Khảo sát codebase và skill UI
+
+```powershell
+rg --files modules components lib | rg "(columns|provider|dialog|schema|services|queries|mutations|display|combobox)"
+rg -n "useDataTable|useTableQueryState|CopyText|CurrencyInput|DateTimeRangePicker|ProductCombobox" modules components
 ```
 
-Cấu trúc khuyến nghị trong từng module `modules/<domain>/`:
+Kiểm tra trước:
 
-- Kiểu dữ liệu: `modules/<domain>/type.ts`
-- Schema validate Zod: `modules/<domain>/schema.ts`
-- Services API: `modules/<domain>/services.ts`
-- React Query hooks: `modules/<domain>/hooks/use-*.ts`
-- State orchestration hook nếu cần: `modules/<domain>/hooks/use-<domain>-state.ts`
-- Component nghiệp vụ: `modules/<domain>/<Feature>.tsx` hoặc `modules/<domain>/components/<Feature>.tsx`
-- Next.js Page: `app/<route>/page.tsx` chỉ import component nghiệp vụ và render
+- module gần nhất về domain và module gần nhất về table/dialog;
+- `components/ui`, `components/shared`, `lib/utils.ts`;
+- `.agents/skills/shadcn/SKILL.md` trước khi thêm primitive mới;
+- API response, pagination, permission code và enum từ backend;
+- cách project xử lý toast, query error, loading và route permission.
 
-### 1.1 Module skeleton build nhanh
+Không copy nguyên module cũ nếu lifecycle khác. Chỉ copy composition pattern và đổi toàn bộ contract/domain rule.
 
-Khi cần build nhanh một CRUD/list module, copy pattern từ `modules/users` của frontend. Giữ ít file, rõ trách nhiệm, chưa tách folder sâu nếu module còn nhỏ.
+### Bước 2 — Chốt capability matrix và UI contract
+
+| Capability | UI | API hook | Permission | Cache ảnh hưởng |
+| --- | --- | --- | --- | --- |
+| List | table + filter | `useGetThings` | `thing:read` | `things.list` |
+| Detail | detail dialog/page | `useGetThing` | `thing:read` | `things.detail` |
+| Create | create dialog | `useCreateThing` | `thing:create` | invalidate list |
+| Update | update dialog | `useUpdateThing` | `thing:update` | detail + list |
+| Delete/bulk | confirm dialog | `useDeleteThings` | `thing:delete` | invalidate list |
+| Workflow | action dialog | `useThingAction` | action permission | detail + list |
+
+Chốt rõ trước khi code:
+
+- field nào chỉ đọc, field nào editable, field nào server-managed;
+- update là PATCH dirty fields hay gửi toàn bộ form;
+- relation có dùng combobox để đổi hay chỉ render snapshot;
+- quote/availability có cần refresh khi đổi input;
+- status nào được action nào;
+- dialog nào dùng portal container và vùng nào được scroll.
+
+### Bước 3 — Tạo skeleton module
 
 ```text
 modules/<domain>/
-  index.tsx                  # Entry component, bọc Provider và render Content
-  <domain>-provider.tsx      # Dialog state/current row/shared UI state
-  columns.tsx                # ColumnDef cho DataTable
-  dialog.tsx                 # Form dialogs: add/edit/status/reset...
-  bulk-action.tsx            # Bulk actions nếu có chọn nhiều dòng
-  schema.ts                  # Zod form schema
-  services.ts                # API calls
-  type.ts                    # API types/contracts
-  hooks/
-    keys.ts                  # React Query keys
-    use-get-<domain>.ts      # List query
-    use-get-<item>-by-id.ts  # Detail query nếu cần
-    use-create-<item>.ts     # Create mutation
-    use-update-<item>.ts     # Update mutation
-    use-delete-<item>.ts     # Delete/bulk delete mutation
-    <domain>-logic.tsx       # DataTable state + toolbar action orchestration
+├── index.tsx                         # composition mỏng
+├── <domain>-provider.tsx             # chỉ khi cần shared dialog/action state
+├── columns.tsx
+├── bulk-action.tsx                   # chỉ khi có bulk action
+├── dialogs.tsx                       # registry/dialog orchestration
+├── constants.ts
+├── display-config.ts                 # status/type → presentation
+├── display-utils.ts                  # pure formatting/derivation
+├── api/
+│   ├── index.ts
+│   └── services.ts
+├── model/
+│   ├── index.ts
+│   ├── schema.ts
+│   └── type.ts
+├── hooks/
+│   ├── keys.ts
+│   ├── queries.ts
+│   ├── mutations.ts
+│   └── <domain>-logic.tsx            # chỉ khi có domain interaction phức tạp
+└── components/
+    ├── form/
+    ├── create/
+    ├── update/
+    ├── detail/
+    ├── actions/
+    └── <domain>-status-badge.tsx
 ```
 
-Page route chỉ render module:
+Không tạo file chỉ vì skeleton. Nếu module chỉ có list thì chưa cần provider, bulk action hoặc state machine UI.
 
-```tsx
-import { TITLE_PAGE } from '@/utils/consts/title-page.const';
-import { Metadata } from 'next';
-import dynamic from 'next/dynamic';
+### Bước 4 — Model, schema và service API
 
-const Users = dynamic(() => import('@/modules/users'));
+#### Model
 
-export const metadata: Metadata = {
-  title: TITLE_PAGE.USERS.INDEX,
+- `model/type.ts`: type response, query, mutation input và enum lấy theo API contract.
+- `model/schema.ts`: Zod schema cho form/query input; không dùng schema để thay business rule backend.
+- `model/index.ts`: export công khai của module.
+- Không lặp lại type shared ở nhiều module.
+
+Create/update nên có schema riêng khi quyền sửa hoặc field editable khác nhau:
+
+```ts
+export const createThingSchema = z.object({
+  name: z.string().trim().min(1, 'Vui lòng nhập tên'),
+});
+
+export const updateThingSchema = createThingSchema.partial();
+```
+
+#### Service
+
+```ts
+export async function getThings(query: GetThingsQuery) {
+  const { data } = await apiClient.get<PaginatedResponse<Thing>>('/things', {
+    params: query,
+  });
+  return data;
+}
+```
+
+Service chỉ serialize request và unwrap response theo chuẩn project. Không đặt state, toast, React hook hoặc JSX trong `api/services.ts`.
+
+Ngày/tiền phải thống nhất:
+
+- dùng helper chung trong `lib/utils.ts` cho parse/ISO/date/currency;
+- domain-specific như duration rental, period label, due warning đặt ở `display-utils.ts` của module;
+- không tạo `new Date(...).toLocaleString(...)` lặp trong JSX;
+- money input dùng `CurrencyInput` và serialize về number/string đúng backend contract.
+
+### Bước 5 — Query, mutation và cache
+
+Query key phải phân cấp và chứa đủ input ảnh hưởng kết quả:
+
+```ts
+export const thingKeys = {
+  all: ['things'] as const,
+  lists: () => [...thingKeys.all, 'list'] as const,
+  list: (query: GetThingsQuery) => [...thingKeys.lists(), query] as const,
+  details: () => [...thingKeys.all, 'detail'] as const,
+  detail: (id: string) => [...thingKeys.details(), id] as const,
 };
-
-export default function Page() {
-  return <Users />;
-}
 ```
 
-`index.tsx` trong module nên giữ mỏng:
+Quy tắc hook:
+
+- `useQuery` chỉ nhận query đã normalize;
+- dùng `enabled` khi thiếu id hoặc dependency;
+- search combobox phải debounce, hủy/ghi đè request cũ và không query khi input chưa đủ dài nếu API yêu cầu;
+- mutation hiển thị toast ở một chỗ thống nhất;
+- sau create/update/delete/action, invalidate đúng list/detail/related availability;
+- khi mutation ảnh hưởng quote hoặc availability, không giữ data cũ như thể còn hợp lệ.
+
+Đừng đưa toàn bộ query state vào Zustand nếu TanStack Query hoặc URL state đã sở hữu nó.
+
+### Bước 6 — Table và columns
+
+DataTable server-side phải truyền đủ `page`, `perPage`, `sort`, filter và search xuống query. Không filter/sort client một danh sách đã phân trang từ server.
+
+`columns.tsx` chỉ định nghĩa presentation và action; không gọi mutation trực tiếp ngoài callback/hook được truyền vào.
+
+Mỗi bảng nên có các nhóm cột sau, tùy domain:
+
+1. **Primary identity**: code/name, có `CopyText` cho mã cần tra cứu.
+2. **Relation**: customer/product/category với label dễ đọc, tránh chỉ render UUID.
+3. **Time/state**: period, duration, status; status có badge/config riêng.
+4. **Financial/quantity**: tổng tiền, còn phải thu, số lượng; format tiền thống nhất.
+5. **Updated**: `updatedAt` hoặc thông tin vận hành cần thiết.
+6. **Actions**: detail/update/workflow/delete theo permission và state.
+
+Không nhồi mọi field vào table. Field ít dùng đưa vào detail dialog. Với thời gian vận hành, có thể render cảnh báo `sắp tới`, `đang diễn ra`, `quá hạn` ở FE nhưng màu/label phải lấy từ `display-config` và mốc nghiệp vụ do backend trả hoặc đã chốt chung.
+
+Mẫu mã có thể copy:
 
 ```tsx
-'use client';
-
-import { DataTable } from '@/components/ui/data-table';
-import { BulkActions } from './bulk-action';
-import { UserDialogs } from './dialog';
-import { useUsersLogic } from './hooks/user-logic';
-import { UsersProvider } from './users-provider';
-
-function Content() {
-  const { table } = useUsersLogic();
-
-  return (
-    <>
-      <DataTable table={table} />
-      <BulkActions table={table} />
-      <UserDialogs table={table} />
-    </>
-  );
-}
-
-export default function Users() {
-  return (
-    <UsersProvider>
-      <Content />
-    </UsersProvider>
-  );
-}
+<CopyText text={String(row.code)} className="py-1 font-bold text-primary underline">
+  <span>#{row.code}</span>
+</CopyText>
 ```
 
-Với module đơn giản chưa có bulk action hoặc nhiều dialog, có thể bỏ `bulk-action.tsx` và provider; nhưng khi có add/edit/delete/status dialogs thì nên giữ provider ngay từ đầu để tránh truyền props qua nhiều component.
+### Bước 7 — Form, dialog và design system
 
-### 1.2 Mapping nhanh cho Products và Asset Units
+#### Form
 
-`products` và `asset-units` nên là hai module riêng nhưng điều hướng liên kết chặt:
+- Dùng React Hook Form + `zodResolver`.
+- Mỗi field dùng `Field`, `FieldLabel`, `FieldDescription`, `FieldError` theo component chuẩn.
+- Dùng `getDirtyValues` cho PATCH nếu backend nhận partial update.
+- Không gửi `undefined`, field read-only, hoặc relation display-only.
+- Disable submit khi pending; chống double submit.
+- Khi input ảnh hưởng quote/availability, invalidate quote có chủ đích và hiển thị trạng thái đang tính.
+- Combobox customer/product phải debounce; tìm product theo productId/SKU/name theo contract, còn asset-unit assignment để backend xử lý nếu đó là nghiệp vụ server.
+- Có thể dùng `DateTimeRangePicker`, `CurrencyInput`, `ProductCombobox` và pattern portal container sẵn có; không tự chế input tương đương nếu component hiện tại đáp ứng.
+
+#### Dialog layout
+
+Dialog có form dài phải tách rõ header, scroll body và footer:
+
+```tsx
+<DialogContent className="flex max-h-[min(90vh,900px)] flex-col gap-0 p-0 sm:max-w-3xl">
+  <DialogHeader className="shrink-0 px-6 py-5" />
+  <ScrollArea className="min-h-0 flex-1">
+    <div className="px-6 py-5">...</div>
+  </ScrollArea>
+  <DialogFooter className="shrink-0 border-t border-accent/60 px-6 py-4" />
+</DialogContent>
+```
+
+Checklist dialog:
+
+- `DialogFooter` nằm ngoài `ScrollArea`, không bị bóp bởi container chung;
+- scroll body có `min-h-0 flex-1` và parent có chiều cao giới hạn;
+- Popover/Select/Combobox/DatePicker truyền đúng `portalContainer` khi mở trong dialog;
+- không lồng nhiều `ScrollArea` nếu không cần;
+- header mô tả mục tiêu, body nhóm theo `FieldGroup`, footer giữ action chính;
+- border chỉ dùng để phân vùng: ưu tiên `border-accent/60`, divider nhẹ hoặc whitespace; không bọc mọi field bằng card;
+- màu dùng semantic token của design system, không hard-code màu trạng thái trong từng component.
+
+#### Card, FieldGroup và các vùng thông tin
+
+Ưu tiên thứ tự thị giác:
+
+1. tiêu đề/description ngắn;
+2. nhóm field liên quan;
+3. summary/quote/alert khi có dữ liệu;
+4. action ở footer.
+
+Dùng Card khi cần tách một nhóm nghiệp vụ lớn; dùng `FieldGroup`/`divide-y` cho danh sách field. Một sản phẩm/dòng item nên hiển thị name, SKU, quantity, price và action trong cùng một row; không lặp border card cho từng item.
+
+### Bước 8 — Detail, update, permission và kiểm tra
+
+Detail dialog nên hiển thị theo thứ tự:
+
+- mã/identity có copy;
+- status + cảnh báo vận hành;
+- customer/snapshot/relation;
+- thời gian + duration/period dễ đọc;
+- items/quantity/price;
+- financial summary;
+- timeline/note/audit nếu có;
+- actions hợp lệ theo status.
+
+Update dialog chỉ hiển thị field mà backend cho phép sửa. Nếu nghiệp vụ yêu cầu sửa snapshot, form nhận snapshot fields; không tự đưa `CustomerCombobox` vào chỉ vì bản ghi có customer relation. Nếu muốn đổi relation, phải có API contract và rule backend tương ứng.
+
+Action/status không được suy ra bằng cách so sánh label tiếng Việt. Dùng enum/code từ backend và map tại `display-config.ts`.
+
+## 2. Tách display config và display utils
+
+### `display-config.ts`
+
+Chứa presentation mapping ổn định:
+
+```ts
+export const thingStatusConfig = {
+  DRAFT: { label: 'Nháp', tone: 'muted', icon: IconFileText },
+  CONFIRMED: { label: 'Đã xác nhận', tone: 'success', icon: IconCircleCheck },
+  CANCELLED: { label: 'Đã hủy', tone: 'danger', icon: IconCircleX },
+} as const;
+```
+
+Config có thể chứa label/icon/variant/className/accessibility label, nhưng không gọi hook, query hoặc tính nghiệp vụ.
+
+### `display-utils.ts`
+
+Chỉ chứa hàm thuần:
+
+- format date/time, period, duration;
+- format quantity/price/summary;
+- derive warning presentation từ dữ liệu đã có;
+- normalize text hiển thị.
+
+Dùng `parseDate`, `toIso`, `formatDate`, `formatCurrency` từ `lib/utils.ts` nếu phù hợp. Không định nghĩa lại helper date dùng chung trong từng module. Hàm phải xử lý `undefined`, `null`, date invalid và khoảng thời gian không hợp lệ.
+
+## 3. Permission, error và text
+
+- Permission guard ở page/hook/action chỉ là UX; backend vẫn kiểm tra quyền.
+- Nút ẩn/disable phải dựa trên permission + trạng thái record.
+- Error API map về message tiếng Việt ổn định qua constants/utility; không render `error.message` thô nếu có thể chứa chi tiết kỹ thuật.
+- Toast success/error dùng một pattern; không bắn toast trong nhiều tầng cho cùng một mutation.
+- Text người dùng nhìn thấy viết tiếng Việt nhất quán; enum/code nội bộ giữ tiếng Anh theo API.
+
+## 4. Checklist copy cho module mới
 
 ```text
-modules/products/
-  index.tsx
-  products-provider.tsx
-  columns.tsx
-  dialog.tsx
-  schema.ts
-  services.ts
-  type.ts
-  hooks/product-logic.tsx
-
-modules/asset-units/
-  index.tsx
-  asset-units-provider.tsx
-  columns.tsx
-  dialog.tsx
-  schema.ts
-  services.ts
-  type.ts
-  hooks/asset-unit-logic.tsx
+[ ] Đọc skill shadcn và khảo sát module tương tự
+[ ] Chốt capability/permission/API contract
+[ ] Tạo module skeleton tối thiểu
+[ ] Tạo type + schema create/update/query
+[ ] Tạo service + query keys + queries/mutations
+[ ] Nối DataTable server-side: page/filter/sort/search
+[ ] Tạo display-config và display-utils
+[ ] Tạo columns theo identity/relation/time/state/financial/actions
+[ ] Tạo detail/create/update dialog theo layout header/body/footer
+[ ] Dùng Field/FieldGroup, CurrencyInput/DateTimeRangePicker/Combobox đúng pattern
+[ ] Debounce search và invalidate cache sau mutation
+[ ] Kiểm tra permission, error, loading, empty và optimistic/stale state
+[ ] Chạy typecheck, lint, build và git diff --check
 ```
 
-Nguyên tắc chia:
+## 5. Lệnh kiểm tra tối thiểu
 
-- `products`: quản lý dòng sản phẩm/model, giá thuê, cọc, category, brand, rental price tiers.
-- `asset-units`: quản lý thiết bị vật lý/serial, status, condition, note, active flag.
-- Trong product detail hoặc product row action có thể mở tab/link xem asset units theo `productId`.
-- Trong asset-units list cần filter `productId`, `status`, `condition`.
-- Trong order creation chọn `Product` trước, sau đó gán `AssetUnit` nếu cần.
-
-Build nhanh trước:
-
-1. Dựng `/products` list/create/edit/status/delete.
-2. Dựng `/asset-units` list/create/edit/status/delete với filter `productId`.
-3. Sau đó mới thêm product detail tab asset units nếu cần UX tốt hơn.
-
----
-
-## 2. Các lớp kiến trúc
-
-### 2.1 Types
-
-Định nghĩa request payload và response structure của API tại `type.ts` trong từng module.
-
-```ts
-export interface ILoginReq {
-  email: string;
-  password: string;
-}
-
-export interface IAuthRes {
-  user: IUser;
-}
+```powershell
+pnpm exec tsc --noEmit
+pnpm run lint
+pnpm run build
+git diff --check
 ```
 
-Không định nghĩa type dữ liệu inline trong services hoặc hooks nếu type đó là contract API/module.
-
-### 2.2 Zod Schema
-
-Mọi form nhập liệu phải validate bằng Zod. Schema đặt ở `schema.ts`, export cả schema và inferred type.
-
-```ts
-import { z } from 'zod';
-
-export const loginSchema = z.object({
-  email: z.string().min(1, { message: 'Bắt buộc nhập email' }).email({ message: 'Email không hợp lệ' }),
-  password: z.string().min(1, { message: 'Bắt buộc nhập mật khẩu' }),
-});
-
-export type ILoginInput = z.infer<typeof loginSchema>;
-```
-
-### 2.3 Services
-
-Service chỉ khai báo HTTP call bằng Axios client:
-
-- Dùng `apiClient` cho endpoint public.
-- Dùng `apiAuth` cho endpoint yêu cầu đăng nhập/quyền admin.
-- Nhận dữ liệu đã định kiểu và trả về `Promise<AxiosResponse<DefaultResponse<T>>>`.
-- Không toast, không router, không quản lý UI state trong service.
-
-### 2.4 Hooks
-
-Hooks kết nối form state, TanStack Query, mutation/query và UI state:
-
-- Query/mutation hooks đặt trong `modules/<domain>/hooks`.
-- State orchestration hook như `use-users-state.ts` chỉ gom state và handler cho page/module.
-- Dùng `applyApiFormErrors` để map lỗi backend vào React Hook Form.
-- Toast thành công/thất bại lấy từ constants, không hard-code trong mutation hooks.
-
-```ts
-export const useLogin = () => {
-  const form = useForm<ILoginInput>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
-  });
-
-  const { mutate, isPending } = useMutation({
-    mutationFn: (values: ILoginInput) => requestLogin(values),
-    onError: (error) => {
-      applyApiFormErrors(form, error, {
-        fallbackMessage: ERROR_MESSAGES.AUTH.LOGIN,
-      });
-    },
-    onSuccess: () => {
-      toast.success(SUCCESS_MESSAGES.AUTH.LOGIN);
-    },
-  });
-
-  return {
-    form,
-    isPending,
-    onSubmit: (values: ILoginInput) => mutate(values),
-  };
-};
-```
-
-### 2.5 Components & Pages
-
-Component tập trung render UI:
-
-- Nhận form/table/state từ hook.
-- Gọi `handleSubmit(onSubmit)` khi submit form.
-- Render field error bằng `<FieldError>`.
-- Không gọi API trực tiếp từ component.
-
-```tsx
-{fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-```
-
----
-
-## 3. Text, constants và ngôn ngữ
-
-- Toàn bộ UI admin hiển thị tiếng Việt.
-- File mã nguồn phải lưu UTF-8 để tránh lỗi mojibake.
-- Page title, dialog title, button text, label text dài và fallback error text phải đặt trong constants.
-- Với page/module, ưu tiên gom text vào `TITLE_PAGE.<DOMAIN>`.
-
-Ví dụ module users:
-
-```ts
-TITLE_PAGE.USERS.ACTIONS.CREATE
-TITLE_PAGE.USERS.FORM.FULL_NAME
-TITLE_PAGE.USERS.DIALOG.FORM_CREATE_TITLE
-TITLE_PAGE.USERS.ERRORS.UPDATE_FAILED
-```
-
-Không hard-code text dài trong dialog/component nếu text đó thuộc business UI hoặc có khả năng dùng lại.
-
-Toast messages:
-
-- Thành công: dùng `SUCCESS_MESSAGES` tại `utils/consts/messages-success.const.ts`.
-- Thất bại: dùng `ERROR_MESSAGES` tại `utils/consts/message-error.const.ts` hoặc fallback text trong `TITLE_PAGE.<DOMAIN>.ERRORS` nếu lỗi gắn với form/dialog cụ thể.
-
-Nếu backend trả field error khác tên field frontend, dùng `fieldMap`:
-
-```ts
-applyApiFormErrors(form, error, {
-  fallbackMessage: ERROR_MESSAGES.AUTH.RESET_PASSWORD,
-  fieldMap: {
-    passwordConfirm: 'confirmPassword',
-    newPasswordConfirm: 'confirmPassword',
-  },
-});
-```
-
----
-
-## 4. Data Table và query params
-
-Các màn danh sách admin nên dùng `components/ui/data-table` thay vì tự render table mới.
-
-Pattern khuyến nghị:
-
-- Dùng `useDataTable` để tạo table instance.
-- Dùng `useTableQueryState` cho pagination, sorting, global search, column filters, row selection.
-- Bật `syncUrl: true` nếu list state cần nằm trên URL.
-- Khi gọi list API server-side, map sorting thành query `sortBy=<columnId>` và `sort=asc|desc` theo whitelist của backend.
-- Global search dùng toolbar search của data-table.
-- Column filter chỉ bật ở cột được khai báo trong `ColumnDef.meta`.
-- Filter select dùng `meta.variant: 'select'` và `meta.options`.
-- Export bật bằng `enableExport: true`.
-
-Ví dụ column filter:
-
-```ts
-{
-  accessorKey: 'activityStatus',
-  header: 'Trạng thái',
-  meta: {
-    label: 'Trạng thái',
-    variant: 'select',
-    options: statusFilterOptions,
-  },
-  enableSorting: false,
-}
-```
-
-Ví dụ map column filter sang query param:
-
-```ts
-const tableQuery = useTableQueryState({
-  initialPageSize: 10,
-  initialColumnFilters,
-  columnFilterQueryParamMap: { activityStatus: 'status' },
-  syncUrl: true,
-});
-```
-
-Với API server-side:
-
-```ts
-const table = useDataTable({
-  data,
-  columns,
-  pageCount,
-  state: {
-    pagination: tableQuery.pagination,
-    rowSelection: tableQuery.rowSelection,
-    sorting: tableQuery.sorting,
-    columnFilters: tableQuery.columnFilters,
-    globalFilter: tableQuery.globalFilter,
-  },
-  manualPagination: true,
-  manualSorting: true,
-  manualFiltering: true,
-  enableColumnFilters: true,
-  enableColumnFilterModes: false,
-  enableGlobalFilter: true,
-  enableExport: true,
-  onPaginationChange: tableQuery.onPaginationChange,
-  onSortingChange: tableQuery.onSortingChange,
-  onColumnFiltersChange: tableQuery.onColumnFiltersChange,
-  onGlobalFilterChange: tableQuery.onGlobalFilterChange,
-  onRowSelectionChange: tableQuery.onRowSelectionChange,
-});
-```
-
-Giữ table option tối giản theo nhu cầu màn hình. Không bật editing, grouping, virtualization, pinning nếu module không dùng.
-
----
-
-## 5. Form edit và dirty values
-
-Với form edit/PATCH, chỉ gửi field đã thay đổi.
-
-- Dùng `getDirtyValues` từ `@/lib/dirty-form`.
-- Nếu không có field dirty thì đóng dialog hoặc bỏ qua mutation.
-- Field optional rỗng như `phone` nên normalize theo contract API trước khi gửi.
-
-```ts
-const dirtyValues = getDirtyValues(
-  values as IUpdateUserInput,
-  form.formState.dirtyFields as Partial<Record<keyof IUpdateUserInput, boolean>>,
-);
-
-if (Object.keys(dirtyValues).length === 0) {
-  handleClose();
-  return;
-}
-
-const data = {
-  ...dirtyValues,
-  ...(Object.prototype.hasOwnProperty.call(dirtyValues, 'phone')
-    ? { phone: dirtyValues.phone || undefined }
-    : {}),
-};
-```
-
-Create form vẫn gửi full payload theo schema create.
-
----
-
-## 6. Verification
-
-Sau khi chỉnh sửa frontend, chạy typecheck ở root frontend:
-
-```bash
-pnpm exec tsc --noEmit --pretty false
-```
-
-Khi chỉ sửa một module, chạy thêm scoped eslint:
-
-```bash
-pnpm exec eslint modules/<domain> hooks/use-table-query-state.ts
-```
-
-Với module users hiện tại:
-
-```bash
-pnpm exec eslint modules/users hooks/use-table-query-state.ts lib/dirty-form.ts utils/consts/title-page.const.ts
-```
-
-Không commit code khi còn lỗi TypeScript hoặc scoped eslint error.
+Nếu build module có thay đổi API, migration hoặc enum, phải kiểm tra cả backend contract và thực hiện một smoke test từ table → detail → create/update → refresh list. Không coi việc TypeScript compile được là đủ nếu cache, permission hoặc dialog flow chưa được kiểm tra.

@@ -86,6 +86,8 @@ export class RentalOrderAvailabilityService {
     }
     const requestedItems = [...requestedByProduct.values()];
     const productIds = requestedItems.map((item) => item.productId);
+    const products = await this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true } });
+    const productNameById = new Map(products.map((product) => [product.id, product.name]));
     const assets = await this.prisma.assetUnit.findMany({
       where: { productId: { in: productIds }, deletedAt: null, product: { isActive: true, deletedAt: null } },
       select: { id: true, productId: true, serialNumber: true, status: true, condition: true, isActive: true },
@@ -106,7 +108,18 @@ export class RentalOrderAvailabilityService {
       );
       const assetUnitIds = candidates.slice(0, item.quantity).map((asset) => asset.id);
       if (assetUnitIds.length < item.quantity) {
-        unavailableItems.push({ productId: item.productId, reason: 'NOT_ENOUGH_ASSETS_AVAILABLE' });
+        const availableQuantity = candidates.length;
+        unavailableItems.push({
+          productId: item.productId,
+          productName: productNameById.get(item.productId) ?? item.productId,
+          requestedQuantity: item.quantity,
+          availableQuantity,
+          reasonCode: 'NOT_ENOUGH_ASSETS_AVAILABLE',
+          message:
+            availableQuantity > 0
+              ? `Chỉ còn ${availableQuantity} máy trống trong khoảng thời gian đã chọn`
+              : 'Không còn máy trống trong khoảng thời gian đã chọn',
+        });
       }
       return { ...item, assetUnitIds };
     });

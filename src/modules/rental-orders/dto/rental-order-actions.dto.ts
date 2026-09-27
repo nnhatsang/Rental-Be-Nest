@@ -1,6 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsDate, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsDate,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import {
   PaymentMethod,
   RentalAccessoryStatus,
@@ -15,7 +28,13 @@ export class CancelRentalOrderDto {
   @IsString({ message: INVALID_STRING })
   reason!: string;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({ default: false, description: 'Cho phép tạo yêu cầu hoàn tiền theo chính sách hủy đơn.' })
+  @IsOptional()
+  @IsBoolean()
+  allowRefund?: boolean;
+
+  /** @deprecated Dùng allowRefund cho client mới. */
+  @ApiPropertyOptional({ default: false, deprecated: true })
   @IsOptional()
   @IsBoolean()
   refundBookingHold?: boolean;

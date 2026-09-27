@@ -44,7 +44,19 @@ export class RentalOrderUnavailableItemDto {
   productId!: string;
 
   @ApiProperty()
-  reason!: string;
+  productName!: string;
+
+  @ApiProperty({ example: 2 })
+  requestedQuantity!: number;
+
+  @ApiProperty({ example: 1 })
+  availableQuantity!: number;
+
+  @ApiProperty({ example: 'NOT_ENOUGH_ASSETS_AVAILABLE' })
+  reasonCode!: string;
+
+  @ApiProperty({ example: 'Chỉ còn 1 máy trống trong khoảng thời gian đã chọn' })
+  message!: string;
 }
 
 export class RentalOrderAvailabilityOutDto {

@@ -35,6 +35,7 @@ import { RentalOrderAvailabilityService } from './services/rental-order-availabi
 import { RentalOrderFinancialService } from './services/rental-order-financial.service';
 import { RentalOrderPricingService } from './services/rental-order-pricing.service';
 import { CreateRentalOrderDto, CreateRentalQuoteDto, RentalOrderItemDto } from './dto/create-rental-order.dto';
+import { RentalOrderUnavailableItemDto } from './dto/check-rental-order-availability.dto';
 import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 import { GetAllRentalOrdersDto, RentalOrderSortBy } from './dto/get-all-rental-orders.dto';
 import {
@@ -271,16 +272,47 @@ export class RentalOrdersService {
       await tx.rentalOrderCharge.createMany({
         data: [
           ...order.lines.flatMap((line) => [
-            { orderId: order.id, orderLineId: line.id, kind: RentalChargeKind.RENTAL_FEE, amount: line.lineRentalTotal, status: RentalChargeStatus.OPEN, refundable: false },
-            { orderId: order.id, orderLineId: line.id, kind: RentalChargeKind.BOOKING_HOLD, amount: line.lineBookingHoldTotal, status: RentalChargeStatus.OPEN, refundable: false },
-            { orderId: order.id, orderLineId: line.id, kind: RentalChargeKind.SECURITY_DEPOSIT, amount: line.lineDepositTotal, status: RentalChargeStatus.OPEN, refundable: true },
+            {
+              orderId: order.id,
+              orderLineId: line.id,
+              kind: RentalChargeKind.RENTAL_FEE,
+              amount: line.lineRentalTotal,
+              status: RentalChargeStatus.OPEN,
+              refundable: false,
+            },
+            {
+              orderId: order.id,
+              orderLineId: line.id,
+              kind: RentalChargeKind.BOOKING_HOLD,
+              amount: line.lineBookingHoldTotal,
+              status: RentalChargeStatus.OPEN,
+              refundable: false,
+            },
+            {
+              orderId: order.id,
+              orderLineId: line.id,
+              kind: RentalChargeKind.SECURITY_DEPOSIT,
+              amount: line.lineDepositTotal,
+              status: RentalChargeStatus.OPEN,
+              refundable: true,
+            },
           ]),
           ...(prepared.totals.deliveryFeeTotal > 0
-            ? [{ orderId: order.id, kind: RentalChargeKind.DELIVERY_FEE, amount: prepared.totals.deliveryFeeTotal, status: RentalChargeStatus.OPEN, refundable: false }]
+            ? [
+                {
+                  orderId: order.id,
+                  kind: RentalChargeKind.DELIVERY_FEE,
+                  amount: prepared.totals.deliveryFeeTotal,
+                  status: RentalChargeStatus.OPEN,
+                  refundable: false,
+                },
+              ]
             : []),
         ],
       });
-      await tx.orderStatusHistory.create({ data: { orderId: order.id, fromStatus: null, toStatus: OrderStatus.CREATED, note: 'Order created from quote', createdBy: user.id } });
+      await tx.orderStatusHistory.create({
+        data: { orderId: order.id, fromStatus: null, toStatus: OrderStatus.CREATED, note: 'Order created from quote', createdBy: user.id },
+      });
       await tx.rentalOrderQuote.update({ where: { id: quote.id }, data: { consumedAt: new Date() } });
       await this.financialService.recalculateOrder(order.id, tx);
       return order.id;
@@ -297,12 +329,12 @@ export class RentalOrdersService {
     if (successfulPayment > 0) throw new BadRequestException(INCORRECT_INPUT);
 
     const existingCustomerSnapshot = existing.customerSnapshot as unknown as RentalOrderCustomerSnapshotValue;
-    const nextCustomerSnapshot = dto.customerSnapshot
-      ? this.customerSnapshotFromUpdate(dto.customerSnapshot)
-      : existingCustomerSnapshot;
+    const nextCustomerSnapshot = dto.customerSnapshot ? this.customerSnapshotFromUpdate(dto.customerSnapshot) : existingCustomerSnapshot;
     const nextNote = dto.note !== undefined ? dto.note : existing.note;
     const nextInternalNote = dto.internalNote !== undefined ? dto.internalNote : existing.internalNote;
-    const hasScheduleChange = Boolean(dto.quoteId || dto.items || dto.startDate || dto.endDate || dto.pickupMethod || dto.deliveryAddress !== undefined);
+    const hasScheduleChange = Boolean(
+      dto.quoteId || dto.items || dto.startDate || dto.endDate || dto.pickupMethod || dto.deliveryAddress !== undefined,
+    );
     if (hasScheduleChange && !dto.quoteId) throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
 
     if (!dto.quoteId) {
@@ -339,31 +371,76 @@ export class RentalOrdersService {
     await this.prisma.$transaction(async (tx) => {
       await tx.rentalOrderCharge.deleteMany({ where: { orderId: id } });
       await tx.rentalOrderLine.deleteMany({ where: { orderId: id } });
-      const lines = await Promise.all(prepared.lines.map((line) => tx.rentalOrderLine.create({
-        data: {
-          orderId: id,
-          productId: line.product.id,
-          quantity: line.quantity,
-          unitRentalFee: line.pricing.unitRentalFee,
-          unitDepositAmount: line.pricing.unitDepositAmount,
-          unitBookingHoldAmount: line.pricing.unitBookingHoldAmount,
-          lineRentalTotal: line.pricing.lineRentalTotal,
-          lineDepositTotal: line.pricing.lineDepositTotal,
-          lineBookingHoldTotal: line.pricing.lineBookingHoldTotal,
-          pricingSnapshot: this.jsonValue(line.pricing),
-          accessoriesSnapshot: line.product.includedAccessories ? this.jsonValue({ text: line.product.includedAccessories }) : undefined,
-          note: line.note,
-          allocations: { create: line.assetUnitIds.map((assetUnitId) => ({ assetUnitId, source: 'AUTO_ALLOCATED' as const, status: RentalAllocationStatus.RESERVED, startDate: request.startDate, endDate: request.endDate, blockedEndDate: prepared.blockedEndDate, allocatedAt: new Date() })) },
-        },
-      })));
+      const lines = await Promise.all(
+        prepared.lines.map((line) =>
+          tx.rentalOrderLine.create({
+            data: {
+              orderId: id,
+              productId: line.product.id,
+              quantity: line.quantity,
+              unitRentalFee: line.pricing.unitRentalFee,
+              unitDepositAmount: line.pricing.unitDepositAmount,
+              unitBookingHoldAmount: line.pricing.unitBookingHoldAmount,
+              lineRentalTotal: line.pricing.lineRentalTotal,
+              lineDepositTotal: line.pricing.lineDepositTotal,
+              lineBookingHoldTotal: line.pricing.lineBookingHoldTotal,
+              pricingSnapshot: this.jsonValue(line.pricing),
+              accessoriesSnapshot: line.product.includedAccessories ? this.jsonValue({ text: line.product.includedAccessories }) : undefined,
+              note: line.note,
+              allocations: {
+                create: line.assetUnitIds.map((assetUnitId) => ({
+                  assetUnitId,
+                  source: 'AUTO_ALLOCATED' as const,
+                  status: RentalAllocationStatus.RESERVED,
+                  startDate: request.startDate,
+                  endDate: request.endDate,
+                  blockedEndDate: prepared.blockedEndDate,
+                  allocatedAt: new Date(),
+                })),
+              },
+            },
+          }),
+        ),
+      );
       await tx.rentalOrderCharge.createMany({
         data: [
           ...lines.flatMap((line) => [
-            { orderId: id, orderLineId: line.id, kind: RentalChargeKind.RENTAL_FEE, amount: line.lineRentalTotal, status: RentalChargeStatus.OPEN, refundable: false },
-            { orderId: id, orderLineId: line.id, kind: RentalChargeKind.BOOKING_HOLD, amount: line.lineBookingHoldTotal, status: RentalChargeStatus.OPEN, refundable: false },
-            { orderId: id, orderLineId: line.id, kind: RentalChargeKind.SECURITY_DEPOSIT, amount: line.lineDepositTotal, status: RentalChargeStatus.OPEN, refundable: true },
+            {
+              orderId: id,
+              orderLineId: line.id,
+              kind: RentalChargeKind.RENTAL_FEE,
+              amount: line.lineRentalTotal,
+              status: RentalChargeStatus.OPEN,
+              refundable: false,
+            },
+            {
+              orderId: id,
+              orderLineId: line.id,
+              kind: RentalChargeKind.BOOKING_HOLD,
+              amount: line.lineBookingHoldTotal,
+              status: RentalChargeStatus.OPEN,
+              refundable: false,
+            },
+            {
+              orderId: id,
+              orderLineId: line.id,
+              kind: RentalChargeKind.SECURITY_DEPOSIT,
+              amount: line.lineDepositTotal,
+              status: RentalChargeStatus.OPEN,
+              refundable: true,
+            },
           ]),
-          ...(prepared.totals.deliveryFeeTotal > 0 ? [{ orderId: id, kind: RentalChargeKind.DELIVERY_FEE, amount: prepared.totals.deliveryFeeTotal, status: RentalChargeStatus.OPEN, refundable: false }] : []),
+          ...(prepared.totals.deliveryFeeTotal > 0
+            ? [
+                {
+                  orderId: id,
+                  kind: RentalChargeKind.DELIVERY_FEE,
+                  amount: prepared.totals.deliveryFeeTotal,
+                  status: RentalChargeStatus.OPEN,
+                  refundable: false,
+                },
+              ]
+            : []),
         ],
       });
       await tx.rentalOrder.update({
@@ -402,8 +479,12 @@ export class RentalOrdersService {
     const ids = [...new Set(dto.rentalOrderIds)];
     await this.prisma.$transaction(async (tx) => {
       const orders = await tx.rentalOrder.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true, status: true } });
-      if (orders.some((order) => order.status !== OrderStatus.CREATED && order.status !== OrderStatus.CANCELLED)) throw new BadRequestException(INCORRECT_INPUT);
-      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: { in: ids } } }, data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() } });
+      if (orders.some((order) => order.status !== OrderStatus.CREATED && order.status !== OrderStatus.CANCELLED))
+        throw new BadRequestException(INCORRECT_INPUT);
+      await tx.rentalAssetAllocation.updateMany({
+        where: { orderLine: { orderId: { in: ids } } },
+        data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() },
+      });
       await tx.rentalOrder.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date(), deletedBy: user.id, updatedBy: user.id } });
     });
     return { success: true };
@@ -415,21 +496,48 @@ export class RentalOrdersService {
     if (order.status !== OrderStatus.CREATED && order.status !== OrderStatus.CONFIRMED) throw new BadRequestException(INCORRECT_INPUT);
 
     await this.prisma.$transaction(async (tx) => {
-      const bookingCharges = await tx.rentalOrderCharge.findMany({ where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD }, include: { paymentAllocations: true } });
-      if (dto.refundBookingHold) {
-        await tx.rentalOrderCharge.updateMany({ where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD }, data: { status: RentalChargeStatus.CANCELLED } });
-        const paidBookingHold = bookingCharges.reduce((total, charge) => total + charge.paymentAllocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0), 0);
+      const bookingCharges = await tx.rentalOrderCharge.findMany({
+        where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD },
+        include: { paymentAllocations: true },
+      });
+      const allowRefund = dto.allowRefund ?? dto.refundBookingHold ?? false;
+      if (allowRefund) {
+        await tx.rentalOrderCharge.updateMany({
+          where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD },
+          data: { status: RentalChargeStatus.CANCELLED },
+        });
+        const paidBookingHold = bookingCharges.reduce(
+          (total, charge) => total + charge.paymentAllocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0),
+          0,
+        );
         const refundAmount = Math.min(dto.refundAmount ?? paidBookingHold, paidBookingHold);
         if (refundAmount > 0) {
-          await tx.refund.create({ data: { orderId: id, amount: refundAmount, status: RentalRefundStatus.PENDING, method: PaymentMethod.BANK_TRANSFER, note: dto.note, createdBy: user.id } });
+          await tx.refund.create({
+            data: {
+              orderId: id,
+              amount: refundAmount,
+              status: RentalRefundStatus.PENDING,
+              method: PaymentMethod.BANK_TRANSFER,
+              note: dto.note,
+              createdBy: user.id,
+            },
+          });
         }
       } else {
-        await tx.rentalOrderCharge.updateMany({ where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD }, data: { kind: RentalChargeKind.CANCELLATION_FEE, refundable: false } });
+        await tx.rentalOrderCharge.updateMany({
+          where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD },
+          data: { kind: RentalChargeKind.CANCELLATION_FEE, refundable: false },
+        });
       }
-      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: id } }, data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() } });
+      await tx.rentalAssetAllocation.updateMany({
+        where: { orderLine: { orderId: id } },
+        data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() },
+      });
       assertRentalOrderTransition(order.status, OrderStatus.CANCELLED);
       await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.CANCELLED, cancelReason: dto.reason, updatedBy: user.id } });
-      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.CANCELLED, note: dto.note ?? dto.reason, createdBy: user.id } });
+      await tx.orderStatusHistory.create({
+        data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.CANCELLED, note: dto.note ?? dto.reason, createdBy: user.id },
+      });
       await this.financialService.recalculateOrder(id, tx);
     });
     return this.getRentalOrderById(id);
@@ -443,7 +551,19 @@ export class RentalOrdersService {
         const existing = await tx.paymentTransaction.findFirst({ where: { orderId: id, idempotencyKey: dto.idempotencyKey } });
         if (existing) return existing.id;
       }
-      const payment = await tx.paymentTransaction.create({ data: { orderId: id, direction: PaymentDirection.INBOUND, amount: dto.amount, method: dto.method, status, referenceCode: dto.referenceCode, idempotencyKey: dto.idempotencyKey, metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined, createdBy: user.id } });
+      const payment = await tx.paymentTransaction.create({
+        data: {
+          orderId: id,
+          direction: PaymentDirection.INBOUND,
+          amount: dto.amount,
+          method: dto.method,
+          status,
+          referenceCode: dto.referenceCode,
+          idempotencyKey: dto.idempotencyKey,
+          metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined,
+          createdBy: user.id,
+        },
+      });
       if (status === PaymentTransactionStatus.SUCCESS) await this.financialService.allocatePayment(payment.id, tx);
       await this.financialService.recalculateOrder(id, tx);
       if (status === PaymentTransactionStatus.SUCCESS) await this.promoteToConfirmedIfReady(id, user.id, tx);
@@ -469,7 +589,10 @@ export class RentalOrdersService {
     await this.prisma.$transaction(async (tx) => {
       const payment = await tx.paymentTransaction.findFirst({ where: { id: paymentId, orderId: id } });
       if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
-      await tx.paymentTransaction.update({ where: { id: paymentId }, data: { status: PaymentTransactionStatus.FAILED, metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined } });
+      await tx.paymentTransaction.update({
+        where: { id: paymentId },
+        data: { status: PaymentTransactionStatus.FAILED, metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined },
+      });
     });
     return this.getRentalOrderById(id);
   }
@@ -479,17 +602,31 @@ export class RentalOrdersService {
     const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
     if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
     const pendingRefundStatuses: RentalRefundStatus[] = [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING];
-    const pendingRefunds = await this.prisma.refund.aggregate({ where: { orderId: id, status: { in: pendingRefundStatuses } }, _sum: { amount: true } });
+    const pendingRefunds = await this.prisma.refund.aggregate({
+      where: { orderId: id, status: { in: pendingRefundStatuses } },
+      _sum: { amount: true },
+    });
     const available = Number(order.refundDue) - Number(pendingRefunds._sum.amount ?? 0);
     if (dto.amount > available) throw new BadRequestException(INCORRECT_INPUT);
-    await this.prisma.refund.create({ data: { orderId: id, amount: dto.amount, status: RentalRefundStatus.PENDING, method: dto.method, referenceCode: dto.referenceCode, note: dto.note, createdBy: user.id } });
+    await this.prisma.refund.create({
+      data: {
+        orderId: id,
+        amount: dto.amount,
+        status: RentalRefundStatus.PENDING,
+        method: dto.method,
+        referenceCode: dto.referenceCode,
+        note: dto.note,
+        createdBy: user.id,
+      },
+    });
     return this.getRentalOrderById(id);
   }
 
   async confirmRefund(id: string, refundId: string): Promise<RentalOrderOutDto> {
     await this.prisma.$transaction(async (tx) => {
       const refund = await tx.refund.findFirst({ where: { id: refundId, orderId: id } });
-      if (!refund || (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING)) throw new BadRequestException(INCORRECT_INPUT);
+      if (!refund || (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING))
+        throw new BadRequestException(INCORRECT_INPUT);
       await tx.refund.update({ where: { id: refundId }, data: { status: RentalRefundStatus.REFUNDED } });
       await this.financialService.recalculateOrder(id, tx);
     });
@@ -501,14 +638,40 @@ export class RentalOrdersService {
       const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, include: { lines: { include: { allocations: true } } } });
       if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
       if (order.status !== OrderStatus.CONFIRMED) throw new BadRequestException(INCORRECT_INPUT);
-      const allocationCount = order.lines.reduce((total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length, 0);
+      const allocationCount = order.lines.reduce(
+        (total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length,
+        0,
+      );
       const requiredCount = order.lines.reduce((total, line) => total + line.quantity, 0);
-      if (allocationCount < requiredCount || Number(order.amountDueBeforeHandover) > 0) throw new BadRequestException(RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT);
+      if (allocationCount < requiredCount || Number(order.amountDueBeforeHandover) > 0)
+        throw new BadRequestException(RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT);
       assertRentalOrderTransition(order.status, OrderStatus.RENTING);
       await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: id } }, data: { status: RentalAllocationStatus.HANDED_OVER } });
-      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.RENTING, handoverStatus: HandoverStatus.HANDED_OVER, actualPickupDate: dto.actualPickupDate ?? new Date(), updatedBy: user.id } });
-      await tx.rentalInspection.create({ data: { orderId: id, type: RentalInspectionType.HANDOVER, inspectedBy: user.id, note: dto.note, items: { create: order.lines.flatMap((line) => line.allocations.map((allocation) => ({ allocationId: allocation.id, condition: RentalInspectionCondition.GOOD }))) } } });
-      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RENTING, note: dto.note ?? 'Handover completed', createdBy: user.id } });
+      await tx.rentalOrder.update({
+        where: { id },
+        data: {
+          status: OrderStatus.RENTING,
+          handoverStatus: HandoverStatus.HANDED_OVER,
+          actualPickupDate: dto.actualPickupDate ?? new Date(),
+          updatedBy: user.id,
+        },
+      });
+      await tx.rentalInspection.create({
+        data: {
+          orderId: id,
+          type: RentalInspectionType.HANDOVER,
+          inspectedBy: user.id,
+          note: dto.note,
+          items: {
+            create: order.lines.flatMap((line) =>
+              line.allocations.map((allocation) => ({ allocationId: allocation.id, condition: RentalInspectionCondition.GOOD })),
+            ),
+          },
+        },
+      });
+      await tx.orderStatusHistory.create({
+        data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RENTING, note: dto.note ?? 'Handover completed', createdBy: user.id },
+      });
     });
     return this.getRentalOrderById(id);
   }
@@ -519,39 +682,111 @@ export class RentalOrdersService {
       if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
       if (order.status !== OrderStatus.RENTING) throw new BadRequestException(INCORRECT_INPUT);
       assertRentalOrderTransition(order.status, OrderStatus.RETURNED);
-      await tx.rentalAssetAllocation.updateMany({ where: { orderLine: { orderId: id }, status: RentalAllocationStatus.HANDED_OVER }, data: { status: RentalAllocationStatus.RETURNED } });
-      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.RETURNED, returnStatus: ReturnStatus.RETURNED, actualReturnDate: dto.actualReturnDate ?? new Date(), updatedBy: user.id } });
-      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RETURNED, note: dto.note ?? 'Equipment returned', createdBy: user.id } });
+      await tx.rentalAssetAllocation.updateMany({
+        where: { orderLine: { orderId: id }, status: RentalAllocationStatus.HANDED_OVER },
+        data: { status: RentalAllocationStatus.RETURNED },
+      });
+      await tx.rentalOrder.update({
+        where: { id },
+        data: {
+          status: OrderStatus.RETURNED,
+          returnStatus: ReturnStatus.RETURNED,
+          actualReturnDate: dto.actualReturnDate ?? new Date(),
+          updatedBy: user.id,
+        },
+      });
+      await tx.orderStatusHistory.create({
+        data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RETURNED, note: dto.note ?? 'Equipment returned', createdBy: user.id },
+      });
     });
     return this.getRentalOrderById(id);
   }
 
   async inspectOrder(id: string, dto: InspectRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
     await this.prisma.$transaction(async (tx) => {
-      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, include: { lines: { include: { allocations: { include: { orderLine: { include: { product: true } } } } } } } });
+      const order = await tx.rentalOrder.findFirst({
+        where: { id, deletedAt: null },
+        include: { lines: { include: { allocations: { include: { orderLine: { include: { product: true } } } } } } },
+      });
       if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
       if (order.status !== OrderStatus.RETURNED || order.returnStatus !== ReturnStatus.RETURNED) throw new BadRequestException(INCORRECT_INPUT);
       const allocations = order.lines.flatMap((line) => line.allocations);
       const allocationIds = new Set(allocations.map((allocation) => allocation.id));
       const inspectedAllocationIds = new Set(dto.items.map((item) => item.allocationId));
-      if (dto.items.length !== allocations.length || inspectedAllocationIds.size !== allocations.length || dto.items.some((item) => !allocationIds.has(item.allocationId))) throw new BadRequestException(INCORRECT_INPUT);
-      if (dto.items.some((item) => item.accessories?.some((accessory) => accessory.actualQuantity > accessory.expectedQuantity))) throw new BadRequestException(INCORRECT_INPUT);
+      if (
+        dto.items.length !== allocations.length ||
+        inspectedAllocationIds.size !== allocations.length ||
+        dto.items.some((item) => !allocationIds.has(item.allocationId))
+      )
+        throw new BadRequestException(INCORRECT_INPUT);
+      if (dto.items.some((item) => item.accessories?.some((accessory) => accessory.actualQuantity > accessory.expectedQuantity)))
+        throw new BadRequestException(INCORRECT_INPUT);
       const existingInspection = await tx.rentalInspection.findFirst({ where: { orderId: id, type: RentalInspectionType.RETURN } });
       if (existingInspection) throw new BadRequestException(INCORRECT_INPUT);
-      await tx.rentalInspection.create({ data: { orderId: id, type: RentalInspectionType.RETURN, inspectedBy: user.id, note: dto.note, items: { create: dto.items.map((item) => ({ allocationId: item.allocationId, condition: item.condition, note: item.note, accessories: { create: (item.accessories ?? []).map((accessory) => ({ name: accessory.name, expectedQuantity: accessory.expectedQuantity, actualQuantity: accessory.actualQuantity, status: accessory.status, note: accessory.note })) } })) } } });
+      await tx.rentalInspection.create({
+        data: {
+          orderId: id,
+          type: RentalInspectionType.RETURN,
+          inspectedBy: user.id,
+          note: dto.note,
+          items: {
+            create: dto.items.map((item) => ({
+              allocationId: item.allocationId,
+              condition: item.condition,
+              note: item.note,
+              accessories: {
+                create: (item.accessories ?? []).map((accessory) => ({
+                  name: accessory.name,
+                  expectedQuantity: accessory.expectedQuantity,
+                  actualQuantity: accessory.actualQuantity,
+                  status: accessory.status,
+                  note: accessory.note,
+                })),
+              },
+            })),
+          },
+        },
+      });
 
       const allocationById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
-      const incidents: Array<{ orderId: string; allocationId: string; type: 'DAMAGE' | 'LOSS' | 'LATE_RETURN' | 'MISSING_ACCESSORY'; amount: number; note?: string; createdBy: string; metadata?: Prisma.InputJsonValue }> = [];
+      const incidents: Array<{
+        orderId: string;
+        allocationId: string;
+        type: 'DAMAGE' | 'LOSS' | 'LATE_RETURN' | 'MISSING_ACCESSORY';
+        amount: number;
+        note?: string;
+        createdBy: string;
+        metadata?: Prisma.InputJsonValue;
+      }> = [];
       for (const item of dto.items) {
         const allocation = allocationById.get(item.allocationId);
         if (!allocation) continue;
         const replacementValue = Number(allocation.orderLine.product.replacementValue ?? 0);
         if (item.condition === RentalInspectionCondition.DAMAGED || item.condition === RentalInspectionCondition.MISSING) {
-          incidents.push({ orderId: id, allocationId: item.allocationId, type: item.condition === RentalInspectionCondition.MISSING ? 'LOSS' : 'DAMAGE', amount: item.condition === RentalInspectionCondition.MISSING ? replacementValue : Math.round(replacementValue * 0.25 * 100) / 100, note: item.note, createdBy: user.id });
+          incidents.push({
+            orderId: id,
+            allocationId: item.allocationId,
+            type: item.condition === RentalInspectionCondition.MISSING ? 'LOSS' : 'DAMAGE',
+            amount: item.condition === RentalInspectionCondition.MISSING ? replacementValue : Math.round(replacementValue * 0.25 * 100) / 100,
+            note: item.note,
+            createdBy: user.id,
+          });
         }
         for (const accessory of item.accessories ?? []) {
           if (accessory.actualQuantity < accessory.expectedQuantity || accessory.status === 'DAMAGED') {
-            incidents.push({ orderId: id, allocationId: item.allocationId, type: 'MISSING_ACCESSORY', amount: 0, note: accessory.note ?? accessory.name, createdBy: user.id, metadata: this.jsonValue({ name: accessory.name, expectedQuantity: accessory.expectedQuantity, actualQuantity: accessory.actualQuantity }) });
+            incidents.push({
+              orderId: id,
+              allocationId: item.allocationId,
+              type: 'MISSING_ACCESSORY',
+              amount: 0,
+              note: accessory.note ?? accessory.name,
+              createdBy: user.id,
+              metadata: this.jsonValue({
+                name: accessory.name,
+                expectedQuantity: accessory.expectedQuantity,
+                actualQuantity: accessory.actualQuantity,
+              }),
+            });
           }
         }
       }
@@ -560,12 +795,28 @@ export class RentalOrdersService {
         const hoursLate = Math.ceil((actualReturnDate.getTime() - order.endDate.getTime()) / 3_600_000);
         for (const allocation of allocations) {
           const hourlyRate = Number(allocation.orderLine.product.hourlyOveragePrice ?? Number(allocation.orderLine.product.dailyPrice) / 24);
-          incidents.push({ orderId: id, allocationId: allocation.id, type: 'LATE_RETURN', amount: Math.round(hourlyRate * hoursLate * 100) / 100, note: `Late ${hoursLate} hour(s)`, createdBy: user.id });
+          incidents.push({
+            orderId: id,
+            allocationId: allocation.id,
+            type: 'LATE_RETURN',
+            amount: Math.round(hourlyRate * hoursLate * 100) / 100,
+            note: `Late ${hoursLate} hour(s)`,
+            createdBy: user.id,
+          });
         }
       }
       if (incidents.length) {
         await tx.rentalIncident.createMany({ data: incidents });
-        const chargeRows = incidents.filter((incident) => incident.amount > 0).map((incident) => ({ orderId: id, kind: incident.type === 'LATE_RETURN' ? RentalChargeKind.LATE_FEE : RentalChargeKind.DAMAGE_COMPENSATION, amount: incident.amount, status: RentalChargeStatus.OPEN, refundable: false, metadata: incident.metadata ?? this.jsonValue({ incidentType: incident.type, allocationId: incident.allocationId }) }));
+        const chargeRows = incidents
+          .filter((incident) => incident.amount > 0)
+          .map((incident) => ({
+            orderId: id,
+            kind: incident.type === 'LATE_RETURN' ? RentalChargeKind.LATE_FEE : RentalChargeKind.DAMAGE_COMPENSATION,
+            amount: incident.amount,
+            status: RentalChargeStatus.OPEN,
+            refundable: false,
+            metadata: incident.metadata ?? this.jsonValue({ incidentType: incident.type, allocationId: incident.allocationId }),
+          }));
         if (chargeRows.length) await tx.rentalOrderCharge.createMany({ data: chargeRows });
       }
       await tx.rentalOrder.update({ where: { id }, data: { returnStatus: ReturnStatus.INSPECTED, updatedBy: user.id } });
@@ -578,19 +829,30 @@ export class RentalOrdersService {
     await this.financialService.recalculateOrder(id);
     const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
     if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
-    if (order.returnStatus !== ReturnStatus.INSPECTED || order.settlementStatus !== RentalSettlementStatus.SETTLED || Number(order.additionalChargeDue) > 0 || Number(order.refundDue) > 0) throw new BadRequestException(INCORRECT_INPUT);
+    if (
+      order.returnStatus !== ReturnStatus.INSPECTED ||
+      order.settlementStatus !== RentalSettlementStatus.SETTLED ||
+      Number(order.additionalChargeDue) > 0 ||
+      Number(order.refundDue) > 0
+    )
+      throw new BadRequestException(INCORRECT_INPUT);
     if (order.status !== OrderStatus.RETURNED) throw new BadRequestException(INCORRECT_INPUT);
     await this.prisma.$transaction(async (tx) => {
       assertRentalOrderTransition(order.status, OrderStatus.DONE);
-      await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.DONE, settlementStatus: RentalSettlementStatus.SETTLED, updatedBy: user.id } });
-      await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.DONE, note: dto.note ?? 'Order settled', createdBy: user.id } });
+      await tx.rentalOrder.update({
+        where: { id },
+        data: { status: OrderStatus.DONE, settlementStatus: RentalSettlementStatus.SETTLED, updatedBy: user.id },
+      });
+      await tx.orderStatusHistory.create({
+        data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.DONE, note: dto.note ?? 'Order settled', createdBy: user.id },
+      });
     });
     return this.getRentalOrderById(id);
   }
 
   private async prepareQuote(input: CreateRentalQuoteDto): Promise<{
     blockedEndDate: Date;
-    availability: { available: boolean; conflicts: unknown[] };
+    availability: { available: boolean; conflicts: RentalOrderUnavailableItemDto[] };
     lines: Array<ReturnType<RentalOrderPricingService['buildQuoteLines']>[number]>;
     totals: ReturnType<RentalOrderPricingService['calculateTotals']>;
     settingsSnapshot: unknown;
@@ -627,13 +889,23 @@ export class RentalOrdersService {
       if (!product || !allocation) throw new BadRequestException(RENTAL_ORDER_PRODUCT_INVALID);
       return { product, assetUnitIds: allocation.assetUnitIds, quantity: item.quantity, note: item.note };
     });
-    const lines = this.pricingService.buildQuoteLines({ selections, startDate: input.startDate, endDate: input.endDate, bookingHoldPerUnit: Number(settings.bookingHoldPricePerUnit) });
+    const lines = this.pricingService.buildQuoteLines({
+      selections,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      bookingHoldPerUnit: Number(settings.bookingHoldPricePerUnit),
+    });
     return {
       blockedEndDate: availability.blockedEndDate,
       availability: { available: availability.isAvailable, conflicts: availability.unavailableItems },
       lines,
       totals: this.pricingService.calculateTotals(lines, 0),
-      settingsSnapshot: { bookingHoldPricePerUnit: Number(settings.bookingHoldPricePerUnit), bookingBufferTimeMinutes: settings.bookingBufferTimeMinutes, maxRentalTimeDays: settings.maxRentalTimeDays, maxLateReturnTimeHours: settings.maxLateReturnTimeHours },
+      settingsSnapshot: {
+        bookingHoldPricePerUnit: Number(settings.bookingHoldPricePerUnit),
+        bookingBufferTimeMinutes: settings.bookingBufferTimeMinutes,
+        maxRentalTimeDays: settings.maxRentalTimeDays,
+        maxLateReturnTimeHours: settings.maxLateReturnTimeHours,
+      },
       policyVersion: 'v1',
     };
   }
@@ -659,16 +931,29 @@ export class RentalOrdersService {
   private async promoteToConfirmedIfReady(id: string, userId: string, tx: DbClient): Promise<void> {
     const order = await tx.rentalOrder.findUnique({ where: { id }, include: { lines: { include: { allocations: true } } } });
     if (!order || order.status !== OrderStatus.CREATED || Number(order.amountDueBeforeHandover) > 0) return;
-    const allocated = order.lines.reduce((total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length, 0);
+    const allocated = order.lines.reduce(
+      (total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length,
+      0,
+    );
     const required = order.lines.reduce((total, line) => total + line.quantity, 0);
     if (allocated < required) return;
     assertRentalOrderTransition(order.status, OrderStatus.CONFIRMED);
     await tx.rentalOrder.update({ where: { id }, data: { status: OrderStatus.CONFIRMED, handoverStatus: HandoverStatus.READY, updatedBy: userId } });
-    await tx.orderStatusHistory.create({ data: { orderId: id, fromStatus: OrderStatus.CREATED, toStatus: OrderStatus.CONFIRMED, note: 'Payment obligation completed', createdBy: userId } });
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: id,
+        fromStatus: OrderStatus.CREATED,
+        toStatus: OrderStatus.CONFIRMED,
+        note: 'Payment obligation completed',
+        createdBy: userId,
+      },
+    });
   }
 
   private async generateOrderCode(): Promise<string> {
-    return `ORD-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 10_000).toString().padStart(4, '0')}`;
+    return `ORD-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 10_000)
+      .toString()
+      .padStart(4, '0')}`;
   }
 
   private sortField(sortBy?: RentalOrderSortBy): RentalOrderSortBy {
@@ -676,19 +961,49 @@ export class RentalOrdersService {
   }
 
   private quoteRequestSnapshot(dto: CreateRentalQuoteDto) {
-    return { customerId: dto.customerId, startDate: dto.startDate.toISOString(), endDate: dto.endDate.toISOString(), pickupMethod: dto.pickupMethod, deliveryAddress: dto.deliveryAddress, excludeOrderId: dto.excludeOrderId, items: dto.items };
+    return {
+      customerId: dto.customerId,
+      startDate: dto.startDate.toISOString(),
+      endDate: dto.endDate.toISOString(),
+      pickupMethod: dto.pickupMethod,
+      deliveryAddress: dto.deliveryAddress,
+      excludeOrderId: dto.excludeOrderId,
+      items: dto.items,
+    };
   }
 
   private parseQuoteRequest(snapshot: Prisma.JsonValue): CreateRentalQuoteDto {
-    const value = snapshot as unknown as { customerId?: string; startDate: string; endDate: string; pickupMethod: 'PICKUP_AT_STORE' | 'DELIVERY'; deliveryAddress?: string; excludeOrderId?: string; items: RentalOrderItemDto[] };
-    return { customerId: value.customerId, startDate: new Date(value.startDate), endDate: new Date(value.endDate), pickupMethod: value.pickupMethod, deliveryAddress: value.deliveryAddress, excludeOrderId: value.excludeOrderId, items: value.items };
+    const value = snapshot as unknown as {
+      customerId?: string;
+      startDate: string;
+      endDate: string;
+      pickupMethod: 'PICKUP_AT_STORE' | 'DELIVERY';
+      deliveryAddress?: string;
+      excludeOrderId?: string;
+      items: RentalOrderItemDto[];
+    };
+    return {
+      customerId: value.customerId,
+      startDate: new Date(value.startDate),
+      endDate: new Date(value.endDate),
+      pickupMethod: value.pickupMethod,
+      deliveryAddress: value.deliveryAddress,
+      excludeOrderId: value.excludeOrderId,
+      items: value.items,
+    };
   }
 
   private quoteLineOut(line: PreparedQuote['lines'][number]) {
     return { productId: line.product.id, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, ...line.pricing };
   }
 
-  private customerSnapshot(customer: { name: string; phone: string | null; email: string | null; address: string | null; identityNumber: string | null }) {
+  private customerSnapshot(customer: {
+    name: string;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    identityNumber: string | null;
+  }) {
     return { name: customer.name, phone: customer.phone, email: customer.email, address: customer.address, identityNumber: customer.identityNumber };
   }
 
@@ -703,10 +1018,44 @@ export class RentalOrdersService {
   }
 
   private toListOut(order: {
-    id: string; code: string; source: OrderSource; status: OrderStatus; handoverStatus: HandoverStatus; returnStatus: ReturnStatus; settlementStatus: RentalSettlementStatus; customerSnapshot: Prisma.JsonValue; startDate: Date; endDate: Date; actualReturnDate: Date | null; rentalFeeTotal: Prisma.Decimal; deliveryFeeTotal: Prisma.Decimal; bookingHoldTotal: Prisma.Decimal; securityDepositTotal: Prisma.Decimal; totalCustomerObligation: Prisma.Decimal; paidTotal: Prisma.Decimal; amountDueBeforeHandover: Prisma.Decimal; refundDue: Prisma.Decimal; additionalChargeDue: Prisma.Decimal; createdAt: Date; updatedAt: Date;
+    id: string;
+    code: string;
+    source: OrderSource;
+    status: OrderStatus;
+    handoverStatus: HandoverStatus;
+    returnStatus: ReturnStatus;
+    settlementStatus: RentalSettlementStatus;
+    customerSnapshot: Prisma.JsonValue;
+    startDate: Date;
+    endDate: Date;
+    actualReturnDate: Date | null;
+    rentalFeeTotal: Prisma.Decimal;
+    deliveryFeeTotal: Prisma.Decimal;
+    bookingHoldTotal: Prisma.Decimal;
+    securityDepositTotal: Prisma.Decimal;
+    totalCustomerObligation: Prisma.Decimal;
+    paidTotal: Prisma.Decimal;
+    amountDueBeforeHandover: Prisma.Decimal;
+    refundDue: Prisma.Decimal;
+    additionalChargeDue: Prisma.Decimal;
+    createdAt: Date;
+    updatedAt: Date;
   }): RentalOrderListItemOutDto {
     const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
-    return { ...order, customerSnapshot: order.customerSnapshot as unknown as RentalOrderListItemOutDto['customerSnapshot'], rentalFeeTotal: Number(order.rentalFeeTotal), deliveryFeeTotal: Number(order.deliveryFeeTotal), bookingHoldTotal: Number(order.bookingHoldTotal), securityDepositTotal: Number(order.securityDepositTotal), totalCustomerObligation: Number(order.totalCustomerObligation), paidTotal: Number(order.paidTotal), amountDueBeforeHandover: Number(order.amountDueBeforeHandover), refundDue: Number(order.refundDue), additionalChargeDue: Number(order.additionalChargeDue), ...overdue };
+    return {
+      ...order,
+      customerSnapshot: order.customerSnapshot as unknown as RentalOrderListItemOutDto['customerSnapshot'],
+      rentalFeeTotal: Number(order.rentalFeeTotal),
+      deliveryFeeTotal: Number(order.deliveryFeeTotal),
+      bookingHoldTotal: Number(order.bookingHoldTotal),
+      securityDepositTotal: Number(order.securityDepositTotal),
+      totalCustomerObligation: Number(order.totalCustomerObligation),
+      paidTotal: Number(order.paidTotal),
+      amountDueBeforeHandover: Number(order.amountDueBeforeHandover),
+      refundDue: Number(order.refundDue),
+      additionalChargeDue: Number(order.additionalChargeDue),
+      ...overdue,
+    };
   }
 
   private toDetailOut(order: RentalOrderDetailRecord): RentalOrderOutDto {
@@ -718,7 +1067,9 @@ export class RentalOrdersService {
       securityDepositTotal: Number(order.securityDepositTotal),
       lateFeeTotal: Number(order.lateFeeTotal),
       damageCompensationTotal: Number(order.damageCompensationTotal),
-      cancellationFeeTotal: Number(order.charges.filter((charge) => charge.kind === RentalChargeKind.CANCELLATION_FEE).reduce((sum, charge) => sum + Number(charge.amount), 0)),
+      cancellationFeeTotal: Number(
+        order.charges.filter((charge) => charge.kind === RentalChargeKind.CANCELLATION_FEE).reduce((sum, charge) => sum + Number(charge.amount), 0),
+      ),
       totalCustomerObligation: Number(order.totalCustomerObligation),
       paidTotal: Number(order.paidTotal),
       amountDueAtBooking: Number(order.amountDueAtBooking),
@@ -739,7 +1090,12 @@ export class RentalOrdersService {
       customerId: order.customerId,
       customerSnapshot: order.customerSnapshot as unknown as RentalOrderOutDto['customerSnapshot'],
       settingsSnapshot: order.settingsSnapshot,
-      rentalPeriod: { startDate: order.startDate, endDate: order.endDate, actualPickupDate: order.actualPickupDate, actualReturnDate: order.actualReturnDate },
+      rentalPeriod: {
+        startDate: order.startDate,
+        endDate: order.endDate,
+        actualPickupDate: order.actualPickupDate,
+        actualReturnDate: order.actualReturnDate,
+      },
       fulfillment: { pickupMethod: order.pickupMethod, deliveryAddress: order.deliveryAddress },
       financials,
       notes: { customerNote: order.note, internalNote: order.internalNote, cancelReason: order.cancelReason },
@@ -747,7 +1103,18 @@ export class RentalOrdersService {
       charges: order.charges.map((charge) => this.toChargeOut(charge)),
       payments: order.paymentTransactions.map((payment) => this.toPaymentOut(payment)),
       refunds: order.refunds.map((refund) => this.toRefundOut(refund)),
-      inspections: order.inspections.map((inspection) => ({ id: inspection.id, type: inspection.type, inspectedAt: inspection.inspectedAt, note: inspection.note, items: inspection.items.map((item) => ({ allocationId: item.allocationId, condition: item.condition, note: item.note, accessories: item.accessories })) })),
+      inspections: order.inspections.map((inspection) => ({
+        id: inspection.id,
+        type: inspection.type,
+        inspectedAt: inspection.inspectedAt,
+        note: inspection.note,
+        items: inspection.items.map((item) => ({
+          allocationId: item.allocationId,
+          condition: item.condition,
+          note: item.note,
+          accessories: item.accessories,
+        })),
+      })),
       statusHistories: order.statusHistories,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -756,19 +1123,66 @@ export class RentalOrdersService {
   }
 
   private toLineOut(line: RentalOrderDetailRecord['lines'][number]): RentalOrderLineOutDto {
-    return { id: line.id, productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, unitRentalFee: Number(line.unitRentalFee), unitDepositAmount: Number(line.unitDepositAmount), unitBookingHoldAmount: Number(line.unitBookingHoldAmount), lineRentalTotal: Number(line.lineRentalTotal), lineDepositTotal: Number(line.lineDepositTotal), lineBookingHoldTotal: Number(line.lineBookingHoldTotal), accessoriesSnapshot: line.accessoriesSnapshot, note: line.note, allocations: line.allocations.map((allocation) => ({ id: allocation.id, assetUnitId: allocation.assetUnitId, serialNumber: allocation.assetUnit.serialNumber, source: allocation.source, status: allocation.status, startDate: allocation.startDate, endDate: allocation.endDate, blockedEndDate: allocation.blockedEndDate })) };
+    return {
+      id: line.id,
+      productId: line.productId,
+      productName: line.product.name,
+      sku: line.product.sku,
+      quantity: line.quantity,
+      unitRentalFee: Number(line.unitRentalFee),
+      unitDepositAmount: Number(line.unitDepositAmount),
+      unitBookingHoldAmount: Number(line.unitBookingHoldAmount),
+      lineRentalTotal: Number(line.lineRentalTotal),
+      lineDepositTotal: Number(line.lineDepositTotal),
+      lineBookingHoldTotal: Number(line.lineBookingHoldTotal),
+      accessoriesSnapshot: line.accessoriesSnapshot,
+      note: line.note,
+      allocations: line.allocations.map((allocation) => ({
+        id: allocation.id,
+        assetUnitId: allocation.assetUnitId,
+        serialNumber: allocation.assetUnit.serialNumber,
+        source: allocation.source,
+        status: allocation.status,
+        startDate: allocation.startDate,
+        endDate: allocation.endDate,
+        blockedEndDate: allocation.blockedEndDate,
+      })),
+    };
   }
 
   private toChargeOut(charge: RentalOrderDetailRecord['charges'][number]): RentalOrderChargeOutDto {
-    return { id: charge.id, kind: charge.kind, amount: Number(charge.amount), status: charge.status, refundable: charge.refundable, metadata: charge.metadata };
+    return {
+      id: charge.id,
+      kind: charge.kind,
+      amount: Number(charge.amount),
+      status: charge.status,
+      refundable: charge.refundable,
+      metadata: charge.metadata,
+    };
   }
 
   private toPaymentOut(payment: RentalOrderDetailRecord['paymentTransactions'][number]): RentalOrderPaymentOutDto {
-    return { id: payment.id, direction: payment.direction, amount: Number(payment.amount), method: payment.method, status: payment.status, referenceCode: payment.referenceCode, idempotencyKey: payment.idempotencyKey, createdAt: payment.createdAt };
+    return {
+      id: payment.id,
+      direction: payment.direction,
+      amount: Number(payment.amount),
+      method: payment.method,
+      status: payment.status,
+      referenceCode: payment.referenceCode,
+      idempotencyKey: payment.idempotencyKey,
+      createdAt: payment.createdAt,
+    };
   }
 
   private toRefundOut(refund: RentalOrderDetailRecord['refunds'][number]): RentalOrderRefundOutDto {
-    return { id: refund.id, amount: Number(refund.amount), status: refund.status, method: refund.method, referenceCode: refund.referenceCode, createdAt: refund.createdAt };
+    return {
+      id: refund.id,
+      amount: Number(refund.amount),
+      status: refund.status,
+      method: refund.method,
+      referenceCode: refund.referenceCode,
+      createdAt: refund.createdAt,
+    };
   }
 
   private jsonValue(value: unknown): Prisma.InputJsonValue {

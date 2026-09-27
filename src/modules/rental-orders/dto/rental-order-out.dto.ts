@@ -17,6 +17,7 @@ import {
   RentalSettlementStatus,
   ReturnStatus,
 } from '@generated/prisma/enums';
+import { RentalOrderUnavailableItemDto } from './check-rental-order-availability.dto';
 
 export class RentalOrderQuoteLineOutDto {
   @ApiProperty() productId!: string;
@@ -46,7 +47,7 @@ export class RentalOrderQuoteSummaryOutDto {
 
 export class RentalOrderQuoteAvailabilityOutDto {
   @ApiProperty() available!: boolean;
-  @ApiProperty({ type: [Object] }) conflicts!: unknown[];
+  @ApiProperty({ type: [RentalOrderUnavailableItemDto] }) conflicts!: RentalOrderUnavailableItemDto[];
 }
 
 export class RentalOrderQuoteOutDto {

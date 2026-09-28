@@ -131,6 +131,21 @@ export class AvailabilityScheduleService {
                           id: true,
                           code: true,
                           status: true,
+                          handoverStatus: true,
+                          returnStatus: true,
+                          settlementStatus: true,
+                          pickupMethod: true,
+                          deliveryAddress: true,
+                          note: true,
+                          internalNote: true,
+                          cancelReason: true,
+                          paidTotal: true,
+                          amountDueBeforeHandover: true,
+                          refundDue: true,
+                          totalCustomerObligation: true,
+                          amountDueAtBooking: true,
+                          additionalChargeDue: true,
+                          actualRefundTotal: true,
                           customerSnapshot: true,
                         },
                       },
@@ -180,7 +195,24 @@ export class AvailabilityScheduleService {
             orderCode: allocation.orderLine.order.code,
             orderStatus: allocation.orderLine.order.status,
             allocationStatus: allocation.status,
-            customerName: this.getCustomerName(allocation.orderLine.order.customerSnapshot),
+            customerName: this.getCustomerField(allocation.orderLine.order.customerSnapshot, 'name') ?? 'Chưa có tên khách',
+            customerPhone: this.getCustomerField(allocation.orderLine.order.customerSnapshot, 'phone'),
+            customerSocialContact: this.getCustomerField(allocation.orderLine.order.customerSnapshot, 'socialContact'),
+            pickupMethod: allocation.orderLine.order.pickupMethod,
+            deliveryAddress: allocation.orderLine.order.deliveryAddress,
+            handoverStatus: allocation.orderLine.order.handoverStatus,
+            returnStatus: allocation.orderLine.order.returnStatus,
+            settlementStatus: allocation.orderLine.order.settlementStatus,
+            customerNote: allocation.orderLine.order.note,
+            internalNote: allocation.orderLine.order.internalNote,
+            cancelReason: allocation.orderLine.order.cancelReason,
+            paidTotal: Number(allocation.orderLine.order.paidTotal),
+            amountDueBeforeHandover: Number(allocation.orderLine.order.amountDueBeforeHandover),
+            refundDue: Number(allocation.orderLine.order.refundDue),
+            totalCustomerObligation: Number(allocation.orderLine.order.totalCustomerObligation),
+            amountDueAtBooking: Number(allocation.orderLine.order.amountDueAtBooking),
+            additionalChargeDue: Number(allocation.orderLine.order.additionalChargeDue),
+            actualRefundTotal: Number(allocation.orderLine.order.actualRefundTotal),
             startDate: allocation.startDate,
             endDate: allocation.endDate,
             blockedEndDate: allocation.blockedEndDate,
@@ -324,10 +356,10 @@ export class AvailabilityScheduleService {
     }
   }
 
-  private getCustomerName(snapshot: Prisma.JsonValue): string {
-    if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) && 'name' in snapshot) {
-      return String(snapshot.name ?? '');
-    }
-    return 'Chưa có tên khách';
+  private getCustomerField(snapshot: Prisma.JsonValue, field: string): string | null {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
+
+    const value = (snapshot as Record<string, unknown>)[field];
+    return value === null || value === undefined || value === '' ? null : String(value);
   }
 }

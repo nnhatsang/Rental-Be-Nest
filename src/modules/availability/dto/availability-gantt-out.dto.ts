@@ -1,5 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { AssetCondition, AssetStatus, OrderStatus, RentalAllocationStatus } from '@generated/prisma/enums';
+import {
+  AssetCondition,
+  AssetStatus,
+  HandoverStatus,
+  OrderStatus,
+  PickupMethod,
+  RentalAllocationStatus,
+  RentalSettlementStatus,
+  ReturnStatus,
+} from '@generated/prisma/enums';
 import { CursorPagination } from '@/libs/types/custom-response.type';
 
 export class AvailabilityGanttBlockOutDto {
@@ -17,6 +26,57 @@ export class AvailabilityGanttBlockOutDto {
 
   @ApiProperty()
   customerName!: string;
+
+  @ApiProperty({ nullable: true })
+  customerPhone!: string | null;
+
+  @ApiProperty({ nullable: true })
+  customerSocialContact!: string | null;
+
+  @ApiProperty({ enum: PickupMethod })
+  pickupMethod!: PickupMethod;
+
+  @ApiProperty({ nullable: true })
+  deliveryAddress!: string | null;
+
+  @ApiProperty({ enum: HandoverStatus })
+  handoverStatus!: HandoverStatus;
+
+  @ApiProperty({ enum: ReturnStatus })
+  returnStatus!: ReturnStatus;
+
+  @ApiProperty({ enum: RentalSettlementStatus })
+  settlementStatus!: RentalSettlementStatus;
+
+  @ApiProperty({ nullable: true })
+  customerNote!: string | null;
+
+  @ApiProperty({ nullable: true })
+  internalNote!: string | null;
+
+  @ApiProperty({ nullable: true })
+  cancelReason!: string | null;
+
+  @ApiProperty()
+  paidTotal!: number;
+
+  @ApiProperty()
+  amountDueBeforeHandover!: number;
+
+  @ApiProperty()
+  refundDue!: number;
+
+  @ApiProperty()
+  totalCustomerObligation!: number;
+
+  @ApiProperty()
+  amountDueAtBooking!: number;
+
+  @ApiProperty()
+  additionalChargeDue!: number;
+
+  @ApiProperty()
+  actualRefundTotal!: number;
 
   @ApiProperty()
   startDate!: Date;

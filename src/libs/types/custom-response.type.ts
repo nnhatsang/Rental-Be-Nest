@@ -70,6 +70,25 @@ export class ApiPag<T = unknown> {
   pagination!: Pagination;
 }
 
+export class CursorPagination {
+  @ApiProperty({ type: String, nullable: true })
+  nextCursor!: string | null;
+
+  @ApiProperty({ type: Boolean })
+  hasNext!: boolean;
+
+  @ApiProperty({ type: Number })
+  limit!: number;
+}
+
+export class ApiCursorPag<T = unknown> {
+  @ApiProperty({ isArray: true })
+  items!: T[];
+
+  @ApiProperty({ type: CursorPagination })
+  pagination!: CursorPagination;
+}
+
 export type ApiPaginatedResult<T = unknown> = {
   items: T[];
   total: number;
@@ -106,6 +125,32 @@ export class ApiPaginatedResponseDto<T = unknown> {
   data: ApiPag<T>;
 }
 
+export type ApiCursorPaginatedResult<T = unknown> = {
+  items: T[];
+  nextCursor: string | null;
+  hasNext: boolean;
+  limit: number;
+};
+
+export class ApiCursorPaginatedResponseDto<T = unknown> {
+  constructor(result: ApiCursorPaginatedResult<T>, message = SUCCESS) {
+    this.message = message;
+    this.data = {
+      items: result.items,
+      pagination: {
+        nextCursor: result.nextCursor,
+        hasNext: result.hasNext,
+        limit: result.limit,
+      },
+    };
+  }
+
+  @ApiProperty({ type: String })
+  message: string;
+
+  @ApiProperty({ type: ApiCursorPag })
+  data: ApiCursorPag<T>;
+}
 export class ApiPagReq {
   @ApiPropertyOptional({ type: Number, required: false, default: DEFAULT_PAGE })
   @Type(() => Number)
@@ -140,4 +185,24 @@ export class ApiPagReq {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   sortBy?: string;
+}
+
+export class ApiCursorReq {
+  @ApiPropertyOptional({ type: String, required: false })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  cursor?: string;
+
+  @ApiPropertyOptional({ type: Number, required: false, default: DEFAULT_PER_PAGE })
+  @Type(() => Number)
+  @IsNumber({}, { message: INVALID_NUMBER })
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  limit: number = DEFAULT_PER_PAGE;
+
+  @ApiPropertyOptional({ type: String, required: false })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  search?: string;
 }

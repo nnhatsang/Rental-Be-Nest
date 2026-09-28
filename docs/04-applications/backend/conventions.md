@@ -10,7 +10,7 @@ Tài liệu này là playbook để dựng một module backend mới nhanh, đ�
 4. DTO là contract biên. Không dùng Prisma type làm input trực tiếp cho API.
 5. Mọi query list phải có pagination, whitelist cho sort và filter có kiểm soát.
 6. Mọi thay đổi schema phải đi qua Prisma migration và kiểm tra generated client.
-7. Quy tắc ảnh hưởng tiền, trạng thái, tồn kho/availability phải có test unit hoặc integration.
+7. Quy tắc ảnh hưởng tiền, trạng thái, tồn kho/availability phải được tách thành policy/state machine có thể kiểm tra độc lập; không tạo file `.spec.ts` mặc định nếu phạm vi module chưa yêu cầu.
 8. Không trả entity Prisma thô nếu response contract cần ẩn field, đổi tên field hoặc convert Decimal/Date.
 
 ### Definition of Done
@@ -21,7 +21,7 @@ Một module chỉ được xem là hoàn tất khi có đủ:
 - Migration/schema đã đồng bộ với database dev.
 - Controller/service/module đăng ký đúng trong app module.
 - Validation, error mapping, pagination và sort whitelist.
-- Unit test cho domain rule; integration/e2e test cho use case quan trọng.
+- Kiểm tra domain rule và use case quan trọng theo phạm vi module; không bắt buộc tạo file `.spec.ts` mặc định.
 - Swagger metadata đủ để frontend dùng contract.
 - `pnpm run typecheck`, `pnpm run build` và test liên quan chạy đạt.
 
@@ -82,7 +82,6 @@ src/modules/<resource>/
 ├── domain/
 │   ├── <resource>-state-machine.ts     # chỉ khi có lifecycle
 │   ├── <resource>-pricing.policy.ts    # chỉ khi có tính tiền
-│   └── <resource>-*.spec.ts
 ├── services/
 │   ├── <resource>-availability.service.ts
 │   └── <resource>-financial.service.ts
@@ -201,7 +200,7 @@ Không để `update()` nhận thẳng DTO nếu DTO còn field không thuộc P
 
 ### Bước 7 — Tách domain rule và transaction
 
-Đưa ra khỏi controller/service các rule có thể test thuần:
+Đưa ra khỏi controller/service các rule có thể kiểm tra độc lập:
 
 - state machine: transition hợp lệ và lý do từ chối;
 - pricing policy: tính tiền, làm tròn, ngưỡng, phụ phí;
@@ -297,9 +296,9 @@ Không để FE tự suy luận trạng thái từ màu hoặc text. Backend tr�
 [ ] Tạo list pagination/filter/sort whitelist
 [ ] Tách state/pricing/availability/financial policy nếu có
 [ ] Thêm transaction và idempotency cho use case cần thiết
-[ ] Thêm unit/integration/e2e test
+[ ] Kiểm tra domain rule và các use case quan trọng theo phạm vi module
 [ ] Cập nhật Swagger, permission seed và FE contract
 [ ] Chạy typecheck, build, test, migrate validate
 ```
 
-Nếu module có lifecycle hoặc tiền, không merge khi chưa có test cho transition và các case biên: dữ liệu thiếu, thời gian giao nhau, amount âm, retry, conflict và update sau khi đã chốt trạng thái.
+Nếu module có lifecycle hoặc tiền, không merge khi chưa xác định rõ rule cho transition và các case biên: dữ liệu thiếu, thời gian giao nhau, amount âm, retry, conflict và update sau khi đã chốt trạng thái.

@@ -36,7 +36,7 @@ import { RentalOrderAvailabilityService } from './services/rental-order-availabi
 import { RentalOrderFinancialService } from './services/rental-order-financial.service';
 import { RentalOrderPricingService } from './services/rental-order-pricing.service';
 import { CreateRentalOrderDto, CreateRentalQuoteDto, RentalOrderItemDto } from './dto/create-rental-order.dto';
-import { RentalOrderUnavailableItemDto } from './dto/check-rental-order-availability.dto';
+import { RentalOrderUnavailableItemDto } from './dto/rental-order-unavailable-item.dto';
 import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 import { GetAllRentalOrdersDto, RentalOrderSortBy } from './dto/get-all-rental-orders.dto';
 import {

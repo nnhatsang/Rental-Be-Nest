@@ -17,7 +17,7 @@ import {
   RentalSettlementStatus,
   ReturnStatus,
 } from '@generated/prisma/enums';
-import { RentalOrderUnavailableItemDto } from './check-rental-order-availability.dto';
+import { RentalOrderUnavailableItemDto } from './rental-order-unavailable-item.dto';
 
 export class RentalOrderQuoteLineOutDto {
   @ApiProperty() productId!: string;
@@ -132,7 +132,13 @@ export class RentalInspectionItemOutDto {
   @ApiProperty() allocationId!: string;
   @ApiProperty({ enum: RentalInspectionCondition }) condition!: RentalInspectionCondition;
   @ApiProperty({ nullable: true }) note!: string | null;
-  @ApiProperty({ type: [Object] }) accessories!: Array<{ name: string; expectedQuantity: number; actualQuantity: number; status: RentalAccessoryStatus; note: string | null }>;
+  @ApiProperty({ type: [Object] }) accessories!: Array<{
+    name: string;
+    expectedQuantity: number;
+    actualQuantity: number;
+    status: RentalAccessoryStatus;
+    note: string | null;
+  }>;
 }
 
 export class RentalInspectionOutDto {

@@ -1,321 +1,430 @@
-# Frontend module skill — Next.js + TanStack Query + shadcn
+# Frontend application conventions
 
-Tài liệu này là playbook để dựng module frontend nhanh nhưng vẫn đúng design system của `rental-admin-fe`. Mỗi module phải được xây theo feature-first: API, model, query state, form và UI nằm trong cùng domain; component dùng lại đặt ở `components/shared` hoặc `components/ui` theo phạm vi sử dụng.
+## 1. Mục tiêu và phạm vi
 
-## 0. Nguyên tắc bắt buộc
+Tài liệu này là quy ước triển khai module frontend cho admin app. Mục tiêu là để một module mới có cấu trúc nhất quán, dễ đọc, dễ mở rộng và không lặp lại logic giữa table, dropdown action, context menu, dialog và detail.
 
-1. Chốt API contract và capability matrix trước khi thiết kế UI.
-2. `index.tsx` chỉ compose provider, table, bulk action và dialog; không chứa business logic dài.
-3. Component không gọi Axios/fetch trực tiếp. Component gọi hook; hook gọi service.
-4. TanStack Query quản lý server state; React Hook Form quản lý form state; state mở/đóng dialog và filter giữ ở nơi gần nhất có thể.
-5. `display-config.ts` chứa mapping status/type → label, icon, tone/class. `display-utils.ts` chỉ chứa hàm format/derive thuần.
-6. Không để label, màu status, error message và format tiền/ngày rải rác trong JSX.
-7. Dùng primitive shadcn và component đã có trong repo trước khi tạo component mới. Nếu thiếu component, đọc `.agents/skills/shadcn/SKILL.md`, kiểm tra registry và thêm đúng primitive cần thiết.
-8. UI ưu tiên hierarchy, whitespace và semantic token; không bọc mọi vùng bằng border/card.
-9. Không để frontend tự quyết định business rule về tiền, trạng thái, availability hoặc quyền. FE hiển thị và validate trải nghiệm; BE là nguồn sự thật.
+Phạm vi áp dụng:
 
-### Definition of Done
+- Next.js App Router và React client components.
+- TanStack Query cho server state.
+- TanStack Table cho bảng dữ liệu.
+- React Hook Form + Zod cho form.
+- shadcn/ui là lớp UI mặc định.
+- Các primitive dùng chung trong components/ui và design token của dự án.
+- Backend là nguồn quyết định cuối cùng cho permission, trạng thái nghiệp vụ, khả dụng và số tiền.
 
-Một module chỉ được xem là hoàn tất khi có đủ:
+Nguyên tắc cốt lõi:
 
-- model type/schema, API service, query key, query/mutation hooks;
-- list/table có pagination, filter, sort và empty/loading/error state;
-- create/update/detail/delete hoặc capability tương ứng;
-- columns có ngữ nghĩa rõ, display config riêng và action theo permission;
-- debounce cho search combobox; query invalidation sau mutation;
-- dialog có scroll đúng, footer không bị bóp và popover/combobox đúng portal;
-- toast/error message ổn định, không lộ raw error;
-- `pnpm exec tsc --noEmit`, `pnpm run lint`, `pnpm run build` chạy đạt.
+1. index.tsx của module chỉ compose page; không chứa business logic dài.
+2. Logic gọi API nằm trong api/ hoặc hook chuyên trách; component không tự viết request.
+3. Logic hiển thị trạng thái, màu, nhãn và định dạng dùng display-config.ts và display-utils.ts.
+4. Một hành động chỉ có một nơi quyết định điều kiện; các nơi render khác nhau dùng lại descriptor đó.
+5. UI chỉ cải thiện trải nghiệm. Backend vẫn phải kiểm tra lại quyền, trạng thái, tiền và điều kiện chuyển bước.
+6. Không tạo bản sao server state trong nhiều local state nếu không cần thiết.
+7. Ưu tiên primitive đã có của dự án trước khi thêm component mới.
 
-## 1. Quy trình dựng module trong 8 bước
+---
 
-### Bước 1 — Khảo sát codebase và skill UI
+## 2. Cấu trúc module chuẩn
 
-```powershell
-rg --files modules components lib | rg "(columns|provider|dialog|schema|services|queries|mutations|display|combobox)"
-rg -n "useDataTable|useTableQueryState|CopyText|CurrencyInput|DateTimeRangePicker|ProductCombobox" modules components
-```
-
-Kiểm tra trước:
-
-- module gần nhất về domain và module gần nhất về table/dialog;
-- `components/ui`, `components/shared`, `lib/utils.ts`;
-- `.agents/skills/shadcn/SKILL.md` trước khi thêm primitive mới;
-- API response, pagination, permission code và enum từ backend;
-- cách project xử lý toast, query error, loading và route permission.
-
-Không copy nguyên module cũ nếu lifecycle khác. Chỉ copy composition pattern và đổi toàn bộ contract/domain rule.
-
-### Bước 2 — Chốt capability matrix và UI contract
-
-| Capability | UI | API hook | Permission | Cache ảnh hưởng |
-| --- | --- | --- | --- | --- |
-| List | table + filter | `useGetThings` | `thing:read` | `things.list` |
-| Detail | detail dialog/page | `useGetThing` | `thing:read` | `things.detail` |
-| Create | create dialog | `useCreateThing` | `thing:create` | invalidate list |
-| Update | update dialog | `useUpdateThing` | `thing:update` | detail + list |
-| Delete/bulk | confirm dialog | `useDeleteThings` | `thing:delete` | invalidate list |
-| Workflow | action dialog | `useThingAction` | action permission | detail + list |
-
-Chốt rõ trước khi code:
-
-- field nào chỉ đọc, field nào editable, field nào server-managed;
-- update là PATCH dirty fields hay gửi toàn bộ form;
-- relation có dùng combobox để đổi hay chỉ render snapshot;
-- quote/availability có cần refresh khi đổi input;
-- status nào được action nào;
-- dialog nào dùng portal container và vùng nào được scroll.
-
-### Bước 3 — Tạo skeleton module
+Dùng feature-first. Mỗi module tự sở hữu model, query, UI và action của mình.
 
 ```text
 modules/<domain>/
-├── index.tsx                         # composition mỏng
-├── <domain>-provider.tsx             # chỉ khi cần shared dialog/action state
+├── index.tsx
+├── <domain>-provider.tsx
 ├── columns.tsx
-├── bulk-action.tsx                   # chỉ khi có bulk action
-├── dialogs.tsx                       # registry/dialog orchestration
 ├── constants.ts
-├── display-config.ts                 # status/type → presentation
-├── display-utils.ts                  # pure formatting/derivation
+├── display-config.ts
+├── display-utils.ts
+├── bulk-action.tsx                 # chỉ tạo khi module có bulk action
 ├── api/
-│   ├── index.ts
-│   └── services.ts
+│   ├── services.ts                 # lớp gọi HTTP thuần
+│   ├── queries.ts                  # query options/query hooks
+│   └── mutations.ts                # mutation hooks
 ├── model/
 │   ├── index.ts
-│   ├── schema.ts
-│   └── type.ts
+│   ├── schema.ts                   # schema form/filter
+│   └── types.ts                    # response/view model
 ├── hooks/
-│   ├── keys.ts
-│   ├── queries.ts
-│   ├── mutations.ts
-│   └── <domain>-logic.tsx            # chỉ khi có domain interaction phức tạp
+│   ├── <domain>-logic.tsx          # orchestration cho page
+│   └── use-<domain>-*.ts           # hook tái sử dụng
 └── components/
-    ├── form/
+    ├── actions/
+    │   ├── <domain>-action-dialog.tsx
+    │   ├── <domain>-action-definitions.ts
+    │   ├── <domain>-action-items.tsx
+    │   ├── <domain>-actions-cell.tsx
+    │   ├── <domain>-context-menu.tsx
+    │   └── index.ts
     ├── create/
     ├── update/
     ├── detail/
-    ├── actions/
+    ├── filters/
     └── <domain>-status-badge.tsx
 ```
 
-Không tạo file chỉ vì skeleton. Nếu module chỉ có list thì chưa cần provider, bulk action hoặc state machine UI.
+Không bắt buộc tạo mọi file. Chỉ tạo file khi module thực sự có nhu cầu; không tạo spec/, domain/ hoặc wrapper rỗng chỉ để làm đầy cấu trúc.
 
-### Bước 4 — Model, schema và service API
+---
 
-#### Model
+## 3. Luồng xây dựng module
 
-- `model/type.ts`: type response, query, mutation input và enum lấy theo API contract.
-- `model/schema.ts`: Zod schema cho form/query input; không dùng schema để thay business rule backend.
-- `model/index.ts`: export công khai của module.
-- Không lặp lại type shared ở nhiều module.
+### Bước 1: Chốt contract
 
-Create/update nên có schema riêng khi quyền sửa hoặc field editable khác nhau:
+Trước khi code UI, xác định:
 
-```ts
-export const createThingSchema = z.object({
-  name: z.string().trim().min(1, 'Vui lòng nhập tên'),
-});
+- endpoint và HTTP method;
+- query params, pagination và sort;
+- response item, summary và pagination;
+- enum trạng thái;
+- permission cần dùng;
+- lỗi nghiệp vụ có thể trả về;
+- field nào là dữ liệu hiện tại và field nào là snapshot.
 
-export const updateThingSchema = createThingSchema.partial();
-```
+Không tự suy diễn rule từ UI. Nếu một rule ảnh hưởng đến tiền, khả dụng, allocation hoặc chuyển trạng thái thì phải có backend xác nhận.
 
-#### Service
+### Bước 2: Tạo model và schema
 
-```ts
-export async function getThings(query: GetThingsQuery) {
-  const { data } = await apiClient.get<PaginatedResponse<Thing>>('/things', {
-    params: query,
-  });
-  return data;
-}
-```
+- model/types.ts mô tả response và view model.
+- model/schema.ts mô tả input của form/filter.
+- Dùng z.coerce cho số và ngày khi phù hợp.
+- Chuẩn hóa date ở một nơi; tránh mỗi component tự new Date() theo cách khác nhau.
+- Không dùng any. Nếu response chưa ổn định, dùng type rõ ràng và ghi chú điểm cần đồng bộ backend.
 
-Service chỉ serialize request và unwrap response theo chuẩn project. Không đặt state, toast, React hook hoặc JSX trong `api/services.ts`.
+### Bước 3: Tách lớp API và server state
 
-Ngày/tiền phải thống nhất:
+api/services.ts chỉ chịu trách nhiệm gọi API và nhận DTO.
 
-- dùng helper chung trong `lib/utils.ts` cho parse/ISO/date/currency;
-- domain-specific như duration rental, period label, due warning đặt ở `display-utils.ts` của module;
-- không tạo `new Date(...).toLocaleString(...)` lặp trong JSX;
-- money input dùng `CurrencyInput` và serialize về number/string đúng backend contract.
+api/queries.ts chịu trách nhiệm:
 
-### Bước 5 — Query, mutation và cache
+- query key;
+- query params;
+- loading/error state;
+- pagination/cursor;
+- stale time nếu module cần.
 
-Query key phải phân cấp và chứa đủ input ảnh hưởng kết quả:
+api/mutations.ts chịu trách nhiệm:
 
-```ts
-export const thingKeys = {
-  all: ['things'] as const,
-  lists: () => [...thingKeys.all, 'list'] as const,
-  list: (query: GetThingsQuery) => [...thingKeys.lists(), query] as const,
-  details: () => [...thingKeys.all, 'detail'] as const,
-  detail: (id: string) => [...thingKeys.details(), id] as const,
-};
-```
+- create/update/action mutation;
+- toast hoặc error mapping ở lớp phù hợp;
+- invalidate/refetch các query bị ảnh hưởng.
 
-Quy tắc hook:
+Sau mutation, invalidate theo resource và các màn hình liên quan. Không tự sửa cache bằng dữ liệu thiếu field nếu chưa chắc response đầy đủ.
 
-- `useQuery` chỉ nhận query đã normalize;
-- dùng `enabled` khi thiếu id hoặc dependency;
-- search combobox phải debounce, hủy/ghi đè request cũ và không query khi input chưa đủ dài nếu API yêu cầu;
-- mutation hiển thị toast ở một chỗ thống nhất;
-- sau create/update/delete/action, invalidate đúng list/detail/related availability;
-- khi mutation ảnh hưởng quote hoặc availability, không giữ data cũ như thể còn hợp lệ.
+### Bước 4: Viết display config
 
-Đừng đưa toàn bộ query state vào Zustand nếu TanStack Query hoặc URL state đã sở hữu nó.
+Tạo một nguồn cấu hình cho:
 
-### Bước 6 — Table và columns
+- status;
+- source;
+- handover/return/settlement;
+- asset status/condition;
+- màu, nhãn, icon và mô tả ngắn.
 
-DataTable server-side phải truyền đủ `page`, `perPage`, `sort`, filter và search xuống query. Không filter/sort client một danh sách đã phân trang từ server.
-
-`columns.tsx` chỉ định nghĩa presentation và action; không gọi mutation trực tiếp ngoài callback/hook được truyền vào.
-
-Mỗi bảng nên có các nhóm cột sau, tùy domain:
-
-1. **Primary identity**: code/name, có `CopyText` cho mã cần tra cứu.
-2. **Relation**: customer/product/category với label dễ đọc, tránh chỉ render UUID.
-3. **Time/state**: period, duration, status; status có badge/config riêng.
-4. **Financial/quantity**: tổng tiền, còn phải thu, số lượng; format tiền thống nhất.
-5. **Updated**: `updatedAt` hoặc thông tin vận hành cần thiết.
-6. **Actions**: detail/update/workflow/delete theo permission và state.
-
-Không nhồi mọi field vào table. Field ít dùng đưa vào detail dialog. Với thời gian vận hành, có thể render cảnh báo `sắp tới`, `đang diễn ra`, `quá hạn` ở FE nhưng màu/label phải lấy từ `display-config` và mốc nghiệp vụ do backend trả hoặc đã chốt chung.
-
-Mẫu mã có thể copy:
-
-```tsx
-<CopyText text={String(row.code)} className="py-1 font-bold text-primary underline">
-  <span>#{row.code}</span>
-</CopyText>
-```
-
-### Bước 7 — Form, dialog và design system
-
-#### Form
-
-- Dùng React Hook Form + `zodResolver`.
-- Mỗi field dùng `Field`, `FieldLabel`, `FieldDescription`, `FieldError` theo component chuẩn.
-- Dùng `getDirtyValues` cho PATCH nếu backend nhận partial update.
-- Không gửi `undefined`, field read-only, hoặc relation display-only.
-- Disable submit khi pending; chống double submit.
-- Khi input ảnh hưởng quote/availability, invalidate quote có chủ đích và hiển thị trạng thái đang tính.
-- Combobox customer/product phải debounce; tìm product theo productId/SKU/name theo contract, còn asset-unit assignment để backend xử lý nếu đó là nghiệp vụ server.
-- Có thể dùng `DateTimeRangePicker`, `CurrencyInput`, `ProductCombobox` và pattern portal container sẵn có; không tự chế input tương đương nếu component hiện tại đáp ứng.
-
-#### Dialog layout
-
-Dialog có form dài phải tách rõ header, scroll body và footer:
-
-```tsx
-<DialogContent className="flex max-h-[min(90vh,900px)] flex-col gap-0 p-0 sm:max-w-3xl">
-  <DialogHeader className="shrink-0 px-6 py-5" />
-  <ScrollArea className="min-h-0 flex-1">
-    <div className="px-6 py-5">...</div>
-  </ScrollArea>
-  <DialogFooter className="shrink-0 border-t border-accent/60 px-6 py-4" />
-</DialogContent>
-```
-
-Checklist dialog:
-
-- `DialogFooter` nằm ngoài `ScrollArea`, không bị bóp bởi container chung;
-- scroll body có `min-h-0 flex-1` và parent có chiều cao giới hạn;
-- `ScrollArea` của dự án đã custom vùng scrollbar với offset âm; không thêm `pr-4` chỉ để chừa chỗ cho scrollbar. Chỉ dùng padding khi đó là spacing thực sự của nội dung;
-- Popover/Select/Combobox/DatePicker truyền đúng `portalContainer` khi mở trong dialog;
-- không lồng nhiều `ScrollArea` nếu không cần;
-- header mô tả mục tiêu, body nhóm theo `FieldGroup`, footer giữ action chính;
-- border chỉ dùng để phân vùng: ưu tiên `border-accent/60`, divider nhẹ hoặc whitespace; không bọc mọi field bằng card;
-- màu dùng semantic token của design system, không hard-code màu trạng thái trong từng component.
-
-#### Card, FieldGroup và các vùng thông tin
-
-Ưu tiên thứ tự thị giác:
-
-1. tiêu đề/description ngắn;
-2. nhóm field liên quan;
-3. summary/quote/alert khi có dữ liệu;
-4. action ở footer.
-
-Dùng Card khi cần tách một nhóm nghiệp vụ lớn; dùng `FieldGroup`/`divide-y` cho danh sách field. Một sản phẩm/dòng item nên hiển thị name, SKU, quantity, price và action trong cùng một row; không lặp border card cho từng item.
-
-### Bước 8 — Detail, update, permission và kiểm tra
-
-Detail dialog nên hiển thị theo thứ tự:
-
-- mã/identity có copy;
-- status + cảnh báo vận hành;
-- customer/snapshot/relation;
-- thời gian + duration/period dễ đọc;
-- items/quantity/price;
-- financial summary;
-- timeline/note/audit nếu có;
-- actions hợp lệ theo status.
-
-Update dialog chỉ hiển thị field mà backend cho phép sửa. Nếu nghiệp vụ yêu cầu sửa snapshot, form nhận snapshot fields; không tự đưa `CustomerCombobox` vào chỉ vì bản ghi có customer relation. Nếu muốn đổi relation, phải có API contract và rule backend tương ứng.
-
-Action/status không được suy ra bằng cách so sánh label tiếng Việt. Dùng enum/code từ backend và map tại `display-config.ts`.
-
-## 2. Tách display config và display utils
-
-### `display-config.ts`
-
-Chứa presentation mapping ổn định:
+Ví dụ:
 
 ```ts
-export const thingStatusConfig = {
-  DRAFT: { label: 'Nháp', tone: 'muted', icon: IconFileText },
-  CONFIRMED: { label: 'Đã xác nhận', tone: 'success', icon: IconCircleCheck },
-  CANCELLED: { label: 'Đã hủy', tone: 'danger', icon: IconCircleX },
+export const orderStatusConfig = {
+  CREATED: {
+    label: 'Mới tạo',
+    className: 'border-slate-300 bg-slate-50 text-slate-700',
+    ganttColor: '#94a3b8',
+  },
 } as const;
 ```
 
-Config có thể chứa label/icon/variant/className/accessibility label, nhưng không gọi hook, query hoặc tính nghiệp vụ.
+Table, detail, dialog, Gantt và tooltip phải lấy cùng config. Không khai báo một màu khác ở từng component.
 
-### `display-utils.ts`
+### Bước 5: Xây table và filter
 
-Chỉ chứa hàm thuần:
+columns.tsx chỉ mô tả cột, cell và metadata; không chứa request hoặc mở dialog bằng nhiều điều kiện rời rạc.
 
-- format date/time, period, duration;
-- format quantity/price/summary;
-- derive warning presentation từ dữ liệu đã có;
-- normalize text hiển thị.
+Nên sắp xếp cột theo ngữ nghĩa:
 
-Dùng `parseDate`, `toIso`, `formatDate`, `formatCurrency` từ `lib/utils.ts` nếu phù hợp. Không định nghĩa lại helper date dùng chung trong từng module. Hàm phải xử lý `undefined`, `null`, date invalid và khoảng thời gian không hợp lệ.
+1. mã/định danh;
+2. khách hàng hoặc quan hệ chính;
+3. thời gian;
+4. vận hành;
+5. trạng thái;
+6. tài chính;
+7. action.
 
-## 3. Permission, error và text
+Filter có thể là:
 
-- Permission guard ở page/hook/action chỉ là UX; backend vẫn kiểm tra quyền.
-- Nút ẩn/disable phải dựa trên permission + trạng thái record.
-- Error API map về message tiếng Việt ổn định qua constants/utility; không render `error.message` thô nếu có thể chứa chi tiết kỹ thuật.
-- Toast success/error dùng một pattern; không bắn toast trong nhiều tầng cho cùng một mutation.
-- Text người dùng nhìn thấy viết tiếng Việt nhất quán; enum/code nội bộ giữ tiếng Anh theo API.
+- column filter hiển thị trực tiếp;
+- filter-only column;
+- external filter như customer combobox, date range, product combobox;
+- search debounce.
 
-## 4. Checklist copy cho module mới
+Filter-only dùng metadata, không cần render thành cột dữ liệu:
+
+```tsx
+{
+  accessorKey: 'source',
+  header: 'Nguồn đơn',
+  meta: {
+    label: 'Nguồn đơn',
+    variant: 'select',
+    filterMode: 'equals',
+    filterOnly: true,
+    options: orderSourceOptions,
+  },
+  enableColumnFilter: true,
+}
+```
+
+Nút Xóa bộ lọc phải kiểm tra toàn bộ nguồn filter: table state, URL params và external state. Khi clear phải reset cả customer/product/date/search, sau đó refetch đúng một lần theo cơ chế của page.
+
+### Bước 6: Tách action thành một cụm riêng
+
+Action của module phải nằm trong components/actions/. Không đặt toàn bộ action vào columns.tsx hoặc một file cell quá lớn.
+
+Cấu trúc chuẩn:
 
 ```text
-[ ] Đọc skill shadcn và khảo sát module tương tự
-[ ] Chốt capability/permission/API contract
-[ ] Tạo module skeleton tối thiểu
-[ ] Tạo type + schema create/update/query
-[ ] Tạo service + query keys + queries/mutations
-[ ] Nối DataTable server-side: page/filter/sort/search
-[ ] Tạo display-config và display-utils
-[ ] Tạo columns theo identity/relation/time/state/financial/actions
-[ ] Tạo detail/create/update dialog theo layout header/body/footer
-[ ] Dùng Field/FieldGroup, CurrencyInput/DateTimeRangePicker/Combobox đúng pattern
-[ ] Debounce search và invalidate cache sau mutation
-[ ] Kiểm tra permission, error, loading, empty và optimistic/stale state
-[ ] Chạy typecheck, lint, build và git diff --check
+components/actions/
+├── <domain>-action-dialog.tsx
+├── <domain>-action-definitions.ts
+├── <domain>-action-items.tsx
+├── <domain>-actions-cell.tsx
+├── <domain>-context-menu.tsx
+└── index.ts
 ```
 
-## 5. Lệnh kiểm tra tối thiểu
+Trách nhiệm từng file:
 
-```powershell
-pnpm exec tsc --noEmit
-pnpm run lint
-pnpm run build
-git diff --check
+- <domain>-action-definitions.ts
+  - Tạo descriptor của action.
+  - Tập trung điều kiện theo status, settlement, permission và dữ liệu hiện tại.
+  - Chỉ trả về dữ liệu như id, label, icon, disabled, variant, onSelect.
+  - Không render DropdownMenuItem hoặc ContextMenuItem.
+
+- <domain>-action-items.tsx
+  - Nhận descriptor và render ra primitive menu.
+  - Dùng chung cho dropdown và context menu.
+  - Chịu trách nhiệm separator theo nhóm action, icon và disabled state.
+  - Không tự thêm rule nghiệp vụ mới.
+
+- <domain>-actions-cell.tsx
+  - Chỉ lo trigger và DropdownMenu.
+  - Gọi ActionItems với menu="dropdown".
+
+- <domain>-context-menu.tsx
+  - Chỉ làm adapter cho row context menu.
+  - Gọi ActionItems với menu="context".
+
+- <domain>-action-dialog.tsx
+  - Chứa form, summary, mutation và nội dung xác nhận của workflow.
+  - Không quyết định danh sách action của table.
+  - Footer phải tách khỏi vùng scroll; body dùng ScrollArea khi nội dung dài.
+
+- index.ts
+  - Là public API của cụm action.
+  - Page, columns và hook chỉ import từ components/actions, không import sâu vào file nội bộ.
+
+Luồng chuẩn:
+
+```text
+columns.tsx
+  └── <Domain>ActionsCell
+        └── <Domain>ActionItems menu="dropdown"
+              └── use<Domain>Actions
+
+DataTable row context menu
+  └── <Domain>ContextMenu
+        └── <Domain>ActionItems menu="context"
+              └── use<Domain>Actions
+
+action.onSelect
+  └── mở dialog/provider hoặc gọi workflow đã chuẩn hóa
 ```
 
-Nếu build module có thay đổi API, migration hoặc enum, phải kiểm tra cả backend contract và thực hiện một smoke test từ table → detail → create/update → refresh list. Không coi việc TypeScript compile được là đủ nếu cache, permission hoặc dialog flow chưa được kiểm tra.
+Một action cần phân biệt rõ:
+
+- hide: không hiển thị vì không áp dụng;
+- disable: áp dụng nhưng chưa đủ điều kiện, cần tooltip lý do;
+- permission: chỉ là lớp UX; backend vẫn kiểm tra lại.
+
+DataTable dùng context menu phải bật opt-in:
+
+```tsx
+const table = useDataTable({
+  data,
+  columns,
+  enableRowContextMenu: true,
+  renderRowContextMenuItems: ({ row }) => (
+    <DomainContextMenu row={row} />
+  ),
+});
+```
+
+Không thêm wrapper DOM vào tbody. Context menu phải bọc trực tiếp TableRow để không phá layout table, virtual row hoặc drag-and-drop.
+
+### Bước 7: Thiết kế dialog
+
+Dialog chuẩn gồm:
+
+- header: title + mô tả ngắn;
+- body: summary và form;
+- footer: action chính, action phụ, trạng thái pending.
+
+Với dialog dài:
+
+```tsx
+<DialogContent className="flex max-h-[90vh] flex-col p-0">
+  <DialogHeader className="shrink-0 px-6 py-5" />
+  <ScrollArea className="min-h-0 flex-1">
+    <div className="px-6 py-5">
+      {/* form */}
+    </div>
+  </ScrollArea>
+  <DialogFooter className="shrink-0 border-t px-6 py-4" />
+</DialogContent>
+```
+
+Nếu ScrollArea đã có padding custom thì không cộng thêm pr-4 ở form. Không đặt footer vào vùng scroll để footer không bị bóp hoặc trôi khỏi viewport.
+
+Quy tắc UI:
+
+- dùng Field, FieldLabel, FieldDescription, FieldError;
+- dùng CurrencyInput cho tiền;
+- dùng DateTimeRangePicker cho khoảng ngày giờ;
+- truyền portalContainer khi dialog có combobox/date picker;
+- disable field theo permission và trạng thái;
+- hiển thị lỗi server gần field hoặc summary có nội dung user hiểu được;
+- tránh border dày; dùng border-accent/60, divide-y hoặc surface nhẹ khi phù hợp.
+
+### Bước 8: Detail và update
+
+Detail phải trả lời nhanh:
+
+- đơn/vật thể nào;
+- ai liên quan;
+- thời gian nào;
+- trạng thái hiện tại;
+- tiền đã thu, còn phải thu, hoàn tiền;
+- action tiếp theo là gì.
+
+Update chỉ cho sửa field mà backend cho phép ở trạng thái hiện tại. Nếu update snapshot:
+
+- hiển thị dữ liệu snapshot đang lưu;
+- cho sửa đúng phần snapshot được phép;
+- gửi payload rõ nghĩa;
+- không tự dùng combobox dữ liệu hiện tại nếu nghiệp vụ yêu cầu sửa snapshot tĩnh;
+- sau khi thành công phải refetch detail/list.
+
+Không dùng customer hiện tại để thay thế snapshot trong phần lịch sử. Snapshot là bản ghi tại thời điểm tạo hoặc cập nhật nghiệp vụ.
+
+### Bước 9: Kiểm tra và hoàn thiện
+
+Trước khi kết thúc:
+
+1. typecheck;
+2. lint;
+3. test hoặc kiểm tra manual các trạng thái chính;
+4. kiểm tra mobile/tablet;
+5. kiểm tra loading, empty, error và permission;
+6. kiểm tra keyboard và context menu;
+7. kiểm tra cache sau create/update/action;
+8. kiểm tra không có import sâu vượt public API của module.
+
+---
+
+## 4. Quy ước permission và trạng thái
+
+Permission được dùng để ẩn hoặc disable action ở frontend nhằm tránh thao tác nhầm. Backend luôn là nguồn kiểm tra cuối cùng.
+
+Status config cần có tối thiểu:
+
+- label: nhãn cho user;
+- className hoặc token màu;
+- icon nếu cần;
+- description cho tooltip/detail;
+- màu Gantt nếu module có timeline.
+
+Không render status bằng enum thô hoặc màu tự viết trong JSX.
+
+Action condition nên đặt ở action-definitions.ts, ví dụ:
+
+```ts
+const canRecordPayment =
+  order.status !== 'DONE' &&
+  order.status !== 'CANCELLED' &&
+  order.amountDueBeforeHandover > 0;
+```
+
+Nếu điều kiện này được dùng ở nhiều nơi, đưa thành helper hoặc display utility có tên nghĩa rõ ràng. Không copy điều kiện vào columns, detail và dialog.
+
+---
+
+## 5. Quy ước lỗi và thông báo
+
+Error hiển thị cho user phải nói:
+
+- thao tác nào không thực hiện được;
+- nguyên nhân hiện tại;
+- cần làm gì tiếp theo.
+
+Tránh hiển thị nguyên văn BadRequestException, tên method, stack trace hoặc câu chung chung như “Backend từ chối yêu cầu”.
+
+Ví dụ tốt:
+
+- “Không thể hoàn tiền: đơn này không còn khoản tiền đã thanh toán chưa hoàn.”
+- “Chưa thể bàn giao máy: đơn còn 500.000 đ cần thanh toán.”
+- “Không đủ máy trống trong khoảng thời gian đã chọn.”
+
+Chi tiết kỹ thuật chỉ ghi vào log dành cho developer.
+
+---
+
+## 6. Quy ước import và public API
+
+- Import component dùng chung từ @/components/ui/....
+- Import module action từ modules/<domain>/components/actions.
+- Dùng index.ts làm public boundary.
+- Không import từ file nội bộ của module khác nếu có thể dùng public API.
+- Không tạo barrel toàn ứng dụng nếu không cần; barrel nên nằm ở boundary có ý nghĩa.
+
+Ví dụ:
+
+```ts
+import {
+  RentalOrderActionsCell,
+  RentalOrderContextMenuItems,
+} from './components/actions';
+```
+
+Không nên import trực tiếp action item nội bộ trong page hoặc columns, trừ khi đang làm việc bên trong chính cụm actions.
+
+---
+
+## 7. Definition of Done
+
+Một module được xem là hoàn tất khi:
+
+- contract frontend/backend rõ ràng;
+- model và schema không dùng any;
+- query key và cache invalidation đúng;
+- columns chỉ làm nhiệm vụ hiển thị;
+- filter hiển thị và filter-only hoạt động đúng;
+- nút clear filter reset cả external filter;
+- action được tách trong components/actions;
+- dropdown và context menu dùng chung action descriptor;
+- dialog có loading, lỗi, xác nhận và footer đúng layout;
+- status, màu và nhãn dùng display config;
+- detail hiển thị đủ thông tin để user quyết định action tiếp theo;
+- permission frontend khớp backend;
+- responsive ở desktop, tablet và mobile;
+- typecheck/lint/test hoặc manual QA đã chạy.
+
+Các lệnh kiểm tra thông thường:
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+```
+
+Nếu repository đang có lỗi nền từ trước, ghi rõ lỗi đó trong handoff và phân biệt với lỗi do module vừa thay đổi.

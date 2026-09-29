@@ -53,6 +53,7 @@ export function buildRentalOrderSearchText(input: {
   customerPhone?: string | null;
   customerEmail?: string | null;
   customerIdentityNumber?: string | null;
+  customerSocialContact?: string | null;
   deliveryAddress?: string | null;
   note?: string | null;
   internalNote?: string | null;
@@ -65,6 +66,7 @@ export function buildRentalOrderSearchText(input: {
       input.customerPhone,
       input.customerEmail,
       input.customerIdentityNumber,
+      input.customerSocialContact,
       input.deliveryAddress,
       input.note,
       input.internalNote,

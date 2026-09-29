@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
-import { AssetStatus } from '@generated/prisma/enums';
+import { AssetStatus, OrderStatus, RentalAllocationStatus } from '@generated/prisma/enums';
 import { RENTAL_ORDER_TIME_INVALID } from '@/libs/constants/error.constants';
 import { StoreBusinessHoursService } from '@/modules/store-business-hours/store-business-hours.service';
 import { StoreClosureService } from '@/modules/store-closure/store-closure.service';
@@ -49,9 +49,7 @@ export class AvailabilityScheduleService {
     const assetIds = products.flatMap((product) => product.assetUnits.map((asset) => asset.id));
     const conflicts = await this.findConflictingAllocations(assetIds, dto.startDate, blockedEndDate, dto.excludeOrderId);
     const availableProducts = products.map((product) => {
-      const assignable = product.assetUnits.filter(
-        (asset) => asset.isActive && asset.status === AssetStatus.AVAILABLE,
-      );
+      const assignable = product.assetUnits.filter((asset) => asset.isActive && asset.status === AssetStatus.AVAILABLE);
       const available = assignable.filter((asset) => !conflicts.has(asset.id)).length;
 
       return {
@@ -88,14 +86,14 @@ export class AvailabilityScheduleService {
     this.validateRange(dto.startDate, dto.endDate);
 
     const limit = dto.limit;
-    const productWhere = this.buildProductWhere(dto);
     const cursorProductId = this.decodeCursor(dto.cursor);
-    const allocationWhere = {
+    const allocationWhere = this.buildGanttAllocationWhere(dto);
+    const occupancyWhere: Prisma.RentalAssetAllocationWhereInput = {
+      ...allocationWhere,
       status: { in: BLOCKING_ALLOCATION_STATUSES },
-      startDate: { lt: dto.endDate },
-      blockedEndDate: { gt: dto.startDate },
-      orderLine: { order: { deletedAt: null } },
-    } satisfies Prisma.RentalAssetAllocationWhereInput;
+    };
+    const assetUnitWhere = this.buildGanttAssetUnitWhere(dto);
+    const productWhere = this.buildProductWhere(dto);
 
     const [products, totalProducts, totalAssets, scheduledAssets, unassignableAssets] = await this.prisma.$transaction([
       this.prisma.product.findMany({
@@ -108,7 +106,7 @@ export class AvailabilityScheduleService {
           name: true,
           sku: true,
           assetUnits: {
-            where: { deletedAt: null },
+            where: assetUnitWhere,
             orderBy: [{ serialNumber: 'asc' }, { id: 'asc' }],
             select: {
               id: true,
@@ -158,17 +156,17 @@ export class AvailabilityScheduleService {
         },
       }),
       this.prisma.product.count({ where: productWhere }),
-      this.prisma.assetUnit.count({ where: { deletedAt: null, product: productWhere } }),
+      this.prisma.assetUnit.count({ where: { ...assetUnitWhere, product: productWhere } }),
       this.prisma.assetUnit.count({
         where: {
-          deletedAt: null,
+          ...assetUnitWhere,
           product: productWhere,
-          assetAllocations: { some: allocationWhere },
+          assetAllocations: { some: occupancyWhere },
         },
       }),
       this.prisma.assetUnit.count({
         where: {
-          deletedAt: null,
+          ...assetUnitWhere,
           product: productWhere,
           OR: [{ isActive: false }, { status: { not: AssetStatus.AVAILABLE } }],
         },
@@ -291,39 +289,95 @@ export class AvailabilityScheduleService {
     };
   }
 
+  private buildGanttAllocationWhere(dto: GetAvailabilityGanttDto): Prisma.RentalAssetAllocationWhereInput {
+    return {
+      status: { in: this.getGanttAllocationStatuses(dto) },
+      startDate: { lt: dto.endDate },
+      blockedEndDate: { gt: dto.startDate },
+      orderLine: { order: this.buildGanttOrderWhere(dto) },
+    };
+  }
+
+  private buildGanttOrderWhere(dto: GetAvailabilityGanttDto, searchText?: string): Prisma.RentalOrderWhereInput {
+    return {
+      deletedAt: null,
+      ...(dto.orderStatuses?.length ? { status: { in: dto.orderStatuses } } : {}),
+      ...(dto.handoverStatuses?.length ? { handoverStatus: { in: dto.handoverStatuses } } : {}),
+      ...(dto.returnStatuses?.length ? { returnStatus: { in: dto.returnStatuses } } : {}),
+      ...(dto.settlementStatuses?.length ? { settlementStatus: { in: dto.settlementStatuses } } : {}),
+      ...(dto.pickupMethods?.length ? { pickupMethod: { in: dto.pickupMethods } } : {}),
+      ...(searchText ? { searchText: { contains: searchText } } : {}),
+    };
+  }
+
+  private getGanttAllocationStatuses(dto: GetAvailabilityGanttDto): RentalAllocationStatus[] {
+    if (dto.allocationStatuses?.length) return dto.allocationStatuses;
+
+    const shouldIncludeReleased = dto.includeCancelled === true || dto.orderStatuses?.includes(OrderStatus.CANCELLED) === true;
+
+    return shouldIncludeReleased ? [...new Set([...BLOCKING_ALLOCATION_STATUSES, RentalAllocationStatus.RELEASED])] : BLOCKING_ALLOCATION_STATUSES;
+  }
+
+  private buildGanttAssetUnitWhere(dto: GetAvailabilityGanttDto): Prisma.AssetUnitWhereInput {
+    return {
+      deletedAt: null,
+      ...(dto.assetStatuses?.length ? { status: { in: dto.assetStatuses } } : {}),
+      ...(dto.assetConditions?.length ? { condition: { in: dto.assetConditions } } : {}),
+      ...(dto.assetActive !== undefined ? { isActive: dto.assetActive } : {}),
+    };
+  }
+
   private buildProductWhere(dto: GetAvailabilityGanttDto): Prisma.ProductWhereInput {
     const searchText = normalizeSearchText(dto.search);
+    const assetUnitWhere = this.buildGanttAssetUnitWhere(dto);
+    const hasAssetFilter = Boolean(dto.assetStatuses?.length || dto.assetConditions?.length || dto.assetActive !== undefined);
+    const productIdWhere = {
+      ...(dto.productId ? { id: dto.productId } : {}),
+      ...(dto.productIds?.length ? { id: { in: dto.productIds } } : {}),
+    };
+
     if (!searchText) {
-      return { ...(dto.productId ? { id: dto.productId } : {}), deletedAt: null };
+      return {
+        ...productIdWhere,
+        deletedAt: null,
+        ...(hasAssetFilter ? { assetUnits: { some: assetUnitWhere } } : {}),
+      };
     }
 
     return {
-      ...(dto.productId ? { id: dto.productId } : {}),
+      ...productIdWhere,
       deletedAt: null,
-      OR: [
-        { searchText: { contains: searchText } },
+      AND: [
+        ...(hasAssetFilter ? [{ assetUnits: { some: assetUnitWhere } }] : []),
         {
-          assetUnits: {
-            some: {
-              deletedAt: null,
-              searchText: { contains: searchText },
-            },
-          },
-        },
-        {
-          assetUnits: {
-            some: {
-              deletedAt: null,
-              assetAllocations: {
+          OR: [
+            { searchText: { contains: searchText } },
+            {
+              assetUnits: {
                 some: {
-                  status: { in: BLOCKING_ALLOCATION_STATUSES },
-                  startDate: { lt: dto.endDate },
-                  blockedEndDate: { gt: dto.startDate },
-                  orderLine: { order: { deletedAt: null, searchText: { contains: searchText } } },
+                  ...assetUnitWhere,
+                  searchText: { contains: searchText },
                 },
               },
             },
-          },
+            {
+              assetUnits: {
+                some: {
+                  ...assetUnitWhere,
+                  assetAllocations: {
+                    some: {
+                      status: { in: this.getGanttAllocationStatuses(dto) },
+                      startDate: { lt: dto.endDate },
+                      blockedEndDate: { gt: dto.startDate },
+                      orderLine: {
+                        order: { ...this.buildGanttOrderWhere(dto), searchText: { contains: searchText } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
         },
       ],
     };

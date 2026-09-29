@@ -84,7 +84,9 @@ export class AvailabilityGanttBlockOutDto {
   @ApiProperty()
   endDate!: Date;
 
-  @ApiProperty()
+  @ApiProperty({
+    description: 'Mốc kết thúc vùng chiếm lịch để tính khả dụng; không hiển thị trực tiếp cho người dùng.',
+  })
   blockedEndDate!: Date;
 }
 

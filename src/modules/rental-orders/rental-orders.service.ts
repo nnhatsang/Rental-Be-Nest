@@ -147,6 +147,7 @@ export class RentalOrdersService {
           id: true,
           code: true,
           source: true,
+          pickupMethod: true,
           status: true,
           handoverStatus: true,
           returnStatus: true,
@@ -1100,6 +1101,7 @@ export class RentalOrdersService {
     id: string;
     code: string;
     source: OrderSource;
+    pickupMethod: PickupMethod;
     status: OrderStatus;
     handoverStatus: HandoverStatus;
     returnStatus: ReturnStatus;

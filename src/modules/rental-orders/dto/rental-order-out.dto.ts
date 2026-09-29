@@ -198,6 +198,7 @@ export class RentalOrderListItemOutDto {
   @ApiProperty() id!: string;
   @ApiProperty() code!: string;
   @ApiProperty({ enum: OrderSource }) source!: OrderSource;
+  @ApiProperty({ enum: PickupMethod }) pickupMethod!: PickupMethod;
   @ApiProperty({ enum: OrderStatus }) status!: OrderStatus;
   @ApiProperty({ enum: HandoverStatus }) handoverStatus!: HandoverStatus;
   @ApiProperty({ enum: ReturnStatus }) returnStatus!: ReturnStatus;

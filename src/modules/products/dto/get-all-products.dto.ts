@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { INVALID_BOOLEAN, INVALID_UUID } from '@/libs/constants/invalid.constant';
 import { ApiPagReq } from '@/libs/types/custom-response.type';
 
@@ -15,10 +15,16 @@ export enum ProductSortBy {
 }
 
 export class GetAllProductsInDto extends ApiPagReq {
-  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @ApiPropertyOptional({ type: [String], format: 'uuid', description: 'Lọc sản phẩm thuộc ít nhất một danh mục.' })
   @IsOptional()
-  @IsUUID('7', { message: INVALID_UUID })
-  categoryId?: string;
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (Array.isArray(value)) return value.flatMap((item) => String(item).split(',')).filter(Boolean);
+    return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+  })
+  @IsArray()
+  @IsUUID('7', { each: true, message: INVALID_UUID })
+  categoryIds?: string[];
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()

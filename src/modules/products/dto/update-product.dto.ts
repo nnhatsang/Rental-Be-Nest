@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { ProductRentalPriceTierInDto } from './product-rental-price-tier.dto';
 import { INVALID_ARRAY, INVALID_BOOLEAN, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
@@ -30,10 +30,13 @@ export class UpdateProductDto {
   @IsString({ message: INVALID_STRING })
   usageGuide?: string;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: [String], format: 'uuid', description: 'Gửi mảng rỗng để bỏ toàn bộ danh mục.' })
   @IsOptional()
-  @IsUUID('7', { message: INVALID_UUID })
-  categoryId?: string;
+  @IsArray({ message: INVALID_ARRAY })
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsUUID('7', { each: true, message: INVALID_UUID })
+  categoryIds?: string[];
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @IsOptional()

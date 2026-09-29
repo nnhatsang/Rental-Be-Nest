@@ -183,21 +183,21 @@ model Customer {
 
 model ProductCategory {
   /// Primary category id.
-  id         String    @id @default(uuid(7)) @db.Uuid
+  id         String                      @id @default(uuid(7)) @db.Uuid
   /// Category name, for example Camera, Lens, Light.
   name       String
   /// Optional URL/admin slug.
-  slug       String?   @unique
+  slug       String?                     @unique
   /// Whether this category is visible/usable.
-  isActive   Boolean   @default(true)
-  searchText String    @default("")
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  isActive   Boolean                     @default(true)
+  searchText String                      @default("")
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
   deletedAt  DateTime?
-  createdBy  String?   @map("created_by") @db.Uuid
-  updatedBy  String?   @map("updated_by") @db.Uuid
-  deletedBy  String?   @map("deleted_by") @db.Uuid
-  products   Product[]
+  createdBy  String?                     @map("created_by") @db.Uuid
+  updatedBy  String?                     @map("updated_by") @db.Uuid
+  deletedBy  String?                     @map("deleted_by") @db.Uuid
+  products   ProductCategoryAssignment[]
 
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "ProductCategory_searchText_trgm_idx", type: Gin)
 }
@@ -225,51 +225,60 @@ model Brand {
 
 model Product {
   /// Primary product id; represents the rentable product type/model.
-  id                  String                   @id @default(uuid(7)) @db.Uuid
+  id                  String                      @id @default(uuid(7)) @db.Uuid
   /// Product name, for example Sony A7 IV.
   name                String
   /// Unique product SKU.
-  sku                 String                   @unique
+  sku                 String                      @unique
   /// Optional product description.
   description         String?
   /// Included accessories or package contents.
   includedAccessories String?
   /// Usage guide or handover note for staff/customer.
   usageGuide          String?
-  /// Optional product category.
-  categoryId          String?                  @db.Uuid
   /// Optional product brand.
-  brandId             String?                  @db.Uuid
+  brandId             String?                     @db.Uuid
   /// Full-day rental price.
-  dailyPrice          Decimal                  @db.Decimal(12, 2)
+  dailyPrice          Decimal                     @db.Decimal(12, 2)
   /// Half-day rental price.
-  halfDayPrice        Decimal                  @db.Decimal(12, 2)
+  halfDayPrice        Decimal                     @db.Decimal(12, 2)
   /// Hourly overage price for extra hours.
-  hourlyOveragePrice  Decimal?                 @db.Decimal(12, 2)
+  hourlyOveragePrice  Decimal?                    @db.Decimal(12, 2)
   /// Standard deposit amount.
-  depositAmount       Decimal                  @db.Decimal(12, 2)
+  depositAmount       Decimal                     @db.Decimal(12, 2)
   /// Replacement value used for lost/severe damage cases.
-  replacementValue    Decimal?                 @db.Decimal(12, 2)
+  replacementValue    Decimal?                    @db.Decimal(12, 2)
   /// Whether this product can be used in new orders.
-  isActive            Boolean                  @default(true)
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
+  isActive            Boolean                     @default(true)
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
   deletedAt           DateTime?
-  createdBy           String?                  @map("created_by") @db.Uuid
-  updatedBy           String?                  @map("updated_by") @db.Uuid
-  deletedBy           String?                  @map("deleted_by") @db.Uuid
-  searchText          String                   @default("")
+  createdBy           String?                     @map("created_by") @db.Uuid
+  updatedBy           String?                     @map("updated_by") @db.Uuid
+  deletedBy           String?                     @map("deleted_by") @db.Uuid
+  searchText          String                      @default("")
   assetUnits          AssetUnit[]
-  brand               Brand?                   @relation(fields: [brandId], references: [id])
-  category            ProductCategory?         @relation(fields: [categoryId], references: [id])
+  brand               Brand?                      @relation(fields: [brandId], references: [id])
+  categoryAssignments ProductCategoryAssignment[]
   rentalPriceTiers    ProductRentalPriceTier[]
   rentalOrderLines    RentalOrderLine[]
 
-  @@index([categoryId])
   @@index([brandId])
   @@index([sku])
   @@index([isActive])
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "Product_searchText_trgm_idx", type: Gin)
+}
+
+model ProductCategoryAssignment {
+  /// Product/category relation id is represented by the composite primary key.
+  productId  String          @db.Uuid
+  categoryId String          @db.Uuid
+  createdAt  DateTime        @default(now())
+  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@index([categoryId, productId])
 }
 
 model ProductRentalPriceTier {

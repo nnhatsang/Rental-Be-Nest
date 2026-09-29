@@ -6,6 +6,8 @@ import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ProductsModule } from './modules/products/products.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { BrandsModule } from './modules/brands/brands.module';
 import { AssetUnitsModule } from './modules/asset-units/asset-units.module';
 import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 import { StoreBusinessHoursModule } from './modules/store-business-hours/store-business-hours.module';
@@ -88,6 +90,8 @@ import { AvailabilityModule } from './modules/availability/availability.module';
     UsersModule,
     CustomersModule,
     ProductsModule,
+    CategoriesModule,
+    BrandsModule,
     AssetUnitsModule,
     SystemSettingsModule,
     StoreBusinessHoursModule,

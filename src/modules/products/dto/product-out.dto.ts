@@ -28,8 +28,8 @@ export class ProductOutDto {
   @ApiProperty({ example: 'Check battery and format card before handover', nullable: true })
   usageGuide!: string | null;
 
-  @ApiProperty({ type: ProductRelationOutDto, nullable: true })
-  category!: ProductRelationOutDto | null;
+  @ApiProperty({ type: [ProductRelationOutDto] })
+  categories!: ProductRelationOutDto[];
 
   @ApiProperty({ type: ProductRelationOutDto, nullable: true })
   brand!: ProductRelationOutDto | null;

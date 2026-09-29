@@ -126,6 +126,31 @@ export const PRODUCT_BRAND_NOT_FOUND = new ErrorResponse({
   message: 'Không tìm thấy thương hiệu sản phẩm',
 });
 
+export const PRODUCT_CATEGORIES_INVALID = new ErrorResponse({
+  code: 'PRODUCT_CATEGORIES_INVALID',
+  message: 'Một hoặc nhiều danh mục sản phẩm không tồn tại hoặc đang tạm tắt',
+});
+
+export const CATEGORY_NOT_FOUND = new ErrorResponse({
+  code: 'CATEGORY_NOT_FOUND',
+  message: 'Không tìm thấy danh mục',
+});
+
+export const CATEGORY_SLUG_EXISTED = new ErrorResponse({
+  code: 'CATEGORY_SLUG_EXISTED',
+  message: 'Slug danh mục đã tồn tại',
+});
+
+export const BRAND_NOT_FOUND = new ErrorResponse({
+  code: 'BRAND_NOT_FOUND',
+  message: 'Không tìm thấy thương hiệu',
+});
+
+export const BRAND_SLUG_EXISTED = new ErrorResponse({
+  code: 'BRAND_SLUG_EXISTED',
+  message: 'Slug thương hiệu đã tồn tại',
+});
+
 export const PRODUCT_RENTAL_PRICE_TIER_INVALID = new ErrorResponse({
   code: 'PRODUCT_RENTAL_PRICE_TIER_INVALID',
   message: 'Bậc giá thuê sản phẩm không hợp lệ',

@@ -10,7 +10,7 @@ import { ProductRentalPriceTierInDto } from './dto/product-rental-price-tier.dto
 import { buildProductSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
 import {
   PRODUCT_BRAND_NOT_FOUND,
-  PRODUCT_CATEGORY_NOT_FOUND,
+  PRODUCT_CATEGORIES_INVALID,
   PRODUCT_NOT_FOUND,
   PRODUCT_RENTAL_PRICE_TIER_INVALID,
   PRODUCT_SKU_EXISTED,
@@ -21,7 +21,7 @@ import { EAvailabilityChangeReason, ESocketEmit } from '@/libs/enums/socket.enum
 
 type ProductWithRelations = Awaited<ReturnType<ProductsService['findProductById']>>;
 type ExistingProductWithRelations = NonNullable<ProductWithRelations>;
-type ProductRelation = { id: string; name: string } | null;
+type ProductRelation = { id: string; name: string };
 
 @Injectable()
 export class ProductsService {
@@ -31,13 +31,22 @@ export class ProductsService {
   ) {}
 
   async getAllProducts(query: GetAllProductsInDto) {
-    const { search, categoryId, brandId, isActive, page, perPage, sort, sortBy } = query;
+    const { search, categoryIds, brandId, isActive, page, perPage, sort, sortBy } = query;
     const skip = (page - 1) * perPage;
     const searchText = normalizeSearchText(search);
 
     const where = {
       deletedAt: null,
-      ...(categoryId && { categoryId }),
+      ...(categoryIds?.length
+        ? {
+            categoryAssignments: {
+              some: {
+                categoryId: { in: categoryIds },
+                category: { deletedAt: null },
+              },
+            },
+          }
+        : {}),
       ...(brandId && { brandId }),
       ...(isActive !== undefined && { isActive }),
       ...(searchText && {
@@ -78,7 +87,7 @@ export class ProductsService {
       description,
       includedAccessories,
       usageGuide,
-      categoryId,
+      categoryIds,
       brandId,
       dailyPrice,
       halfDayPrice,
@@ -91,7 +100,7 @@ export class ProductsService {
 
     await this.ensureSkuAvailable(sku);
     this.validateRentalPriceTiers(rentalPriceTiers);
-    const [category, brand] = await Promise.all([this.findCategoryOrThrow(categoryId), this.findBrandOrThrow(brandId)]);
+    const [categories, brand] = await Promise.all([this.findCategoriesOrThrow(categoryIds), this.findBrandOrThrow(brandId)]);
 
     const product = await this.prisma.product.create({
       data: {
@@ -100,8 +109,12 @@ export class ProductsService {
         description,
         includedAccessories,
         usageGuide,
-        categoryId,
         brandId,
+        categoryAssignments: categoryIds?.length
+          ? {
+              create: categoryIds.map((categoryId) => ({ categoryId })),
+            }
+          : undefined,
         dailyPrice,
         halfDayPrice,
         hourlyOveragePrice,
@@ -123,7 +136,7 @@ export class ProductsService {
           name,
           sku,
           description,
-          categoryName: category?.name,
+          categoryName: categories.map((category) => category.name).join(' '),
           brandName: brand?.name,
         }),
       },
@@ -143,8 +156,11 @@ export class ProductsService {
     }
     this.validateRentalPriceTiers(dto.rentalPriceTiers);
 
-    const [category, brand] = await Promise.all([
-      dto.categoryId ? this.findCategoryOrThrow(dto.categoryId) : existingProduct.category,
+    const categoryIds = dto.categoryIds === undefined ? undefined : [...new Set(dto.categoryIds)];
+    const [categories, brand] = await Promise.all([
+      categoryIds === undefined
+        ? existingProduct.categoryAssignments.map((assignment) => assignment.category)
+        : this.findCategoriesOrThrow(categoryIds),
       dto.brandId ? this.findBrandOrThrow(dto.brandId) : existingProduct.brand,
     ]);
 
@@ -152,48 +168,58 @@ export class ProductsService {
       name: dto.name ?? existingProduct.name,
       sku: dto.sku ?? existingProduct.sku,
       description: dto.description ?? existingProduct.description,
-      categoryName: category?.name,
+      categoryName: categories.map((category) => category.name).join(' '),
       brandName: brand?.name,
     };
 
-    const product = await this.prisma.product.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        sku: dto.sku,
-        description: dto.description,
-        includedAccessories: dto.includedAccessories,
-        usageGuide: dto.usageGuide,
-        categoryId: dto.categoryId,
-        brandId: dto.brandId,
-        dailyPrice: dto.dailyPrice,
-        halfDayPrice: dto.halfDayPrice,
-        hourlyOveragePrice: dto.hourlyOveragePrice,
-        rentalPriceTiers: dto.rentalPriceTiers
-          ? {
-              updateMany: {
-                where: {
-                  deletedAt: null,
+    const product = await this.prisma.$transaction(async (tx) => {
+      if (categoryIds !== undefined) {
+        await tx.productCategoryAssignment.deleteMany({ where: { productId: id } });
+        if (categoryIds.length > 0) {
+          await tx.productCategoryAssignment.createMany({
+            data: categoryIds.map((categoryId) => ({ productId: id, categoryId })),
+          });
+        }
+      }
+
+      return tx.product.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          sku: dto.sku,
+          description: dto.description,
+          includedAccessories: dto.includedAccessories,
+          usageGuide: dto.usageGuide,
+          brandId: dto.brandId,
+          dailyPrice: dto.dailyPrice,
+          halfDayPrice: dto.halfDayPrice,
+          hourlyOveragePrice: dto.hourlyOveragePrice,
+          rentalPriceTiers: dto.rentalPriceTiers
+            ? {
+                updateMany: {
+                  where: {
+                    deletedAt: null,
+                  },
+                  data: {
+                    deletedAt: new Date(),
+                  },
                 },
-                data: {
-                  deletedAt: new Date(),
-                },
-              },
-              create: dto.rentalPriceTiers.map((tier) => ({
-                minDays: tier.minDays,
-                maxDays: tier.maxDays,
-                dailyPrice: tier.dailyPrice,
-                name: tier.name,
-              })),
-            }
-          : undefined,
-        depositAmount: dto.depositAmount,
-        replacementValue: dto.replacementValue,
-        isActive: dto.isActive,
-        updatedBy: userId,
-        searchText: buildProductSearchText(nextProduct),
-      },
-      include: this.productInclude(),
+                create: dto.rentalPriceTiers.map((tier) => ({
+                  minDays: tier.minDays,
+                  maxDays: tier.maxDays,
+                  dailyPrice: tier.dailyPrice,
+                  name: tier.name,
+                })),
+              }
+            : undefined,
+          depositAmount: dto.depositAmount,
+          replacementValue: dto.replacementValue,
+          isActive: dto.isActive,
+          updatedBy: userId,
+          searchText: buildProductSearchText(nextProduct),
+        },
+        include: this.productInclude(),
+      });
     });
 
     this.emitAvailabilityChanged(product.id);
@@ -305,30 +331,27 @@ export class ProductsService {
     }
   }
 
-  private async findCategoryOrThrow(categoryId?: string): Promise<ProductRelation> {
-    if (!categoryId) {
-      return null;
-    }
+  private async findCategoriesOrThrow(categoryIds?: string[]): Promise<ProductRelation[]> {
+    const uniqueCategoryIds = [...new Set(categoryIds ?? [])];
+    if (uniqueCategoryIds.length === 0) return [];
 
-    const category = await this.prisma.productCategory.findFirst({
+    const categories = await this.prisma.productCategory.findMany({
       where: {
-        id: categoryId,
+        id: { in: uniqueCategoryIds },
         isActive: true,
+        deletedAt: null,
       },
-      select: {
-        id: true,
-        name: true,
-      },
+      select: { id: true, name: true },
     });
 
-    if (!category) {
-      throw new BadRequestException(PRODUCT_CATEGORY_NOT_FOUND);
+    if (categories.length !== uniqueCategoryIds.length) {
+      throw new BadRequestException(PRODUCT_CATEGORIES_INVALID);
     }
 
-    return category;
+    return categories;
   }
 
-  private async findBrandOrThrow(brandId?: string): Promise<ProductRelation> {
+  private async findBrandOrThrow(brandId?: string): Promise<ProductRelation | null> {
     if (!brandId) {
       return null;
     }
@@ -337,6 +360,7 @@ export class ProductsService {
       where: {
         id: brandId,
         isActive: true,
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -351,10 +375,27 @@ export class ProductsService {
     return brand;
   }
 
-  private productInclude(): Prisma.ProductInclude {
+  private productInclude() {
     return {
-      category: true,
       brand: true,
+      categoryAssignments: {
+        where: {
+          category: {
+            deletedAt: null,
+          },
+        },
+        select: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          categoryId: 'asc',
+        },
+      },
       rentalPriceTiers: {
         where: {
           deletedAt: null,
@@ -372,7 +413,7 @@ export class ProductsService {
           },
         },
       },
-    };
+    } satisfies Prisma.ProductInclude;
   }
 
   private validateRentalPriceTiers(rentalPriceTiers?: ProductRentalPriceTierInDto[]): void {
@@ -409,12 +450,10 @@ export class ProductsService {
       description: product.description,
       includedAccessories: product.includedAccessories,
       usageGuide: product.usageGuide,
-      category: product.category
-        ? {
-            id: product.category.id,
-            name: product.category.name,
-          }
-        : null,
+      categories: product.categoryAssignments.map((assignment) => ({
+        id: assignment.category.id,
+        name: assignment.category.name,
+      })),
       brand: product.brand
         ? {
             id: product.brand.id,

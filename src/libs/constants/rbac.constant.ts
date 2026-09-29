@@ -17,6 +17,16 @@ export const PermissionCode = {
   ProductsUpdate: 'products.update',
   ProductsDelete: 'products.delete',
 
+  CategoriesRead: 'categories.read',
+  CategoriesCreate: 'categories.create',
+  CategoriesUpdate: 'categories.update',
+  CategoriesDelete: 'categories.delete',
+
+  BrandsRead: 'brands.read',
+  BrandsCreate: 'brands.create',
+  BrandsUpdate: 'brands.update',
+  BrandsDelete: 'brands.delete',
+
   AssetsRead: 'assets.read',
   AssetsCreate: 'assets.create',
   AssetsUpdate: 'assets.update',
@@ -96,6 +106,8 @@ export const ROLE_SEEDS = [
       PermissionCode.CustomersUpdate,
       PermissionCode.ProductsRead,
       PermissionCode.AssetsRead,
+      PermissionCode.CategoriesRead,
+      PermissionCode.BrandsRead,
     ],
   },
   {
@@ -107,6 +119,8 @@ export const ROLE_SEEDS = [
       PermissionCode.CustomersRead,
       PermissionCode.ProductsRead,
       PermissionCode.AssetsRead,
+      PermissionCode.CategoriesRead,
+      PermissionCode.BrandsRead,
       PermissionCode.ReportsRead,
     ],
   },

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
+import { AssetStatus } from '@generated/prisma/enums';
 import { PrismaService } from '../database/prisma.service';
 import { CreateAssetUnitDto } from './dto/create-asset-unit.dto';
 import { UpdateAssetUnitDto } from './dto/update-asset-unit.dto';
@@ -213,9 +213,6 @@ export class AssetUnitsService {
         isActive: true,
         deletedAt: null,
         status: AssetStatus.AVAILABLE,
-        condition: {
-          not: AssetCondition.LOST,
-        },
       },
       select: {
         id: true,
@@ -243,9 +240,6 @@ export class AssetUnitsService {
         isActive: true,
         deletedAt: null,
         status: AssetStatus.AVAILABLE,
-        condition: {
-          not: AssetCondition.LOST,
-        },
       },
       _count: {
         _all: true,

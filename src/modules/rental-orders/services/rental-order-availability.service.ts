@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
+import { AssetStatus } from '@generated/prisma/enums';
 import { RENTAL_ORDER_TIME_INVALID } from '@/libs/constants/error.constants';
 import { StoreBusinessHoursService } from '@/modules/store-business-hours/store-business-hours.service';
 import { StoreClosureService } from '@/modules/store-closure/store-closure.service';
@@ -75,7 +75,7 @@ export class RentalOrderAvailabilityService {
     const unavailableItems: RentalOrderUnavailableItem[] = [];
     const allocations = requestedItems.map((item) => {
       const candidates = (assetsByProduct.get(item.productId) ?? []).filter(
-        (asset) => asset.isActive && asset.status === AssetStatus.AVAILABLE && asset.condition !== AssetCondition.LOST && !conflicts.has(asset.id),
+        (asset) => asset.isActive && asset.status === AssetStatus.AVAILABLE && !conflicts.has(asset.id),
       );
       const assetUnitIds = candidates.slice(0, item.quantity).map((asset) => asset.id);
       if (assetUnitIds.length < item.quantity) {

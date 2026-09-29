@@ -779,8 +779,6 @@ enum AssetCondition {
   FAIR
   /// Damaged but not necessarily lost.
   DAMAGED
-  /// Lost item.
-  LOST
 }
 
 enum StoreClosureType {

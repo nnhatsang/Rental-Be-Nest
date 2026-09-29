@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
-import { AssetCondition, AssetStatus } from '@generated/prisma/enums';
+import { AssetStatus } from '@generated/prisma/enums';
 import { RENTAL_ORDER_TIME_INVALID } from '@/libs/constants/error.constants';
 import { StoreBusinessHoursService } from '@/modules/store-business-hours/store-business-hours.service';
 import { StoreClosureService } from '@/modules/store-closure/store-closure.service';
@@ -50,7 +50,7 @@ export class AvailabilityScheduleService {
     const conflicts = await this.findConflictingAllocations(assetIds, dto.startDate, blockedEndDate, dto.excludeOrderId);
     const availableProducts = products.map((product) => {
       const assignable = product.assetUnits.filter(
-        (asset) => asset.isActive && asset.status === AssetStatus.AVAILABLE && asset.condition !== AssetCondition.LOST,
+        (asset) => asset.isActive && asset.status === AssetStatus.AVAILABLE,
       );
       const available = assignable.filter((asset) => !conflicts.has(asset.id)).length;
 
@@ -170,7 +170,7 @@ export class AvailabilityScheduleService {
         where: {
           deletedAt: null,
           product: productWhere,
-          OR: [{ isActive: false }, { status: { not: AssetStatus.AVAILABLE } }, { condition: AssetCondition.LOST }],
+          OR: [{ isActive: false }, { status: { not: AssetStatus.AVAILABLE } }],
         },
       }),
     ]);

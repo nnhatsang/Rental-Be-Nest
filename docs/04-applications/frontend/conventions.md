@@ -177,43 +177,27 @@ Filter-only dùng metadata, không cần render thành cột dữ liệu:
 
 Nút Xóa bộ lọc phải kiểm tra toàn bộ nguồn filter: table state, URL params và external state. Khi clear phải reset cả customer/product/date/search, sau đó refetch đúng một lần theo cơ chế của page.
 
-### Bước 6: Tách action thành một cụm riêng
+### Bước 6: Tổ chức action theo Action Registry + Adapter
 
-Action của module phải nằm trong components/actions/. Không đặt toàn bộ action vào columns.tsx hoặc một file cell quá lớn.
+Action của module phải nằm trong components/actions/. Mặc định không tách mỗi responsibility UI thành một file riêng. Dùng một registry khai báo để tập trung điều kiện và một renderer dùng chung cho các menu.
 
-Cấu trúc chuẩn:
+Cấu trúc gọn:
 
 ```text
 components/actions/
 ├── <domain>-action-dialog.tsx
-├── <domain>-action-definitions.ts
-├── <domain>-action-items.tsx
-├── <domain>-actions-cell.tsx
-├── <domain>-context-menu.tsx
+├── <domain>-actions.tsx
 └── index.ts
 ```
 
-Trách nhiệm từng file:
+Trách nhiệm:
 
-- <domain>-action-definitions.ts
-  - Tạo descriptor của action.
-  - Tập trung điều kiện theo status, settlement, permission và dữ liệu hiện tại.
-  - Chỉ trả về dữ liệu như id, label, icon, disabled, variant, onSelect.
-  - Không render DropdownMenuItem hoặc ContextMenuItem.
-
-- <domain>-action-items.tsx
-  - Nhận descriptor và render ra primitive menu.
-  - Dùng chung cho dropdown và context menu.
-  - Chịu trách nhiệm separator theo nhóm action, icon và disabled state.
-  - Không tự thêm rule nghiệp vụ mới.
-
-- <domain>-actions-cell.tsx
-  - Chỉ lo trigger và DropdownMenu.
-  - Gọi ActionItems với menu="dropdown".
-
-- <domain>-context-menu.tsx
-  - Chỉ làm adapter cho row context menu.
-  - Gọi ActionItems với menu="context".
+- <domain>-actions.tsx
+  - Chứa type descriptor, registry action và hook use<Domain>Actions.
+  - Mỗi action khai báo id, section, label, icon, permission, dialog, visible, disabled và variant.
+  - Chuyển registry thành action runtime sau khi áp dụng status và permission.
+  - Render cùng descriptor thành DropdownMenuItem hoặc ContextMenuItem.
+  - Export ActionsCell và ContextMenuItems như hai adapter mỏng.
 
 - <domain>-action-dialog.tsx
   - Chứa form, summary, mutation và nội dung xác nhận của workflow.
@@ -224,28 +208,45 @@ Trách nhiệm từng file:
   - Là public API của cụm action.
   - Page, columns và hook chỉ import từ components/actions, không import sâu vào file nội bộ.
 
-Luồng chuẩn:
+Pattern luồng dữ liệu:
 
 ```text
-columns.tsx
-  └── <Domain>ActionsCell
-        └── <Domain>ActionItems menu="dropdown"
-              └── use<Domain>Actions
+ACTION_REGISTRY
+  └── use<Domain>Actions(row)
+        └── ActionItems(menu)
+              ├── ActionsCell       → DropdownMenu
+              └── ContextMenuItems  → ContextMenu
 
-DataTable row context menu
-  └── <Domain>ContextMenu
-        └── <Domain>ActionItems menu="context"
-              └── use<Domain>Actions
-
-action.onSelect
+onSelect
   └── mở dialog/provider hoặc gọi workflow đã chuẩn hóa
+```
+
+Ví dụ descriptor:
+
+```ts
+{
+  id: 'handover',
+  section: 'handover',
+  label: 'Bàn giao máy',
+  icon: IconPackageExport,
+  permission: PermissionCode.OrdersUpdateStatus,
+  dialog: 'handover',
+  visible: ({ order }) => order.status === 'CONFIRMED',
+  disabled: ({ order }) => order.handoverStatus !== 'READY',
+  title: ({ order }) => (
+    order.handoverStatus !== 'READY' ? 'Cần thanh toán đủ trước khi bàn giao' : undefined
+  ),
+}
 ```
 
 Một action cần phân biệt rõ:
 
-- hide: không hiển thị vì không áp dụng;
-- disable: áp dụng nhưng chưa đủ điều kiện, cần tooltip lý do;
-- permission: chỉ là lớp UX; backend vẫn kiểm tra lại.
+- visible: action có áp dụng với trạng thái hiện tại hay không;
+- disabled: action áp dụng nhưng chưa đủ điều kiện, cần tooltip lý do;
+- permission: lớp UX; backend vẫn kiểm tra lại;
+- dialog: workflow sẽ mở khi user chọn action.
+
+Không copy điều kiện action vào columns, detail và dialog. Nếu registry vượt quá mức dễ đọc hoặc có nhiều nhóm nghiệp vụ độc lập, chỉ khi đó mới tách registry theo nhóm; không tách riêng các adapter nhỏ nếu chưa cần.
 
 DataTable dùng context menu phải bật opt-in:
 

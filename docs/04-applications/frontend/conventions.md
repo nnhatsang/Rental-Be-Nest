@@ -512,11 +512,12 @@ Tài khoản cá nhân không nên đi qua module users: đó là workflow admin
 
 Luồng UI:
 
-    NavUser → Tài khoản → AccountDialog hoặc /account
-                                ├─ Thông tin cá nhân
-                                └─ Bảo mật
+    NavUser → /account
+                ├─ Thông tin cá nhân
+                └─ Bảo mật
 
 - Thông tin cá nhân: cho sửa fullName và phone; hiển thị email read-only vì backend hiện chưa cho phép đổi email và avatar chưa có API upload.
+- Avatar chỉ được chọn và xem trước ở FE bằng `useFileUpload`; không đưa file vào request cập nhật profile cho đến khi backend công bố contract upload, lưu trữ, validate và xoá ảnh.
 - Bảo mật: nhận mật khẩu cũ và mật khẩu mới, gọi PATCH /admin/auth/me/password; thông báo rõ backend sẽ thu hồi các phiên khác.
 - Sau PATCH /admin/auth/me, cập nhật auth store hoặc refetch /admin/auth/me; không reload toàn app.
 - Không cho phép user tự sửa role, permission, activity status hoặc session id.

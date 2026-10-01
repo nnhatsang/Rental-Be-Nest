@@ -467,3 +467,63 @@ pnpm test
 ```
 
 Nếu repository đang có lỗi nền từ trước, ghi rõ lỗi đó trong handoff và phân biệt với lỗi do module vừa thay đổi.
+
+## 8. Kiến trúc chức năng quản trị hệ thống
+
+### 8.1 Phân loại module
+
+Không phải module backend nào cũng cần một màn hình frontend. Trước khi tạo route, xác định module thuộc một trong ba nhóm:
+
+| Nhóm | Module | Quy tắc frontend |
+| --- | --- | --- |
+| Quản trị có UI | users, roles, system-settings, store-business-hours, store-closure, mail-template | Có route/module riêng khi có thao tác admin thực tế |
+| Nghiệp vụ vận hành | customers, products, asset-units, rental-orders, availability, categories, brands | Có page và workflow theo use case |
+| Hạ tầng/domain nội bộ | database, mail, rbac, asset-reservations | Không tạo page trùng lên module. Chỉ tạo UI nếu backend sau này công bố contract quản trị riêng. |
+
+asset-reservations hiện không có controller; allocation/reservation đang được thao tác qua rental-orders và availability. Frontend không được tự gọi domain service hoặc tạo màn hình cho module này.
+
+### 8.2 Thiết kế trang Cài đặt
+
+Route /settings là shell quản trị, không chứa business logic. Shell chỉ hiển thị tabs và compose các module domain độc lập:
+
+    app/(admin)/settings/page.tsx
+    modules/settings/index.tsx
+    modules/system-settings/
+    modules/store-business-hours/
+    modules/store-closures/
+
+Các tab chuẩn:
+
+1. Quy tắc cho thuê (system-settings): giá giữ lịch mỗi đơn vị, buffer giao/nhận máy, thời gian thuê tối đa và ngưỡng trả trễ.
+2. Giờ hoạt động (store-business-hours): đủ 7 ngày, isOpen, giờ mở và giờ đóng. DateTimeRangePicker dùng cùng query này nhưng không thay thế màn hình cài đặt.
+3. Ngày đóng cửa (store-closure): danh sách khoảng ngày nghỉ/bảo trì, loại đóng cửa và lý do; có create, update và delete.
+
+Nguyên tắc UI:
+
+- Mỗi tab có query/mutation và nút Lưu riêng; không gộp ba API thành một form khó kiểm soát.
+- Hiển thị isDirty, loading, lỗi và thông báo đã lưu ngay trên card có thay đổi.
+- Thay đổi system settings hoặc ngày đóng cửa phải mô tả rõ ảnh hưởng đến quote/availability.
+- Chỉ user có settings.read được xem; chỉ user có settings.update được sửa. Khi backend chưa tách permission cho business hours/closures thì dùng hai permission này làm boundary chung.
+- Sau khi lưu phải invalidate query cài đặt, business hours và availability/quote liên quan.
+
+### 8.3 Thiết kế Tài khoản cá nhân
+
+Tài khoản cá nhân không nên đi qua module users: đó là workflow admin sửa người khác. Dùng modules/account cho UI self-service, còn modules/auth giữ vai trò API/session infrastructure.
+
+Luồng UI:
+
+    NavUser → Tài khoản → AccountDialog hoặc /account
+                                ├─ Thông tin cá nhân
+                                └─ Bảo mật
+
+- Thông tin cá nhân: cho sửa fullName và phone; hiển thị email read-only vì backend hiện chưa cho phép đổi email và avatar chưa có API upload.
+- Bảo mật: nhận mật khẩu cũ và mật khẩu mới, gọi PATCH /admin/auth/me/password; thông báo rõ backend sẽ thu hồi các phiên khác.
+- Sau PATCH /admin/auth/me, cập nhật auth store hoặc refetch /admin/auth/me; không reload toàn app.
+- Không cho phép user tự sửa role, permission, activity status hoặc session id.
+- Dialog/sheet phải tách footer khỏi ScrollArea và dùng chung quy tắc portal combobox/dialog trong tài liệu này.
+
+### 8.4 Chức năng cần backend trước khi làm frontend
+
+- reports: backend chưa có module/contract báo cáo; không dùng dashboard số liệu mẫu làm báo cáo thật.
+- blacklist: backend chưa có module; cần chốt model, lý do, thời hạn và rule chặn trước khi tạo page.
+- audit-log/nhật ký quản trị: nên có backend event/audit contract trước khi hiển thị frontend.

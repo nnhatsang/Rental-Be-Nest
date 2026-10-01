@@ -302,3 +302,83 @@ Không để FE tự suy luận trạng thái từ màu hoặc text. Backend tr�
 ```
 
 Nếu module có lifecycle hoặc tiền, không merge khi chưa xác định rõ rule cho transition và các case biên: dữ liệu thiếu, thời gian giao nhau, amount âm, retry, conflict và update sau khi đã chốt trạng thái.
+
+## 6. Phân loại module quản trị và hạ tầng
+
+Không mỗi thư mục trong src/modules đều là một API module có màn hình admin. Khi thiết kế hoặc review, phân loại như sau:
+
+| Nhóm | Module | Trách nhiệm |
+| --- | --- | --- |
+| Quản trị có API | users, roles, permissions, system-settings, store-business-hours, store-closure, mail-template | Có controller, permission và contract cho frontend admin |
+| Nghiệp vụ | customers, products, categories, brands, asset-units, rental-orders, availability | Vòng đời và thao tác vận hành |
+| Hạ tầng | database, mail, rbac | Provider/service dùng nội bộ; không tạo controller chỉ để có UI |
+| Domain nội bộ | asset-reservations | Capability phụ trợ cho allocation/reservation; không công bố trực tiếp khi chưa có use case và contract riêng |
+
+database, mail, rbac và asset-reservations phải được ghi nhận trong tài liệu module như dependency/domain support. Frontend không được gọi thông qua service nội bộ hoặc tạo endpoint proxy không có use case.
+
+## 7. Contract cho trang Cài đặt
+
+Trang /settings phía frontend là shell compose ba capability độc lập. Backend giữ boundary theo module, không gộp thành một controller settings lớn.
+
+### 7.1 Quy tắc thuê — system-settings
+
+API hiện có:
+
+| Method | Path | Permission | Nội dung |
+| --- | --- | --- | --- |
+| GET | /system-settings | settings.read | Lấy một bản ghi cài đặt hiện tại |
+| PATCH | /system-settings | settings.update | Partial update các quy tắc thuê |
+
+Field hiện tại:
+
+- bookingHoldPricePerUnit;
+- bookingBufferTimeMinutes;
+- maxRentalTimeDays;
+- maxLateReturnTimeHours.
+
+Service phải validate giá trị không âm, maxRentalTimeDays >= 1 và kiểm tra invariant liên quan trước khi ghi. Output phải convert Decimal/Date theo response DTO. Thay đổi settings không được làm thay đổi snapshot cũ trong đơn thuê.
+
+### 7.2 Giờ hoạt động — store-business-hours
+
+API:
+
+| Method | Path | Permission | Nội dung |
+| --- | --- | --- | --- |
+| GET | /store-business-hours | settings.read | Lấy 7 ngày hiện tại |
+| PUT | /store-business-hours | settings.update | Ghi toàn bộ 7 ngày |
+
+Contract update phải luôn có đúng 7 item, dayOfWeek duy nhất từ 0 đến 6. Khi isOpen = true, openTime và closeTime phải theo HH:mm và khoảng giờ phải hợp lệ. Không update từng ngày bằng nhiều request nếu contract đang quy định replace toàn bộ tuần.
+
+Sau khi update, availability/quote phải đọc giá trị mới; không cache business hours vĩnh viễn trong process.
+
+### 7.3 Ngày đóng cửa — store-closure
+
+API:
+
+| Method | Path | Permission | Nội dung |
+| --- | --- | --- | --- |
+| GET | /store-closures | settings.read | Danh sách theo khoảng ngày/filter |
+| GET | /store-closures/:id | settings.read | Chi tiết |
+| POST | /store-closures | settings.update | Tạo khoảng đóng cửa |
+| PATCH | /store-closures/:id | settings.update | Cập nhật |
+| DELETE | /store-closures | settings.update | Xóa theo id |
+
+Service phải kiểm tra startDate <= endDate, timezone, overlap và tác động đến quote/availability. type và reason là metadata hiển thị; rule không nên suy diễn từ label frontend. Nếu có nhu cầu phân quyền chi tiết, tạo permission riêng sau; hiện dùng settings.read/update để đảm bảo contract đồng bộ.
+
+## 8. Contract Tài khoản cá nhân
+
+Tài khoản của admin là self-service trong auth, không đi qua users:
+
+| Method | Path | Permission | Nội dung |
+| --- | --- | --- | --- |
+| GET | /admin/auth/me | authenticated | Profile, roles, permissions |
+| PATCH | /admin/auth/me | authenticated | Hiện cho phép update fullName, phone |
+| PATCH | /admin/auth/me/password | authenticated | Đổi mật khẩu; thu hồi các phiên khác |
+
+Email/avatar không được coi là field update cho đến khi có DTO, validation, uniqueness và flow upload/verify rõ ràng. Backend không cho phép user tự update role, permission, activity status hoặc session id.
+
+## 9. Module tương lai cần contract riêng
+
+- reports: thiết kế query, range, timezone, permission và aggregate trước khi frontend gọi /reports.
+- blacklist: chốt model customer, reason, expiry, scope và rule không cho tạo đơn trước khi tạo controller.
+- audit-log: ghi actor, action, resource, before/after, request id và timestamp; không lấy status history của rental order làm audit log toàn hệ thống.

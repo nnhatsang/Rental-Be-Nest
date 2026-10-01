@@ -287,6 +287,44 @@ Với dialog dài:
 
 Nếu ScrollArea đã có padding custom thì không cộng thêm pr-4 ở form. Không đặt footer vào vùng scroll để footer không bị bóp hoặc trôi khỏi viewport.
 
+### Portal cho Combobox và DatePicker trong Dialog
+
+Khi Dialog chứa Combobox, DatePicker hoặc component có popup, phải truyền một
+`portalContainer` nằm trong chính `DialogContent` để popup giữ đúng stacking
+context và không bị cắt bởi lớp overlay của Dialog.
+
+Portal host phải là một lớp overlay tuyệt đối, không tham gia layout của Dialog:
+
+```tsx
+<DialogContent className="relative flex max-h-[90dvh] flex-col overflow-hidden">
+  <div ref={setPortalContainer} className="pointer-events-none absolute inset-0" />
+
+  <DialogHeader className="shrink-0" />
+  <form className="min-h-0">
+    <ScrollArea className="min-h-0 flex-1">
+      {/* form fields */}
+    </ScrollArea>
+    <DialogFooter className="shrink-0" />
+  </form>
+</DialogContent>
+```
+
+Quy tắc bắt buộc:
+
+- truyền cùng `portalContainer` cho mọi Combobox/DatePicker trong Dialog;
+- đặt portal host làm sibling của header, body và footer;
+- dùng `pointer-events-none absolute inset-0` cho host; popup bên trong phải
+  tự bật `pointer-events-auto`;
+- không dùng `display: contents` (`className="contents"`) làm portal host;
+- không mount popup vào `ScrollArea`, `form` hoặc `DialogFooter`;
+- footer phải là phần tử cố định ngoài vùng scroll để mở popup không làm thay
+  đổi grid row, padding hoặc vị trí footer.
+
+`display: contents` làm mất box layout của portal host. Khi popup được mount
+vào host này, nó có thể ảnh hưởng lại grid của `DialogContent` và làm footer
+nhảy lên/xuống một khoảng padding. Nếu module có nhiều Dialog, nên dùng cùng
+pattern portal host như trên thay vì tự tạo wrapper riêng cho từng Combobox.
+
 Quy tắc UI:
 
 - dùng Field, FieldLabel, FieldDescription, FieldError;

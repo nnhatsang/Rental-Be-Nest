@@ -13,7 +13,13 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { UpdateCategoryStatusDto } from './dto/update-category-status.dto';
 import { GetAllCategoriesDto } from './dto/get-all-categories.dto';
 import { DeleteCategoriesDto } from './dto/delete-categories.dto';
-import { CategoriesPaginatedResponseDto, CategoryResponseDto, DeleteCategoriesResponseDto } from './dto/categories-response.dto';
+import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
+import {
+  CategoriesPaginatedResponseDto,
+  CategoryResponseDto,
+  DeleteCategoriesResponseDto,
+  ReorderCategoriesResponseDto,
+} from './dto/categories-response.dto';
 
 @ApiTags('categories')
 @Controller('categories')
@@ -26,6 +32,14 @@ export class CategoriesController {
   @ApiOkResponse({ type: CategoriesPaginatedResponseDto })
   async getAll(@Query() query: GetAllCategoriesDto) {
     return new ApiPaginatedResponseDto(await this.categoriesService.getAll(query), SUCCESS);
+  }
+
+  @Patch('order')
+  @RequirePermissions(PermissionCode.CategoriesUpdate)
+  @ApiOperation({ summary: 'Cập nhật thứ tự hiển thị danh mục sản phẩm' })
+  @ApiOkResponse({ type: ReorderCategoriesResponseDto })
+  async reorder(@CurrentUser() user: AuthUser, @Body() dto: ReorderCategoriesDto) {
+    return new ApiRes(await this.categoriesService.reorder(dto, user.id), SUCCESS);
   }
 
   @Get(':id')

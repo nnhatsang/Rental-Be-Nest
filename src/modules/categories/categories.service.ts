@@ -5,6 +5,7 @@ import { normalizeSearchText } from '@/libs/utils/search-text.util';
 import {
   CATEGORY_NOT_FOUND,
   CATEGORY_SLUG_EXISTED,
+  INCORRECT_INPUT,
 } from '@/libs/constants/error.constants';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -12,6 +13,7 @@ import { UpdateCategoryStatusDto } from './dto/update-category-status.dto';
 import { GetAllCategoriesDto } from './dto/get-all-categories.dto';
 import { DeleteCategoriesDto } from './dto/delete-categories.dto';
 import { CategoryOutDto } from './dto/category-out.dto';
+import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 
 type CategoryWithCount = ProductCategory & { _count: { products: number } };
 
@@ -51,10 +53,15 @@ export class CategoriesService {
     const name = dto.name.trim();
     const slug = this.normalizeSlug(dto.slug);
     await this.ensureSlugAvailable(slug);
+    const currentOrder = await this.prisma.productCategory.aggregate({
+      where: { deletedAt: null },
+      _max: { order: true },
+    });
     const category = await this.prisma.productCategory.create({
       data: {
         name,
         slug,
+        order: (currentOrder._max.order ?? -1) + 1,
         isActive: dto.isActive ?? true,
         createdBy: userId,
         searchText: normalizeSearchText([name, slug].filter(Boolean).join(' ')),
@@ -95,6 +102,30 @@ export class CategoriesService {
         include: this.categoryInclude(),
       }),
     );
+  }
+
+  async reorder(dto: ReorderCategoriesDto, userId: string): Promise<{ success: true }> {
+    const categoryIds = [...new Set(dto.categoryIds)];
+    const categories = await this.prisma.productCategory.findMany({
+      where: { deletedAt: null },
+      select: { id: true },
+    });
+    const categoryIdSet = new Set(categories.map((category) => category.id));
+
+    if (categoryIds.length !== categories.length || categoryIds.some((id) => !categoryIdSet.has(id))) {
+      throw new BadRequestException(INCORRECT_INPUT);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const [order, id] of categoryIds.entries()) {
+        await tx.productCategory.update({
+          where: { id },
+          data: { order, updatedBy: userId },
+        });
+      }
+    });
+
+    return { success: true };
   }
 
   async remove(dto: DeleteCategoriesDto, userId: string): Promise<{ success: true }> {
@@ -146,6 +177,7 @@ export class CategoriesService {
       id: category.id,
       name: category.name,
       slug: category.slug,
+      order: category.order,
       isActive: category.isActive,
       productCount: category._count.products,
       createdAt: category.createdAt,

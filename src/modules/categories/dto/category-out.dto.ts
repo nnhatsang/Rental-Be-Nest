@@ -10,6 +10,9 @@ export class CategoryOutDto {
   @ApiProperty({ example: 'may-anh', nullable: true })
   slug!: string | null;
 
+  @ApiProperty({ example: 0, description: 'Zero-based display order.' })
+  order!: number;
+
   @ApiProperty({ example: true })
   isActive!: boolean;
 

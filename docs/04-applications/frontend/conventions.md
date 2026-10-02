@@ -466,6 +466,19 @@ Không nên import trực tiếp action item nội bộ trong page hoặc column
 
 ---
 
+### Quy ước row ordering
+
+Nếu resource có thứ tự hiển thị do admin điều khiển:
+
+- response phải trả field order; FE hiển thị order nếu có giá trị nghiệp vụ cần
+  quan sát nhưng không cho sửa bằng inline cell;
+- chỉ bật row ordering khi đã tải toàn bộ tập dữ liệu, không có filter/search và
+  đang dùng thứ tự mặc định;
+- kéo-thả cập nhật local trước, gọi mutation reorder với toàn bộ id theo thứ tự
+  mới, rollback khi request lỗi;
+- khi row ordering bật, tắt pagination và virtualization; backend phải validate
+  danh sách đầy đủ trong transaction.
+
 ## 7. Definition of Done
 
 Một module được xem là hoàn tất khi:

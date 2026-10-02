@@ -26,3 +26,8 @@ export class DeleteCategoriesResponseDto extends ApiRes<DeleteCategoriesDataDto>
   @ApiProperty({ type: DeleteCategoriesDataDto })
   declare data: DeleteCategoriesDataDto;
 }
+
+export class ReorderCategoriesResponseDto extends ApiRes<DeleteCategoriesDataDto> {
+  @ApiProperty({ type: DeleteCategoriesDataDto })
+  declare data: DeleteCategoriesDataDto;
+}

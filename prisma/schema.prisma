@@ -188,6 +188,8 @@ model ProductCategory {
   name       String
   /// Optional URL/admin slug.
   slug       String?                     @unique
+  /// Zero-based display order used by category lists and admin drag-and-drop.
+  order      Int                         @default(0)
   /// Whether this category is visible/usable.
   isActive   Boolean                     @default(true)
   searchText String                      @default("")
@@ -199,6 +201,7 @@ model ProductCategory {
   deletedBy  String?                     @map("deleted_by") @db.Uuid
   products   ProductCategoryAssignment[]
 
+  @@index([order, id], map: "ProductCategory_order_id_idx")
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "ProductCategory_searchText_trgm_idx", type: Gin)
 }
 

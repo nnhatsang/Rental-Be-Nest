@@ -13,6 +13,17 @@ Tài liệu này là playbook để dựng một module backend mới nhanh, đ�
 7. Quy tắc ảnh hưởng tiền, trạng thái, tồn kho/availability phải được tách thành policy/state machine có thể kiểm tra độc lập; không tạo file `.spec.ts` mặc định nếu phạm vi module chưa yêu cầu.
 8. Không trả entity Prisma thô nếu response contract cần ẩn field, đổi tên field hoặc convert Decimal/Date.
 
+### Thứ tự hiển thị do quản trị viên điều khiển
+
+Khi resource có thứ tự hiển thị:
+
+- dùng field order server-managed, zero-based;
+- list mặc định sort order asc, sau đó dùng id asc làm tie-breaker;
+- không nhận order tùy ý trong create/update thông thường;
+- dùng endpoint reorder riêng, nhận toàn bộ danh sách id theo thứ tự mong muốn;
+- validate danh sách đủ item, không trùng và chỉ chứa bản ghi hợp lệ;
+- cập nhật order trong một transaction.
+
 ### Definition of Done
 
 Một module chỉ được xem là hoàn tất khi có đủ:

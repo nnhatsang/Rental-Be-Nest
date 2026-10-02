@@ -265,11 +265,28 @@ Không thêm wrapper DOM vào tbody. Context menu phải bọc trực tiếp Tab
 
 ### Bước 7: Thiết kế dialog
 
-Dialog chuẩn gồm:
+Dialog form có hai layout và phải chọn theo lượng nội dung, không dùng một
+template flex/max-height/overflow cho tất cả dialog.
 
-- header: title + mô tả ngắn;
-- body: summary và form;
-- footer: action chính, action phụ, trạng thái pending.
+#### 7.1. Dialog thường (mặc định)
+
+Dùng layout mặc định khi form có ít field, mô tả ngắn và vẫn vừa trong
+viewport desktop/mobile. Mẫu tham chiếu là
+modules/store-closures/components/store-closure-form-dialog.tsx.
+
+- DialogContent dùng layout mặc định; chỉ thêm sm:max-w-* khi cần;
+- không thêm flex, max-h, overflow-y-auto hoặc ScrollArea nếu chưa có nhu cầu
+  cuộn;
+- DialogHeader, form và DialogFooter là các vùng trực tiếp của DialogContent;
+- dùng FieldGroup và các component Field chuẩn;
+- có thể đặt footer ngoài form, sau đó liên kết nút submit bằng thuộc tính form;
+- luôn có action phụ Đóng/Hủy và action chính khi user có quyền chỉnh sửa.
+
+#### 7.2. Dialog dài hoặc nhiều field
+
+Chỉ dùng ScrollArea khi form có nhiều field, nhiều section điều kiện, summary
+dài hoặc không thể vừa trong viewport mobile. Mẫu tham chiếu là
+modules/customers/dialog.tsx.
 
 Với dialog dài:
 
@@ -285,7 +302,17 @@ Với dialog dài:
 </DialogContent>
 ```
 
-Nếu ScrollArea đã có padding custom thì không cộng thêm pr-4 ở form. Không đặt footer vào vùng scroll để footer không bị bóp hoặc trôi khỏi viewport.
+Nếu ScrollArea đã có padding custom thì không cộng thêm pr-4 ở form. Không đặt
+footer vào vùng scroll để footer không bị bóp hoặc trôi khỏi viewport.
+
+Quy tắc bổ sung:
+
+- chỉ body/form bên trong ScrollArea chịu trách nhiệm cuộn;
+- không đặt overflow-y-auto đồng thời lên form và ScrollArea;
+- footer dùng shrink-0, nằm ngoài ScrollArea và có thể dùng border-accent/60;
+- form ngắn vẫn dùng layout thường, không dùng ScrollArea chỉ để đồng nhất
+  cấu trúc;
+- nếu footer nằm ngoài form, nút submit phải khai báo đúng form id.
 
 ### Portal cho Combobox và DatePicker trong Dialog
 

@@ -35,7 +35,7 @@ Các chuyển tiếp thực tế phải dùng state machine, không cập nhật
 
 ## 3. Luồng hủy đơn có phát sinh hoàn tiền
 
-Ví dụ: khách đã thanh toán `800.000 đ`, trong đó `50.000 đ` là phí giữ lịch. Khách hủy sát giờ và cửa hàng giữ phí giữ lịch, hoàn lại `750.000 đ`.
+Ví dụ: khách đã thanh toán `800.000 đ`, trong đó `50.000 đ` là phí giữ lịch. Khi hủy, quản trị viên được quyết định hoàn `300.000 đ`, `750.000 đ` hoặc toàn bộ `800.000 đ`; hệ thống không tự động trừ phí giữ lịch khỏi mức hoàn tối đa.
 
 ### Bước 1: Hủy đơn
 
@@ -44,11 +44,16 @@ API hủy cần ghi nhận:
 - `RentalOrder.status = CANCELLED`;
 - `cancelReason` và ghi chú của quản trị viên;
 - giải phóng toàn bộ `RentalAssetAllocation`;
-- giữ lại khoản không hoàn dưới dạng `RentalOrderCharge(kind = CANCELLATION_FEE, amount = 50.000, refundable = false)`;
-- các khoản rental/delivery/deposit không còn nghĩa vụ sau hủy được đánh dấu `CANCELLED` hoặc `WAIVED` theo chính sách;
-- nếu quản trị viên chọn hoàn ngay, tạo `Refund(amount = 750.000, status = PENDING)`.
+- hủy các charge chưa còn nghĩa vụ sau hủy, bao gồm `BOOKING_HOLD`, `RENTAL_FEE`, `DELIVERY_FEE` và `SECURITY_DEPOSIT`;
+- nếu quản trị viên chọn hoàn ngay, tạo `Refund(amount = refundAmount, status = PENDING)`.
 
-Không được hủy `BOOKING_HOLD` thành khoản refundable nếu nghiệp vụ đang giữ phí đặt lịch. Nếu làm vậy, hệ thống sẽ tính nhầm toàn bộ `800.000 đ` là tiền có thể hoàn.
+`refundAmount` là số tiền hoàn ở lần hiện tại, phải thỏa:
+
+```text
+0 <= refundAmount <= paidTotal - actualRefundTotal - pendingRefundTotal
+```
+
+Nếu không chọn hoàn ngay, đơn vẫn có thể tạo yêu cầu hoàn sau bằng action hoàn tiền. Việc hủy đơn không tự biến phần còn lại thành phí hủy, vì quản trị viên có thể muốn hoàn toàn bộ hoặc hoàn một phần tùy trường hợp.
 
 ### Bước 2: Xác nhận hoàn tiền
 
@@ -58,31 +63,32 @@ Không được hủy `BOOKING_HOLD` thành khoản refundable nếu nghiệp v�
 - cập nhật `actualRefundTotal`;
 - chạy lại `recalculateOrder` trong cùng transaction.
 
-Sau ví dụ trên, kết quả phải là:
+Ví dụ hoàn `750.000 đ`, sau khi xác nhận kết quả là:
 
 | Trường | Giá trị |
 | --- | ---: |
 | `paidTotal` | 800.000 đ |
 | `actualRefundTotal` | 750.000 đ |
-| `totalCustomerObligation` | 50.000 đ |
-| `refundDue` | 0 đ |
-| `settlementStatus` | `SETTLED` |
+| `totalCustomerObligation` | 0 đ |
+| `refundDue` | 50.000 đ |
+| `settlementStatus` | `REFUND_DUE` |
 | `status` | `CANCELLED` |
 
-### Bước 3: Chốt hủy
+Lúc này quản trị viên có hai lựa chọn: hoàn tiếp `50.000 đ`, hoặc chốt giữ lại phần này và khóa xử lý hoàn.
 
-“Đóng đơn” trong trường hợp này nên gọi là **Chốt tài chính đơn đã hủy**, không đổi `CANCELLED` thành `DONE`.
+### Bước 3: Chốt phần còn lại
 
-Có thể dùng `settlementStatus = SETTLED` làm trạng thái khóa tài chính. Nếu cần nút xác nhận rõ ràng trên UI, bổ sung action `closeCancelledOrder` với các điều kiện:
+“Đóng đơn” nên gọi là **Chốt phần còn lại của đơn đã hủy**, không đổi `CANCELLED` thành `DONE`.
 
-- đơn có `status = CANCELLED`;
-- không còn `Refund` ở `PENDING` hoặc `PROCESSING`;
-- `refundDue = 0`;
-- không còn `additionalChargeDue` hoặc payment pending;
-- các charge đã ở trạng thái cuối (`SETTLED`, `WAIVED` hoặc `CANCELLED`);
-- ghi note và actor để audit.
+API `POST /rental-orders/:id/close-cancellation` thực hiện:
 
-Action này có thể idempotent. Nó không tạo thêm refund, không thay đổi lịch máy và không đổi operational status.
+- chỉ cho đơn có `status = CANCELLED`;
+- không cho chốt khi còn `Refund` ở `PENDING` hoặc `PROCESSING`;
+- ghi note bắt buộc và actor để audit;
+- đặt `settlementStatus = SETTLED` để khóa nghiệp vụ hoàn tiền;
+- giữ nguyên `refundDue` gốc để bảo toàn số liệu đối soát, nhưng trả `refundableRemaining = 0` và không cho tạo/confirm refund tiếp.
+
+Nếu quản trị viên hoàn đủ `800.000 đ` thì `refundDue = 0` và hệ thống tự khóa hoàn; không cần gọi endpoint chốt phần còn lại. Nếu chỉ hoàn một phần rồi gọi endpoint này, phần còn lại vẫn có thể xuất hiện trong `refundDue` để đối soát nhưng không còn là khoản được phép thao tác. Action chốt có tính idempotent khi đơn đã `SETTLED`, không tạo thêm phí.
 
 ## 4. Quy tắc khóa hoàn tiền
 
@@ -105,9 +111,33 @@ Thông báo nên rõ với người dùng: “Đơn đã chốt tài chính, đ�
 
 `PaymentTransaction.direction = OUTBOUND` chưa được dùng trong flow hiện tại. Giai đoạn này nên coi `Refund` là aggregate hoàn tiền; chỉ thêm payment outbound khi có yêu cầu đối soát giao dịch riêng và phải quy định rõ không được tính trùng với `Refund`.
 
-## 6. Gap hiện tại cần triển khai
+## 6. Gap còn lại sau khi triển khai flow hoàn tiền
 
-- `settleOrder` hiện chỉ chốt đơn `RETURNED`; cần thêm action chốt tài chính cho `CANCELLED` hoặc tự động chốt khi refund đã `REFUNDED` và `refundDue = 0`.
-- Nhánh hủy có hoàn tiền hiện cần bảo toàn `BOOKING_HOLD` thành `CANCELLATION_FEE` nếu chính sách giữ phí đặt lịch.
-- `createRefund` cần kiểm tra trạng thái `SETTLED` và gộp kiểm tra số dư/tạo refund trong một transaction.
-- `RentalOrderLog` cần ghi các action `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND`, `CLOSE_CANCELLED_ORDER` sau khi service audit được wire.
+- `settleOrder` vẫn chỉ dùng cho đơn đã trả máy; đơn `CANCELLED` được chốt bằng `settlementStatus = SETTLED` hoặc endpoint `close-cancellation`.
+- `RentalOrderLog` hiện ghi nhận `CLOSE_CANCELLED_ORDER`; các action `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND` vẫn là phần audit tiếp theo.
+
+## 7. Quy tắc đã triển khai cho hoàn tiền từng phần
+
+Request hủy đơn dùng các trường sau:
+
+- `allowRefund`: tạo yêu cầu hoàn ngay trong transaction hủy đơn; giá trị `false` chỉ hủy đơn và không tự chuyển tiền.
+- `refundAmount`: số tiền muốn tạo yêu cầu hoàn ở lần hiện tại; có thể nhỏ hơn mức tối đa để hoàn từng phần.
+
+Quy trình chuẩn:
+
+1. Hệ thống tính `paidTotal - actualRefundTotal - pendingRefundTotal`.
+2. Không tự trừ `bookingHoldTotal` khỏi mức tối đa. Phí giữ lịch chỉ trở thành `CANCELLATION_FEE` khi quản trị viên chủ động chốt phần còn lại.
+3. Tạo tối đa một yêu cầu `Refund.PENDING`/`PROCESSING` tại một thời điểm. Phải xác nhận khoản hiện tại trước khi tạo khoản tiếp theo.
+4. Khi quản trị viên xác nhận đã chuyển tiền, chuyển refund sang `REFUNDED` và chạy lại `recalculateOrder` trong transaction.
+5. Nếu vẫn còn số dư và chưa chốt, đơn giữ `settlementStatus = REFUND_DUE`; nếu `refundableRemaining = 0` do đã hoàn đủ hoặc đã chốt, thao tác hoàn bị khóa.
+
+Với đơn `CANCELLED`, `settlementStatus` được xác định theo số tiền khách đã trả còn chưa hoàn (`paidTotal - actualRefundTotal`), không chỉ theo `refundDue`. Nhờ vậy, khoản phí hủy/giữ lịch trong sổ không vô tình khóa quyền hoàn phần tiền khách vẫn có thể được hoàn.
+
+API trả thêm hai projection để FE không phải tự suy diễn:
+
+- `pendingRefundTotal`: tổng yêu cầu hoàn đang chờ xác nhận/đang xử lý;
+- `refundableRemaining`: số tiền còn được phép tạo yêu cầu hoàn mới.
+
+Ví dụ khách đã trả 800.000 đồng, trong đó có 50.000 đồng phí đặt lịch: mức hoàn tối đa ban đầu vẫn là 800.000 đồng. Có thể nhập hoàn 500.000 đồng trước, sau khi xác nhận hệ thống còn cho phép hoàn 300.000 đồng; nếu muốn kết thúc xử lý mà không hoàn tiếp, dùng `close-cancellation`. Khi đó backend khóa `settlementStatus = SETTLED`; `refundDue` có thể còn 300.000 đồng để đối soát nhưng `refundableRemaining = 0`.
+
+Nếu quản trị viên quyết định hoàn ít hơn mức còn được hoàn và giữ lại phần dư, dùng `POST /rental-orders/:id/close-cancellation` với `note` bắt buộc. Backend ghi audit, khóa `settlementStatus = SETTLED` và không tạo thêm khoản phí tự động. Endpoint này không được chạy khi còn refund `PENDING`/`PROCESSING`, vì phải xác nhận hoặc xử lý khoản hoàn đang treo trước.

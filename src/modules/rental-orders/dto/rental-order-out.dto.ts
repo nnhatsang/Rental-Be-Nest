@@ -162,6 +162,10 @@ export class RentalOrderFinancialsOutDto {
   @ApiProperty() amountDueAtBooking!: number;
   @ApiProperty() amountDueBeforeHandover!: number;
   @ApiProperty() refundDue!: number;
+  @ApiProperty({ description: 'Tổng các yêu cầu hoàn đang chờ xác nhận hoặc đang xử lý.' })
+  pendingRefundTotal!: number;
+  @ApiProperty({ description: 'Số tiền còn có thể tạo yêu cầu hoàn mới; bằng 0 khi đơn đã chốt tài chính dù refundDue gốc vẫn còn.' })
+  refundableRemaining!: number;
   @ApiProperty() additionalChargeDue!: number;
   @ApiProperty() actualRefundTotal!: number;
 }
@@ -216,6 +220,10 @@ export class RentalOrderListItemOutDto {
   @ApiProperty() paidTotal!: number;
   @ApiProperty() amountDueBeforeHandover!: number;
   @ApiProperty() refundDue!: number;
+  @ApiProperty({ description: 'Tổng tiền đã xác nhận hoàn thực tế cho khách.' })
+  actualRefundTotal!: number;
+  @ApiProperty() pendingRefundTotal!: number;
+  @ApiProperty() refundableRemaining!: number;
   @ApiProperty() additionalChargeDue!: number;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;

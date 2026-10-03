@@ -35,13 +35,11 @@ export class CancelRentalOrderDto {
   @IsBoolean()
   allowRefund?: boolean;
 
-  /** @deprecated Dùng allowRefund cho client mới. */
-  @ApiPropertyOptional({ default: false, deprecated: true })
-  @IsOptional()
-  @IsBoolean()
-  refundBookingHold?: boolean;
-
-  @ApiPropertyOptional({ example: 50000, minimum: 0 })
+  @ApiPropertyOptional({
+    example: 50000,
+    minimum: 0,
+    description: 'Số tiền hoàn ở lần này; không được vượt số tiền khách đã thanh toán và chưa được hoàn.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
@@ -113,7 +111,11 @@ export class RecordRentalOrderPaymentDto {
 }
 
 export class CreateRefundDto {
-  @ApiProperty({ example: 300000, minimum: 0.01 })
+  @ApiProperty({
+    example: 300000,
+    minimum: 0.01,
+    description: 'Số tiền hoàn ở lần này; không được vượt số tiền còn được hoàn của đơn.',
+  })
   @Type(() => Number)
   @IsNumber({}, { message: INVALID_NUMBER })
   @Min(0.01)
@@ -132,6 +134,13 @@ export class CreateRefundDto {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;
+}
+
+export class CloseCancelledRentalOrderDto {
+  @ApiProperty({ example: 'Khach dong y giu lai phan con lai theo chinh sach huy sat gio' })
+  @IsString({ message: INVALID_STRING })
+  @IsNotEmpty({ message: INVALID_STRING })
+  note!: string;
 }
 
 export class InspectionAccessoryDto {

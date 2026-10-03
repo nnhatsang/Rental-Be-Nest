@@ -22,6 +22,7 @@ import {
   INCORRECT_INPUT,
   RENTAL_ORDER_CUSTOMER_INVALID,
   RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT,
+  RENTAL_ORDER_FINANCIAL_CLOSED,
   RENTAL_ORDER_NOT_FOUND,
   RENTAL_ORDER_PRODUCT_INVALID,
   RENTAL_ORDER_REFUND_AMOUNT_INVALID,
@@ -41,6 +42,7 @@ import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 import { GetAllRentalOrdersDto, RentalOrderSortBy } from './dto/get-all-rental-orders.dto';
 import {
   CancelRentalOrderDto,
+  CloseCancelledRentalOrderDto,
   CreateRefundDto,
   HandoverRentalOrderDto,
   InspectRentalOrderDto,
@@ -164,6 +166,7 @@ export class RentalOrdersService {
           paidTotal: true,
           amountDueBeforeHandover: true,
           refundDue: true,
+          actualRefundTotal: true,
           additionalChargeDue: true,
           createdAt: true,
           updatedAt: true,
@@ -172,7 +175,26 @@ export class RentalOrdersService {
       this.prisma.rentalOrder.count({ where }),
     ]);
 
-    return { items: items.map((item) => this.toListOut(item)), total, page: query.page, perPage: query.perPage };
+    const pendingRefunds = items.length
+      ? await this.prisma.refund.findMany({
+          where: {
+            orderId: { in: items.map((item) => item.id) },
+            status: { in: [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING] },
+          },
+          select: { orderId: true, amount: true },
+        })
+      : [];
+    const pendingRefundByOrderId = new Map<string, number>();
+    for (const refund of pendingRefunds) {
+      pendingRefundByOrderId.set(refund.orderId, (pendingRefundByOrderId.get(refund.orderId) ?? 0) + Number(refund.amount));
+    }
+
+    return {
+      items: items.map((item) => this.toListOut(item, pendingRefundByOrderId.get(item.id) ?? 0)),
+      total,
+      page: query.page,
+      perPage: query.perPage,
+    };
   }
 
   async getRentalOrderById(id: string): Promise<RentalOrderOutDto> {
@@ -519,67 +541,66 @@ export class RentalOrdersService {
     if (!reason) throw new BadRequestException(INCORRECT_INPUT);
 
     await this.prisma.$transaction(async (tx) => {
-      const allowRefund = dto.allowRefund ?? dto.refundBookingHold ?? false;
-      if (allowRefund) {
-        const [payments, refunds] = await Promise.all([
-          tx.paymentTransaction.findMany({
-            where: { orderId: id, direction: PaymentDirection.INBOUND, status: PaymentTransactionStatus.SUCCESS },
-            select: { amount: true },
-          }),
-          tx.refund.findMany({
-            where: {
-              orderId: id,
-              status: { in: [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING, RentalRefundStatus.REFUNDED] },
-            },
-            select: { amount: true },
-          }),
-        ]);
-        const paidTotal = payments.reduce((total, payment) => total + Number(payment.amount), 0);
-        const refundedTotal = refunds.reduce((total, refund) => total + Number(refund.amount), 0);
-        const availableRefund = Math.max(0, paidTotal - refundedTotal);
-        const refundAmount = dto.refundAmount ?? availableRefund;
-        if (refundAmount > availableRefund) {
-          const formatAmount = (value: number) => new Intl.NumberFormat('vi-VN').format(value);
-          throw new BadRequestException({
-            code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
-            message: `Số tiền hoàn yêu cầu ${formatAmount(refundAmount)} đồng, nhưng số tiền tối đa có thể hoàn là ${formatAmount(availableRefund)} đồng.`,
-          });
-        }
+      const allowRefund = dto.allowRefund ?? false;
+      const [payments, refunds] = await Promise.all([
+        tx.paymentTransaction.findMany({
+          where: { orderId: id, direction: PaymentDirection.INBOUND, status: PaymentTransactionStatus.SUCCESS },
+          select: { amount: true },
+        }),
+        tx.refund.findMany({
+          where: {
+            orderId: id,
+            status: { in: [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING, RentalRefundStatus.REFUNDED] },
+          },
+          select: { amount: true, status: true },
+        }),
+      ]);
+      const paidTotal = payments.reduce((total, payment) => total + Number(payment.amount), 0);
+      const pendingRefundTotal = refunds
+        .filter((refund) => refund.status === RentalRefundStatus.PENDING || refund.status === RentalRefundStatus.PROCESSING)
+        .reduce((total, refund) => total + Number(refund.amount), 0);
+      const refundedTotal = refunds
+        .filter((refund) => refund.status === RentalRefundStatus.REFUNDED)
+        .reduce((total, refund) => total + Number(refund.amount), 0);
+      const availableRefund = Math.max(0, paidTotal - refundedTotal - pendingRefundTotal);
 
-        await tx.rentalOrderCharge.updateMany({
-          where: {
-            orderId: id,
-            kind: {
-              in: [RentalChargeKind.BOOKING_HOLD, RentalChargeKind.RENTAL_FEE, RentalChargeKind.DELIVERY_FEE, RentalChargeKind.SECURITY_DEPOSIT],
-            },
-            status: { notIn: [RentalChargeStatus.CANCELLED, RentalChargeStatus.WAIVED] },
-          },
-          data: { status: RentalChargeStatus.CANCELLED, refundable: true },
+      if (allowRefund && pendingRefundTotal > 0) {
+        throw new BadRequestException({
+          code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
+          message: `Đơn đã có yêu cầu hoàn ${new Intl.NumberFormat('vi-VN').format(pendingRefundTotal)} đồng đang chờ xác nhận. Vui lòng xác nhận khoản hoàn hiện tại trước.`,
         });
-        if (refundAmount > 0) {
-          await tx.refund.create({
-            data: {
-              orderId: id,
-              amount: refundAmount,
-              status: RentalRefundStatus.PENDING,
-              method: PaymentMethod.BANK_TRANSFER,
-              note: dto.note,
-              createdBy: user.id,
-            },
-          });
-        }
-      } else {
-        await tx.rentalOrderCharge.updateMany({
-          where: {
-            orderId: id,
-            kind: { in: [RentalChargeKind.RENTAL_FEE, RentalChargeKind.DELIVERY_FEE, RentalChargeKind.SECURITY_DEPOSIT] },
-            status: { notIn: [RentalChargeStatus.CANCELLED, RentalChargeStatus.WAIVED] },
-          },
-          data: { status: RentalChargeStatus.CANCELLED },
+      }
+
+      const refundAmount = dto.refundAmount ?? availableRefund;
+      if (allowRefund && refundAmount > availableRefund) {
+        const formatAmount = (value: number) => new Intl.NumberFormat('vi-VN').format(value);
+        throw new BadRequestException({
+          code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
+          message: `Số tiền hoàn ${formatAmount(refundAmount)} đồng vượt số tiền khách đã thanh toán và chưa được hoàn là ${formatAmount(availableRefund)} đồng.`,
         });
-        await tx.rentalOrderCharge.updateMany({
-          where: { orderId: id, kind: RentalChargeKind.BOOKING_HOLD },
-          data: { kind: RentalChargeKind.CANCELLATION_FEE, refundable: false },
+      }
+
+      await tx.rentalOrderCharge.updateMany({
+        where: {
+          orderId: id,
+          kind: {
+            in: [RentalChargeKind.BOOKING_HOLD, RentalChargeKind.RENTAL_FEE, RentalChargeKind.DELIVERY_FEE, RentalChargeKind.SECURITY_DEPOSIT],
+          },
+          status: { notIn: [RentalChargeStatus.CANCELLED, RentalChargeStatus.WAIVED] },
+        },
+        data: { status: RentalChargeStatus.CANCELLED, refundable: true },
+      });
+
+      if (allowRefund && refundAmount > 0) {
+        await tx.refund.create({
+          data: {
+            orderId: id,
+            amount: refundAmount,
+            status: RentalRefundStatus.PENDING,
+            method: PaymentMethod.BANK_TRANSFER,
+            note: dto.note,
+            createdBy: user.id,
+          },
         });
       }
       await tx.rentalAssetAllocation.updateMany({
@@ -651,38 +672,53 @@ export class RentalOrdersService {
   }
 
   async createRefund(id: string, dto: CreateRefundDto, user: AuthUser): Promise<RentalOrderOutDto> {
-    await this.financialService.recalculateOrder(id);
-    const order = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
-    if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
-    const pendingRefundStatuses: RentalRefundStatus[] = [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING];
-    const pendingRefunds = await this.prisma.refund.aggregate({
-      where: { orderId: id, status: { in: pendingRefundStatuses } },
-      _sum: { amount: true },
-    });
-    const pendingRefundTotal = Number(pendingRefunds._sum.amount ?? 0);
-    const available = Math.max(0, Number(order.refundDue) - pendingRefundTotal);
-    if (dto.amount > available) {
-      const formatAmount = (value: number) => new Intl.NumberFormat('vi-VN').format(value);
-      throw new BadRequestException({
-        code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
-        message:
-          available > 0
-            ? `Số tiền hoàn yêu cầu ${formatAmount(dto.amount)} đồng, nhưng số tiền còn có thể tạo yêu cầu hoàn là ${formatAmount(available)} đồng.`
-            : pendingRefundTotal > 0
-              ? `Đơn đã có yêu cầu hoàn ${formatAmount(pendingRefundTotal)} đồng đang chờ xác nhận. Vui lòng xác nhận khoản hoàn hiện tại trước khi tạo yêu cầu mới.`
-              : 'Đơn không còn khoản tiền nào có thể tạo yêu cầu hoàn.',
+    await this.prisma.$transaction(async (tx) => {
+      await this.financialService.recalculateOrder(id, tx);
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+      if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      const isRefundableState =
+        order.status === OrderStatus.CANCELLED || (order.status === OrderStatus.RETURNED && order.returnStatus === ReturnStatus.INSPECTED);
+      if (!isRefundableState) throw new BadRequestException(INCORRECT_INPUT);
+      if (order.settlementStatus === RentalSettlementStatus.SETTLED) throw new BadRequestException(RENTAL_ORDER_FINANCIAL_CLOSED);
+
+      const pendingRefunds = await tx.refund.findMany({
+        where: { orderId: id, status: { in: [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING] } },
+        select: { amount: true },
       });
-    }
-    await this.prisma.refund.create({
-      data: {
-        orderId: id,
-        amount: dto.amount,
-        status: RentalRefundStatus.PENDING,
-        method: dto.method,
-        referenceCode: dto.referenceCode,
-        note: dto.note,
-        createdBy: user.id,
-      },
+      const pendingRefundTotal = pendingRefunds.reduce((total, refund) => total + Number(refund.amount), 0);
+      if (pendingRefundTotal > 0) {
+        throw new BadRequestException({
+          code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
+          message: `Đơn đang có yêu cầu hoàn ${new Intl.NumberFormat('vi-VN').format(pendingRefundTotal)} đồng chờ xác nhận. Vui lòng xác nhận khoản này trước khi tạo yêu cầu hoàn tiếp theo.`,
+        });
+      }
+
+      const available =
+        order.status === OrderStatus.CANCELLED
+          ? Math.max(0, Number(order.paidTotal) - Number(order.actualRefundTotal) - pendingRefundTotal)
+          : Math.max(0, Number(order.refundDue) - pendingRefundTotal);
+      if (dto.amount > available) {
+        const formatAmount = (value: number) => new Intl.NumberFormat('vi-VN').format(value);
+        throw new BadRequestException({
+          code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
+          message:
+            available > 0
+              ? `Số tiền hoàn ${formatAmount(dto.amount)} đồng vượt số tiền khách đã thanh toán còn lại ${formatAmount(available)} đồng.`
+              : 'Đơn không còn số tiền được hoàn. Nếu đã hoàn đủ, hệ thống sẽ tự khóa thao tác hoàn tiền.',
+        });
+      }
+
+      await tx.refund.create({
+        data: {
+          orderId: id,
+          amount: dto.amount,
+          status: RentalRefundStatus.PENDING,
+          method: dto.method,
+          referenceCode: dto.referenceCode,
+          note: dto.note,
+          createdBy: user.id,
+        },
+      });
     });
     return this.getRentalOrderById(id);
   }
@@ -690,9 +726,59 @@ export class RentalOrdersService {
   async confirmRefund(id: string, refundId: string): Promise<RentalOrderOutDto> {
     await this.prisma.$transaction(async (tx) => {
       const refund = await tx.refund.findFirst({ where: { id: refundId, orderId: id } });
-      if (!refund || (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING))
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, select: { settlementStatus: true } });
+      if (
+        !refund ||
+        !order ||
+        (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING)
+      )
         throw new BadRequestException(INCORRECT_INPUT);
+      if (order.settlementStatus === RentalSettlementStatus.SETTLED) throw new BadRequestException(RENTAL_ORDER_FINANCIAL_CLOSED);
       await tx.refund.update({ where: { id: refundId }, data: { status: RentalRefundStatus.REFUNDED } });
+      await this.financialService.recalculateOrder(id, tx);
+    });
+    return this.getRentalOrderById(id);
+  }
+
+  async closeCancelledOrder(id: string, dto: CloseCancelledRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.financialService.recalculateOrder(id, tx);
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+      if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      if (order.status !== OrderStatus.CANCELLED) throw new BadRequestException(INCORRECT_INPUT);
+
+      const pendingRefunds = await tx.refund.findMany({
+        where: { orderId: id, status: { in: [RentalRefundStatus.PENDING, RentalRefundStatus.PROCESSING] } },
+        select: { amount: true },
+      });
+      if (pendingRefunds.length > 0) {
+        const pendingRefundTotal = pendingRefunds.reduce((total, refund) => total + Number(refund.amount), 0);
+        throw new BadRequestException({
+          code: RENTAL_ORDER_REFUND_AMOUNT_INVALID.code,
+          message: `Đơn đang có yêu cầu hoàn ${new Intl.NumberFormat('vi-VN').format(pendingRefundTotal)} đồng chờ xác nhận. Hãy xác nhận hoặc xử lý khoản này trước khi chốt phần còn lại.`,
+        });
+      }
+
+      if (order.settlementStatus !== RentalSettlementStatus.SETTLED) {
+        await tx.rentalOrder.update({
+          where: { id },
+          data: { settlementStatus: RentalSettlementStatus.SETTLED, updatedBy: user.id },
+        });
+        await tx.rentalOrderLog.create({
+          data: {
+            orderId: id,
+            actorId: user.id,
+            action: 'CLOSE_CANCELLED_ORDER',
+            entity: 'RentalOrder',
+            changes: this.jsonValue({
+              settlementStatus: { from: order.settlementStatus, to: RentalSettlementStatus.SETTLED },
+              refundDueAtClose: Number(order.refundDue),
+              note: dto.note,
+            }),
+            note: dto.note,
+          },
+        });
+      }
       await this.financialService.recalculateOrder(id, tx);
     });
     return this.getRentalOrderById(id);
@@ -1121,11 +1207,20 @@ export class RentalOrdersService {
     paidTotal: Prisma.Decimal;
     amountDueBeforeHandover: Prisma.Decimal;
     refundDue: Prisma.Decimal;
+    actualRefundTotal: Prisma.Decimal;
     additionalChargeDue: Prisma.Decimal;
     createdAt: Date;
     updatedAt: Date;
-  }): RentalOrderListItemOutDto {
+  }, pendingRefundTotal: number): RentalOrderListItemOutDto {
     const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
+    const refundDue = Number(order.refundDue);
+    const actualRefundTotal = Number(order.actualRefundTotal);
+    const refundableRemaining =
+      order.settlementStatus === RentalSettlementStatus.SETTLED
+        ? 0
+        : order.status === OrderStatus.CANCELLED
+          ? Math.max(0, Number(order.paidTotal) - actualRefundTotal - pendingRefundTotal)
+          : Math.max(0, refundDue - pendingRefundTotal);
     return {
       ...order,
       customerSnapshot: this.customerSnapshotOut(order.customerSnapshot),
@@ -1136,7 +1231,10 @@ export class RentalOrdersService {
       totalCustomerObligation: Number(order.totalCustomerObligation),
       paidTotal: Number(order.paidTotal),
       amountDueBeforeHandover: Number(order.amountDueBeforeHandover),
-      refundDue: Number(order.refundDue),
+      refundDue,
+      actualRefundTotal,
+      pendingRefundTotal,
+      refundableRemaining,
       additionalChargeDue: Number(order.additionalChargeDue),
       ...overdue,
     };
@@ -1144,6 +1242,17 @@ export class RentalOrdersService {
 
   private toDetailOut(order: RentalOrderDetailRecord): RentalOrderOutDto {
     const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
+    const pendingRefundTotal = order.refunds
+      .filter((refund) => refund.status === RentalRefundStatus.PENDING || refund.status === RentalRefundStatus.PROCESSING)
+      .reduce((total, refund) => total + Number(refund.amount), 0);
+    const refundDue = Number(order.refundDue);
+    const actualRefundTotal = Number(order.actualRefundTotal);
+    const refundableRemaining =
+      order.settlementStatus === RentalSettlementStatus.SETTLED
+        ? 0
+        : order.status === OrderStatus.CANCELLED
+          ? Math.max(0, Number(order.paidTotal) - actualRefundTotal - pendingRefundTotal)
+          : Math.max(0, refundDue - pendingRefundTotal);
     const financials: RentalOrderFinancialsOutDto = {
       rentalFeeTotal: Number(order.rentalFeeTotal),
       deliveryFeeTotal: Number(order.deliveryFeeTotal),
@@ -1158,9 +1267,11 @@ export class RentalOrdersService {
       paidTotal: Number(order.paidTotal),
       amountDueAtBooking: Number(order.amountDueAtBooking),
       amountDueBeforeHandover: Number(order.amountDueBeforeHandover),
-      refundDue: Number(order.refundDue),
+      refundDue,
+      pendingRefundTotal,
+      refundableRemaining,
       additionalChargeDue: Number(order.additionalChargeDue),
-      actualRefundTotal: Number(order.actualRefundTotal),
+      actualRefundTotal,
     };
     return {
       id: order.id,

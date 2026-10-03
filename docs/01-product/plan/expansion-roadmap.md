@@ -76,6 +76,24 @@ Sidebar nên phản ánh các bounded context nghiệp vụ. Chỉ hiển thị 
 
 `Báo cáo` ở đây chính là `Reports`: báo cáo doanh thu, giao dịch, công suất, ROI và export. `Tổng quan tài chính` là màn hình điều hành dòng tiền, công nợ, khoản phải thu/phải trả và đối soát; hai khái niệm này không nên gộp làm một màn hình.
 
+### Quy ước icon cho sidebar hiện tại
+
+Các icon đang dùng ở frontend phù hợp với ngữ nghĩa chức năng:
+
+- `IconDashboard`: tổng quan vận hành.
+- `IconReportAnalytics`: báo cáo/phân tích, không dùng cho dashboard thao tác hằng ngày.
+- `IconCalendarTime`: lịch khả dụng và tạo booking từ lịch.
+- `IconAddressBook`: danh bạ khách hàng.
+- `IconPackages`: sản phẩm/danh mục hàng hóa.
+- `IconListTree`: cây danh mục.
+- `IconTrademark`: thương hiệu.
+- `IconDevices`: máy vật lý/serial.
+- `IconUserShield` và `IconShieldLock`: người dùng, vai trò và quyền.
+- `IconMail`: mẫu email.
+- `IconSettings`: cấu hình hệ thống.
+
+Vì vậy `IconListTree` cho Danh mục và `IconTrademark` cho Thương hiệu nên được giữ. Khi thêm module mới, ưu tiên icon thể hiện đúng domain (delivery, file-contract, wallet/settlement, users-group, article/media); không tái sử dụng icon Dashboard cho mọi màn hình thống kê.
+
 ## 4. Thứ tự ưu tiên triển khai
 
 ### P0 — Nền tảng, quan sát hệ thống và chuẩn hóa quyền

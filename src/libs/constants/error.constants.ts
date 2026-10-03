@@ -266,6 +266,11 @@ export const RENTAL_ORDER_REFUND_AMOUNT_INVALID = new ErrorResponse({
   message: 'Số tiền hoàn không được vượt quá số tiền khách đã thanh toán chưa hoàn',
 });
 
+export const RENTAL_ORDER_FINANCIAL_CLOSED = new ErrorResponse({
+  code: 'RENTAL_ORDER_FINANCIAL_CLOSED',
+  message: 'Đơn đã chốt tài chính; không được tạo hoặc xác nhận thêm yêu cầu hoàn tiền.',
+});
+
 export const ROLE_NOT_FOUND = new ErrorResponse({
   code: 'ROLE_NOT_FOUND',
   message: 'Không tìm thấy vai trò phù hợp',

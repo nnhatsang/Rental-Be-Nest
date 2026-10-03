@@ -61,7 +61,7 @@ export class RentalOrderFinancialService {
 
   async recalculateOrder(orderId: string, db: DbClient = this.prisma): Promise<void> {
     const [order, charges, payments, refunds] = await Promise.all([
-      db.rentalOrder.findUnique({ where: { id: orderId }, select: { id: true, status: true, returnStatus: true } }),
+      db.rentalOrder.findUnique({ where: { id: orderId }, select: { id: true, status: true, returnStatus: true, settlementStatus: true } }),
       db.rentalOrderCharge.findMany({ where: { orderId }, include: { paymentAllocations: true } }),
       db.paymentTransaction.findMany({ where: { orderId } }),
       db.refund.findMany({ where: { orderId } }),
@@ -98,11 +98,14 @@ export class RentalOrderFinancialService {
     const refundDue = isCancelled || order.returnStatus === ReturnStatus.INSPECTED
       ? money(Math.max(0, inboundPaid - chargeTotal - actualRefundTotal))
       : 0;
+    const refundableByPayment = money(Math.max(0, inboundPaid - actualRefundTotal));
     const additionalChargeDue = !isCancelled && order.returnStatus === ReturnStatus.INSPECTED
       ? money(Math.max(0, chargeTotal + actualRefundTotal - inboundPaid))
       : 0;
-    const settlementStatus = isCancelled
-      ? refundDue > 0 ? RentalSettlementStatus.REFUND_DUE : RentalSettlementStatus.SETTLED
+    const settlementStatus = isCancelled && order.settlementStatus === RentalSettlementStatus.SETTLED
+      ? RentalSettlementStatus.SETTLED
+      : isCancelled
+      ? refundableByPayment > 0 ? RentalSettlementStatus.REFUND_DUE : RentalSettlementStatus.SETTLED
       : order.returnStatus !== ReturnStatus.INSPECTED
       ? inboundPaid < totalCustomerObligation ? RentalSettlementStatus.PAYMENT_DUE : RentalSettlementStatus.NOT_STARTED
       : additionalChargeDue > 0 ? RentalSettlementStatus.PAYMENT_DUE : refundDue > 0 ? RentalSettlementStatus.REFUND_DUE : RentalSettlementStatus.SETTLED;

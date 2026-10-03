@@ -44,6 +44,51 @@ export class RedisService {
     await this.set(key, JSON.stringify(value), ttlSeconds);
   }
 
+  async replaceJsonIfFieldMatches(params: {
+    key: string;
+    companionSetKey: string;
+    companionSetMember: string;
+    field: string;
+    expectedValue: string;
+    nextValue: unknown;
+    ttlSeconds: number;
+  }): Promise<boolean> {
+    const script = `
+      local raw = redis.call('GET', KEYS[1])
+      if not raw then
+        return 0
+      end
+
+      local ok, current = pcall(cjson.decode, raw)
+      if not ok or type(current) ~= 'table' then
+        return 0
+      end
+
+      if tostring(current[ARGV[1]]) ~= ARGV[2] then
+        return 0
+      end
+
+      redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
+      redis.call('SADD', KEYS[2], ARGV[5])
+      redis.call('EXPIRE', KEYS[2], ARGV[4])
+      return 1
+    `;
+
+    const result = await this.getClient().eval(
+      script,
+      2,
+      params.key,
+      params.companionSetKey,
+      params.field,
+      params.expectedValue,
+      JSON.stringify(params.nextValue),
+      String(params.ttlSeconds),
+      params.companionSetMember,
+    );
+
+    return Number(result) === 1;
+  }
+
   async getOrSetJson<T>(params: { key: string; ttlSeconds: number; loader: () => Promise<T> }): Promise<T> {
     try {
       const cachedValue = await this.get(params.key);

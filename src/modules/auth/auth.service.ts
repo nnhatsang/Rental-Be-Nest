@@ -77,10 +77,11 @@ export class AuthService {
   async refresh(refreshUser: RefreshRequestUser): Promise<RefreshResult> {
     const session = await this.validateRefreshSession(refreshUser);
     const user = await this.validateRefreshUser(refreshUser);
+    const authUser = await this.toAuthUser(user, session.sessionId);
     const cookies = await this.rotateRefreshSession(user.id, user.email, session);
 
     return {
-      user: await this.toAuthUser(user, session.sessionId),
+      user: authUser,
       cookies,
     };
   }
@@ -350,7 +351,19 @@ export class AuthService {
       lastUsedAt: new Date(),
     });
 
-    await this.saveAuthSession(nextSession);
+    const rotated = await this.redis.replaceJsonIfFieldMatches({
+      key: REDIS_KEYS.auth.session(session.sessionId),
+      companionSetKey: REDIS_KEYS.auth.userSessions(session.userId),
+      companionSetMember: session.sessionId,
+      field: 'refreshTokenHash',
+      expectedValue: session.refreshTokenHash,
+      nextValue: nextSession,
+      ttlSeconds: this.getRefreshTTLSeconds(),
+    });
+
+    if (!rotated) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
 
     return {
       ...cookies,

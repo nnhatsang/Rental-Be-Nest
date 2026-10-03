@@ -12,12 +12,14 @@ import { MailModule } from '@modules/mail/mail.module';
 import { PasswordResetTokenService } from './services/password-reset-token.service';
 import { MailTemplateModule } from '@/modules/mail-template/mail-template.module';
 import { RbacModule } from '@modules/rbac/rbac.module';
+import { AuthAuditService } from './services/auth-audit.service';
 
 @Module({
   imports: [PassportModule, JwtModule.register({}), MailModule, MailTemplateModule, RbacModule],
   controllers: [AuthController],
   providers: [
     AuthService,
+    AuthAuditService,
     PasswordResetTokenService,
     JwtAccessStrategy,
     JwtRefreshStrategy,

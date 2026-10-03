@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
@@ -16,6 +16,7 @@ import { ApiNullableRes, ApiRes } from '@/libs/types/custom-response.type';
 import { clearAuthCookies, setAuthCookies } from './utils/cookie.util';
 import { ConfigService } from '@nestjs/config';
 import { LoginResponseDto, MeResponseDto, SuccessResponseDto } from './dto/auth-response.dto';
+import { AuthSessionsResponseDto, RevokeOtherSessionsResponseDto, RevokeSessionResponseDto } from './dto/auth-session-out.dto';
 import { SUCCESS } from '@/libs/constants/response.constant';
 import { getIp } from '@/libs/utils/ip.utils';
 
@@ -137,6 +138,46 @@ export class AuthController {
     clearAuthCookies(response, this.configService);
 
     return new ApiNullableRes({ success: true }, 'Đăng xuất thành công');
+  }
+
+  @Get('sessions')
+  @ApiOperation({
+    summary: 'List active sessions',
+    description: 'Returns active auth sessions for the current account.',
+  })
+  @ApiOkResponse({ type: AuthSessionsResponseDto })
+  async getSessions(@CurrentUser() user: AuthUser): Promise<ApiRes> {
+    return new ApiRes(await this.authService.getActiveSessions(user), 'Active sessions loaded successfully');
+  }
+
+  @Delete('sessions/:sessionId')
+  @ApiOperation({
+    summary: 'Revoke one session',
+    description: 'Revokes an auth session owned by the current account.',
+  })
+  @ApiOkResponse({ type: RevokeSessionResponseDto })
+  async revokeSession(
+    @CurrentUser() user: AuthUser,
+    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ApiRes> {
+    const result = await this.authService.revokeActiveSession(user, sessionId);
+
+    if (result.isCurrent) {
+      clearAuthCookies(response, this.configService);
+    }
+
+    return new ApiRes(result, 'Session revoked successfully');
+  }
+
+  @Post('sessions/revoke-others')
+  @ApiOperation({
+    summary: 'Revoke other sessions',
+    description: 'Keeps the current session and revokes all other sessions for the account.',
+  })
+  @ApiOkResponse({ type: RevokeOtherSessionsResponseDto })
+  async revokeOtherSessions(@CurrentUser() user: AuthUser): Promise<ApiRes> {
+    return new ApiRes(await this.authService.revokeOtherSessions(user), 'Other sessions revoked successfully');
   }
 
   @Get('me')

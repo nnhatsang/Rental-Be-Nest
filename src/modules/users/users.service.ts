@@ -12,6 +12,7 @@ import { UserOutDto } from './dto/user-out.dto';
 import { DeleteUsersDto } from './dto/delete-users.dto';
 import { RoleCode } from '@/libs/constants/rbac.constant';
 import {
+  EUserActivityStatus,
   INVALID_USER,
   PASSWORD_CONFIRM_NOT_MATCH,
   ROLE_NOT_FOUND,
@@ -23,6 +24,8 @@ import { buildUserSearchText, normalizeSearchText } from '@/libs/utils/search-te
 import { SocketService } from '@/libs/socket/socket.service';
 import { ESocketEmit, ESocketReason } from '@/libs/enums/socket.enum';
 import { RbacPermissionService } from '@modules/rbac/rbac-permission.service';
+import { AuthService } from '@modules/auth/auth.service';
+import { AuthUser } from '@modules/auth/types/auth-user.type';
 
 type UserWithRoles = Awaited<ReturnType<UsersService['findUserWithRolesById']>>;
 type ExistingUserWithRoles = NonNullable<UserWithRoles>;
@@ -33,6 +36,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly socketService: SocketService,
     private readonly rbacPermissionService: RbacPermissionService,
+    private readonly authService: AuthService,
   ) {}
 
   async getAllUsers(query: GetAllUsersInDto) {
@@ -162,19 +166,23 @@ export class UsersService {
     return this.toUserOut(user);
   }
 
-  async updateUserActivityStatus(id: string, dto: UpdateUserActivityStatusDto, userId: string): Promise<UserOutDto> {
+  async updateUserActivityStatus(id: string, dto: UpdateUserActivityStatusDto, currentUser: AuthUser): Promise<UserOutDto> {
     await this.ensureUserExists(id);
 
     const user = await this.prisma.user.update({
       where: { id },
       data: {
         activityStatus: dto.activityStatus,
-        updatedBy: userId,
+        updatedBy: currentUser.id,
       },
       include: this.userRolesInclude(),
     });
 
     await this.rbacPermissionService.invalidateUserPermissions(id);
+
+    if (dto.activityStatus !== EUserActivityStatus.Active) {
+      await this.authService.revokeAllSessionsForUser(id, currentUser.sessionId, 'USER_ACTIVITY_STATUS_UPDATED');
+    }
 
     // Push socket
     this.socketService.sendToUser({
@@ -231,8 +239,8 @@ export class UsersService {
     return this.toUserOut(user);
   }
 
-  async resetUserPassword(id: string, currentUserId: string, dto: ResetUserPasswordDto): Promise<{ success: true }> {
-    if (id === currentUserId) {
+  async resetUserPassword(id: string, currentUser: AuthUser, dto: ResetUserPasswordDto): Promise<{ success: true }> {
+    if (id === currentUser.id) {
       throw new BadRequestException(USER_SELF_PASSWORD_RESET_NOT_ALLOWED);
     }
 
@@ -249,13 +257,15 @@ export class UsersService {
       data: { passwordHash },
     });
 
+    await this.authService.revokeAllSessionsForUser(id, currentUser.sessionId, 'ADMIN_PASSWORD_RESET');
+
     return { success: true };
   }
 
-  async deleteUsers(dto: DeleteUsersDto, currentUserId: string): Promise<{ success: true }> {
+  async deleteUsers(dto: DeleteUsersDto, currentUser: AuthUser): Promise<{ success: true }> {
     const uniqueIds = [...new Set(dto.userIds)];
 
-    if (uniqueIds.includes(currentUserId)) {
+    if (uniqueIds.includes(currentUser.id)) {
       throw new BadRequestException(USER_SELF_DELETE_NOT_ALLOWED);
     }
 
@@ -264,9 +274,11 @@ export class UsersService {
       where: { id: { in: uniqueIds } },
       data: {
         deletedAt,
-        deletedBy: currentUserId,
+        deletedBy: currentUser.id,
       },
     });
+
+    await Promise.all(uniqueIds.map((userId) => this.authService.revokeAllSessionsForUser(userId, currentUser.sessionId, 'USER_DELETED')));
     // Phát tín hiệu logout cưỡng bức cho danh sách user bị xóa:
     await this.rbacPermissionService.invalidateUsersPermissions(uniqueIds);
 

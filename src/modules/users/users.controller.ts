@@ -75,7 +75,7 @@ export class UsersController {
   })
   @ApiOkResponse({ type: UserResponseDto })
   async updateUserActivityStatus(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateUserActivityStatusDto) {
-    return new ApiRes(await this.usersService.updateUserActivityStatus(id, dto, user.id), 'Cập nhật trạng thái người dùng thành công');
+    return new ApiRes(await this.usersService.updateUserActivityStatus(id, dto, user), 'Cập nhật trạng thái người dùng thành công');
   }
 
   // @Patch(':id/roles')
@@ -101,7 +101,7 @@ export class UsersController {
     @CurrentUser() currentUser: AuthUser,
     @Body() dto: ResetUserPasswordDto,
   ) {
-    return new ApiRes(await this.usersService.resetUserPassword(id, currentUser.id, dto), 'Reset mat khau nguoi dung thanh cong');
+    return new ApiRes(await this.usersService.resetUserPassword(id, currentUser, dto), 'Reset mat khau nguoi dung thanh cong');
   }
 
   @Delete()
@@ -112,6 +112,6 @@ export class UsersController {
   })
   @ApiOkResponse({ type: DeleteUserResponseDto })
   async deleteUsers(@CurrentUser() currentUser: AuthUser, @Body() dto: DeleteUsersDto) {
-    return new ApiNullableRes(await this.usersService.deleteUsers(dto, currentUser.id), 'Xóa người dùng thành công');
+    return new ApiNullableRes(await this.usersService.deleteUsers(dto, currentUser), 'Xóa người dùng thành công');
   }
 }

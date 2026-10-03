@@ -71,11 +71,40 @@ model User {
   updatedBy      String?            @map("updated_by") @db.Uuid
   deletedBy      String?            @map("deleted_by") @db.Uuid
   roles          UserRole[]
+  authAuditLogs  AuthAuditLog[]
 
   @@index([email])
   @@index([activityStatus])
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "User_searchText_trgm_idx", type: Gin)
   @@index([deletedAt])
+}
+
+enum AuthAuditEvent {
+  LOGIN_SUCCEEDED
+  LOGOUT
+  SESSION_REVOKED
+  SESSIONS_REVOKED
+  PASSWORD_CHANGED
+  PASSWORD_RESET
+}
+
+model AuthAuditLog {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  userId         String?        @db.Uuid
+  sessionId      String?
+  actorSessionId String?
+  event          AuthAuditEvent
+  ipAddress      String?
+  userAgent      String?
+  deviceId       String?
+  reason         String?
+  metadata       Json?
+  occurredAt     DateTime       @default(now())
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+  @@index([sessionId, occurredAt])
+  @@index([event, occurredAt])
 }
 
 /// Vai trò nghiệp vụ của người dùng, tập hợp các quyền được cấp.

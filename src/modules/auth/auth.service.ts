@@ -3,6 +3,7 @@ import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, Una
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { AuthAuditEvent } from '@generated/prisma/client';
 import { PrismaService } from '@modules/database/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -41,6 +42,8 @@ import { REDIS_EXPIRE } from '@/libs/redis/constant/prefix.constant';
 import { MailTemplateService } from '@/modules/mail-template/mail-template.service';
 import { MailTemplateKey } from '../mail-template/const/mail-template.const';
 import { RbacPermissionService } from '@modules/rbac/rbac-permission.service';
+import { AuthAuditService } from './services/auth-audit.service';
+import { AuthSessionOutDto } from './dto/auth-session-out.dto';
 
 type AuthenticatedUser = Pick<User, 'id' | 'email' | 'fullName' | 'phone' | 'activityStatus' | 'deletedAt'>;
 
@@ -57,6 +60,7 @@ export class AuthService {
     private readonly passwordResetTokenService: PasswordResetTokenService,
     private readonly redis: RedisService,
     private readonly rbacPermissionService: RbacPermissionService,
+    private readonly authAuditService: AuthAuditService,
   ) {}
 
   async login(dto: LoginDto): Promise<LoginResult> {
@@ -66,6 +70,16 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
+    });
+
+    await this.authAuditService.record({
+      event: AuthAuditEvent.LOGIN_SUCCEEDED,
+      userId: user.id,
+      sessionId: cookies.sessionId,
+      actorSessionId: cookies.sessionId,
+      ipAddress: dto.ipAddress,
+      userAgent: dto.userAgent,
+      deviceId: dto.deviceId,
     });
 
     return {
@@ -87,7 +101,110 @@ export class AuthService {
   }
 
   async logout(user: AuthUser): Promise<void> {
-    await this.revokeSession(user.id, user.sessionId);
+    const session = await this.getAuthSession(user.sessionId);
+    await this.deleteAuthSession(user.id, user.sessionId);
+
+    await this.authAuditService.record({
+      event: AuthAuditEvent.LOGOUT,
+      userId: user.id,
+      sessionId: user.sessionId,
+      actorSessionId: user.sessionId,
+      ipAddress: session?.ipAddress,
+      userAgent: session?.userAgent,
+      deviceId: session?.deviceId,
+    });
+  }
+
+  async getActiveSessions(currentUser: AuthUser): Promise<AuthSessionOutDto[]> {
+    const userSessionsKey = REDIS_KEYS.auth.userSessions(currentUser.id);
+    const sessionIds = await this.redis.smembers(userSessionsKey);
+    const sessions = await Promise.all(sessionIds.map((sessionId) => this.getAuthSession(sessionId)));
+    const activeSessions = sessions.filter((session): session is AuthSession => session?.userId === currentUser.id);
+    const staleSessionIds = sessions
+      .map((session, index) => (session?.userId === currentUser.id ? null : sessionIds[index]))
+      .filter((sessionId): sessionId is string => Boolean(sessionId));
+
+    if (staleSessionIds.length > 0) {
+      await this.redis.srem(userSessionsKey, ...staleSessionIds);
+    }
+
+    return activeSessions
+      .map((session) => this.toAuthSessionOut(session, currentUser.sessionId))
+      .sort((left, right) => {
+        if (left.isCurrent !== right.isCurrent) {
+          return left.isCurrent ? -1 : 1;
+        }
+
+        return new Date(right.lastUsedAt).getTime() - new Date(left.lastUsedAt).getTime();
+      });
+  }
+
+  async revokeActiveSession(currentUser: AuthUser, targetSessionId: string): Promise<{ success: true; isCurrent: boolean }> {
+    const targetSession = await this.getAuthSession(targetSessionId);
+    const isCurrent = targetSessionId === currentUser.sessionId;
+
+    if (!targetSession) {
+      return { success: true, isCurrent };
+    }
+
+    if (targetSession.userId !== currentUser.id) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
+    await this.deleteAuthSession(currentUser.id, targetSessionId);
+    await this.authAuditService.record({
+      event: AuthAuditEvent.SESSION_REVOKED,
+      userId: currentUser.id,
+      sessionId: targetSessionId,
+      actorSessionId: currentUser.sessionId,
+      ipAddress: targetSession.ipAddress,
+      userAgent: targetSession.userAgent,
+      deviceId: targetSession.deviceId,
+      metadata: { isCurrent },
+    });
+
+    return { success: true, isCurrent };
+  }
+
+  async revokeOtherSessions(currentUser: AuthUser): Promise<{ success: true; revokedCount: number }> {
+    const userSessionsKey = REDIS_KEYS.auth.userSessions(currentUser.id);
+    const sessionIds = await this.redis.smembers(userSessionsKey);
+    const sessions = await Promise.all(sessionIds.map((sessionId) => this.getAuthSession(sessionId)));
+    const targetSessionIds = sessions
+      .filter((session): session is AuthSession => session?.userId === currentUser.id && session.sessionId !== currentUser.sessionId)
+      .map((session) => session.sessionId);
+    const staleSessionIds = sessions
+      .map((session, index) => (session?.userId === currentUser.id ? null : sessionIds[index]))
+      .filter((sessionId): sessionId is string => Boolean(sessionId));
+
+    await Promise.all(targetSessionIds.map((sessionId) => this.deleteAuthSession(currentUser.id, sessionId)));
+
+    if (staleSessionIds.length > 0) {
+      await this.redis.srem(userSessionsKey, ...staleSessionIds);
+    }
+
+    await this.authAuditService.record({
+      event: AuthAuditEvent.SESSIONS_REVOKED,
+      userId: currentUser.id,
+      actorSessionId: currentUser.sessionId,
+      metadata: { revokedCount: targetSessionIds.length },
+    });
+
+    return { success: true, revokedCount: targetSessionIds.length };
+  }
+
+  async revokeAllSessionsForUser(userId: string, actorSessionId?: string, reason?: string): Promise<number> {
+    const revokedSessionIds = await this.revokeAllUserSessions(userId);
+
+    await this.authAuditService.record({
+      event: AuthAuditEvent.SESSIONS_REVOKED,
+      userId,
+      actorSessionId,
+      reason,
+      metadata: { revokedCount: revokedSessionIds.length },
+    });
+
+    return revokedSessionIds.length;
   }
 
   async validateAccessUser(userId: string, sessionId: string, isLogout = false): Promise<AuthUser> {
@@ -161,7 +278,14 @@ export class AuthService {
       data: { passwordHash },
     });
 
-    await this.revokeAllUserSessions(currentUser.id);
+    const revokedSessionIds = await this.revokeAllUserSessions(currentUser.id);
+    await this.authAuditService.record({
+      event: AuthAuditEvent.PASSWORD_CHANGED,
+      userId: currentUser.id,
+      sessionId: currentUser.sessionId,
+      actorSessionId: currentUser.sessionId,
+      metadata: { revokedCount: revokedSessionIds.length },
+    });
 
     return { success: true };
   }
@@ -251,7 +375,15 @@ export class AuthService {
       data: { passwordHash },
     });
 
-    await Promise.all([this.passwordResetTokenService.consume(resetToken), this.revokeAllUserSessions(user.id)]);
+    const [, revokedSessionIds] = await Promise.all([
+      this.passwordResetTokenService.consume(resetToken),
+      this.revokeAllUserSessions(user.id),
+    ]);
+    await this.authAuditService.record({
+      event: AuthAuditEvent.PASSWORD_RESET,
+      userId: user.id,
+      metadata: { revokedCount: revokedSessionIds.length },
+    });
 
     return { success: true };
   }
@@ -427,16 +559,18 @@ export class AuthService {
     return this.redis.getJson<AuthSession>(REDIS_KEYS.auth.session(sessionId));
   }
 
-  private async revokeSession(userId: string, sessionId: string): Promise<void> {
+  private async deleteAuthSession(userId: string, sessionId: string): Promise<void> {
     await Promise.all([this.redis.del(REDIS_KEYS.auth.session(sessionId)), this.redis.srem(REDIS_KEYS.auth.userSessions(userId), sessionId)]);
   }
 
-  private async revokeAllUserSessions(userId: string): Promise<void> {
+  private async revokeAllUserSessions(userId: string): Promise<string[]> {
     const userSessionsKey = REDIS_KEYS.auth.userSessions(userId);
     const sessionIds = await this.redis.smembers(userSessionsKey);
     const sessionKeys = sessionIds.map((sessionId) => REDIS_KEYS.auth.session(sessionId));
 
     await this.redis.del(...sessionKeys, userSessionsKey);
+
+    return sessionIds;
   }
 
   private async findAuthUserById(userId: string): Promise<AuthenticatedUser | null> {
@@ -592,5 +726,46 @@ export class AuthService {
     });
 
     return authUser;
+  }
+
+  private toAuthSessionOut(session: AuthSession, currentSessionId: string): AuthSessionOutDto {
+    return {
+      sessionId: session.sessionId,
+      deviceName: this.getSessionDeviceName(session),
+      browser: this.getSessionBrowser(session.userAgent),
+      ipAddress: session.ipAddress ?? null,
+      createdAt: session.createdAt,
+      lastUsedAt: session.lastUsedAt,
+      expiresAt: session.expiresAt,
+      isCurrent: session.sessionId === currentSessionId,
+    };
+  }
+
+  private getSessionDeviceName(session: AuthSession): string {
+    const explicitDeviceName = session.deviceId?.trim();
+    if (explicitDeviceName) {
+      return explicitDeviceName;
+    }
+
+    const userAgent = session.userAgent ?? '';
+    if (/iphone/i.test(userAgent)) return 'iPhone';
+    if (/ipad/i.test(userAgent)) return 'iPad';
+    if (/android/i.test(userAgent)) return /mobile/i.test(userAgent) ? 'Android phone' : 'Android tablet';
+    if (/windows/i.test(userAgent)) return 'Windows device';
+    if (/macintosh|mac os/i.test(userAgent)) return 'Mac';
+    if (/linux/i.test(userAgent)) return 'Linux device';
+
+    return 'Unknown device';
+  }
+
+  private getSessionBrowser(userAgent?: string): string {
+    if (!userAgent) return 'Unknown browser';
+    if (/edg\//i.test(userAgent)) return 'Microsoft Edge';
+    if (/opr\//i.test(userAgent)) return 'Opera';
+    if (/firefox\//i.test(userAgent)) return 'Firefox';
+    if (/chrome\//i.test(userAgent)) return 'Chrome';
+    if (/safari\//i.test(userAgent)) return 'Safari';
+
+    return 'Unknown browser';
   }
 }

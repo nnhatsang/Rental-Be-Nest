@@ -320,7 +320,7 @@ Không mỗi thư mục trong src/modules đều là một API module có màn h
 
 | Nhóm | Module | Trách nhiệm |
 | --- | --- | --- |
-| Quản trị có API | users, roles, permissions, system-settings, store-business-hours, store-closure, mail-template | Có controller, permission và contract cho frontend admin |
+| Quản trị có API | users, roles, permissions, system-settings, store-business-hours, store-closure, mail-template, dashboard | Có controller, permission và contract cho frontend admin |
 | Nghiệp vụ | customers, products, categories, brands, asset-units, rental-orders, availability | Vòng đời và thao tác vận hành |
 | Hạ tầng | database, mail, rbac | Provider/service dùng nội bộ; không tạo controller chỉ để có UI |
 | Domain nội bộ | asset-reservations | Capability phụ trợ cho allocation/reservation; không công bố trực tiếp khi chưa có use case và contract riêng |
@@ -390,6 +390,97 @@ Email/avatar không được coi là field update cho đến khi có DTO, valida
 
 ## 9. Module tương lai cần contract riêng
 
-- reports: thiết kế query, range, timezone, permission và aggregate trước khi frontend gọi /reports.
+- reports: dashboard đã có aggregate vận hành cơ bản; báo cáo tài chính/kế toán độc lập vẫn phải thiết kế query, range, timezone, permission và aggregate riêng trước khi frontend gọi /reports.
 - blacklist: chốt model customer, reason, expiry, scope và rule không cho tạo đơn trước khi tạo controller.
 - audit-log: ghi actor, action, resource, before/after, request id và timestamp; không lấy status history của rental order làm audit log toàn hệ thống.
+
+## 10. Dashboard vận hành
+
+Dashboard vận hành là capability đọc dữ liệu tổng hợp để điều phối cửa hàng. Dashboard không thay thế danh sách đơn thuê, Gantt availability hoặc module báo cáo.
+
+### 10.1 API và permission
+
+Các endpoint hiện có:
+
+| Method | Path | Permission | Nội dung |
+| --- | --- | --- | --- |
+| GET | /dashboard/operations/overview | orders.read | KPI vận hành, snapshot tài chính, tình trạng thiết bị, top sản phẩm và preview việc cần xử lý |
+| GET | /dashboard/operations/attention | orders.read | Danh sách phân trang các đơn cần thao tác |
+| GET | /dashboard/operations/trends | orders.read | Xu hướng theo ngày/tuần/tháng dựa trên ngày bắt đầu thuê |
+
+Dashboard dùng `orders.read` vì đây là màn hình điều phối đơn thuê và availability. `reports.read` dành cho module báo cáo phân tích độc lập; khi nghiệp vụ tài chính tách riêng cần bổ sung permission tài chính thay vì mở rộng dữ liệu dashboard cho mọi role.
+
+### 10.2 Khoảng thời gian và timezone
+
+Request bắt buộc có `fromDate` và `toDate`. Khoảng thời gian dùng nửa kín `[fromDate, toDate)`, tức bản ghi có thời điểm đúng `toDate` không thuộc kỳ.
+
+Request có thể truyền `timezone`, mặc định `Asia/Ho_Chi_Minh`. Backend dùng Date đã được parse để lọc dữ liệu và dùng timezone để tạo bucket cho trends. Khoảng dashboard tối đa 366 ngày.
+
+`dateBasis` của v1 là `RENTAL_PERIOD`:
+
+- đơn tổng hợp theo khoảng giao nhau giữa `startDate` và `endDate` với kỳ xem;
+- lịch nhận máy dùng `startDate` nằm trong kỳ;
+- lịch trả máy dùng `endDate` nằm trong kỳ;
+- đơn quá hạn được đưa vào việc cần xử lý dù thời gian thuê đã bắt đầu trước kỳ;
+- số tiền tài chính là snapshot trên các đơn được chọn theo kỳ thuê.
+
+Dashboard v1 chưa phải sổ cái dòng tiền. `paidTotal` là tiền đã thu trên đơn và có thể gồm tiền thuê, tiền giữ lịch và tiền cọc; không được gắn nhãn là doanh thu kế toán. Nếu cần thống kê tiền theo ngày thanh toán, phải tạo query/report theo `PaymentTransaction.createdAt`.
+
+### 10.3 Quy tắc tổng hợp
+
+- Đơn hủy bị loại khỏi số liệu vận hành mặc định. `cancelledOrders` vẫn luôn đếm riêng các đơn hủy trong kỳ để KPI không bị hiểu sai.
+- `includeCancelled=true` mở rộng các tổng hợp kiểm tra (đơn, tiền và thiết bị); không biến đơn hủy thành việc cần nhận/trả máy.
+- `rentalRevenue` lấy từ `RentalOrder.rentalFeeTotal` của các đơn được chọn.
+- `deliveryRevenue` lấy từ `deliveryFeeTotal` và hiển thị tách khỏi tiền thuê.
+- `collectedTotal` lấy từ `paidTotal`, không phải doanh thu.
+- `depositHeldTotal` ở v1 được ước tính bằng tiền cọc snapshot trừ tiền hoàn thực tế, giới hạn tối thiểu bằng 0.
+- `amountDueBeforeHandover` hiển thị là “Còn phải thu trước khi bàn giao”.
+- `refundDueTotal` là nghĩa vụ cần hoàn theo snapshot đơn.
+- `pendingRefundTotal` chỉ cộng các refund có trạng thái `PENDING` hoặc `PROCESSING`; refund của đơn hủy vẫn được tính để không bỏ sót việc hoàn tiền.
+- `damageCompensationTotal` là khoản bồi thường hư hỏng đã tính cho khách.
+- `repairCostTotal` trả `null` vì schema hiện tại chưa có chi phí sửa chữa thực tế. Không dùng `damageCompensationTotal` thay cho chi phí sửa chữa.
+- Top sản phẩm được tính từ `RentalOrderLine`, loại đơn hủy mặc định, trả số lượng thuê, số đơn, ngày-thiết bị và tiền thuê.
+- `rentalDeviceDays` bằng thời lượng thuê theo ngày nhân số lượng trên line; đây là chỉ số vận hành, không phải công suất kế toán.
+- Top thiết bị trả tối đa 5 serial có nhiều allocation thực tế nhất; chỉ allocation `HANDED_OVER` hoặc `RETURNED` được tính, không tính lịch mới `RESERVED`.
+
+### 10.4 Việc cần xử lý
+
+Mỗi đơn chỉ tạo một attention item chính theo thứ tự ưu tiên:
+
+1. `DISPUTE` — đơn tranh chấp.
+2. `OVERDUE_RETURN` — đơn `RENTING`, quá `endDate` và chưa có `actualReturnDate`.
+3. `REFUND_PENDING` — có `refundDue` hoặc refund đang `PENDING/PROCESSING`.
+4. `PAYMENT_CONFIRMATION` — còn tiền trước bàn giao hoặc có payment inbound đang `PENDING`.
+5. `PICKUP_DUE` — đến kỳ nhận nhưng chưa `HANDED_OVER`.
+6. `RETURN_DUE` — đến kỳ trả nhưng chưa `INSPECTED`.
+
+`attentionOrders` là số đơn duy nhất khớp các điều kiện trên. Một đơn hủy chỉ xuất hiện trong attention khi còn nghĩa vụ hoàn tiền. FE dùng `type`, `priority`, `message` và enum status để render; không tự suy diễn việc cần làm từ màu badge.
+
+### 10.5 Availability trong dashboard
+
+- `totalAssets`: tất cả asset chưa xóa mềm.
+- `scheduledAssets`: asset có allocation giao nhau với khoảng xem và allocation ở trạng thái blocking.
+- `freeAssets`: asset active, `AVAILABLE`, không có allocation blocking giao nhau.
+- `unavailableAssets`: asset inactive hoặc status khác `AVAILABLE`.
+- `maintenanceAssets`, `lostAssets`, `damagedAssets`: đếm riêng theo status/condition hiện tại của asset.
+
+Chi tiết lịch vẫn dùng `/availability/gantt`; dashboard chỉ trả summary để tải nhanh.
+
+### 10.6 Realtime và dữ liệu chưa có
+
+V1 dùng frontend polling và nút làm mới. Backend chưa phát event riêng cho dashboard. Khi cần realtime, dùng event invalidation cho các thay đổi:
+
+- tạo/cập nhật/hủy đơn;
+- payment xác nhận/từ chối;
+- tạo/xác nhận refund;
+- bàn giao/trả máy/inspection;
+- asset đổi status hoặc condition.
+
+Không push toàn bộ aggregate qua socket. Socket chỉ gửi event thay đổi, sau đó FE gọi lại overview/attention với cùng filter.
+
+Các capability chưa triển khai trong dashboard:
+
+- chi phí sửa chữa thực tế: cần module maintenance cost/incident cost;
+- doanh thu theo ngày thanh toán: cần report query trên payment transaction;
+- audit log toàn hệ thống: cần audit contract riêng;
+- blacklist: cần model và rule chặn đơn riêng.

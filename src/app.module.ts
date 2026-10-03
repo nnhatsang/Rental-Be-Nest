@@ -24,6 +24,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { MailTemplateModule } from './modules/mail-template/mail-template.module';
 import { QueueModule } from './libs/queue/queue.module';
 import { AvailabilityModule } from './modules/availability/availability.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -104,6 +105,7 @@ import { AvailabilityModule } from './modules/availability/availability.module';
     MailTemplateModule,
     QueueModule,
     AvailabilityModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

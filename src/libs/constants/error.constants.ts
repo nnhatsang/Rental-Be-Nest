@@ -12,6 +12,16 @@ export const INCORRECT_INPUT = new ErrorResponse({
   message: 'Lỗi dữ liệu không hợp lệ',
 });
 
+export const DASHBOARD_DATE_RANGE_INVALID = new ErrorResponse({
+  code: 'DASHBOARD_DATE_RANGE_INVALID',
+  message: 'Khoảng thời gian dashboard không hợp lệ',
+});
+
+export const DASHBOARD_TIMEZONE_INVALID = new ErrorResponse({
+  code: 'DASHBOARD_TIMEZONE_INVALID',
+  message: 'Múi giờ dashboard không hợp lệ',
+});
+
 export const UNKNOWN_ERROR = new ErrorResponse({
   code: 'UNKNOWN_ERROR',
   message: 'lỗi không xác định',

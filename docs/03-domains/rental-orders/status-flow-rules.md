@@ -1,61 +1,113 @@
-# Vòng đời đơn thuê & Luật chuyển trạng thái (OrderStatus Flow)
+# Vòng đời đơn thuê và chốt tài chính
 
-> Tài liệu mô tả chi tiết 10 trạng thái vận hành của `RentalOrder`, các điều kiện chuyển trạng thái, cùng ảnh hưởng tương ứng lên trạng thái thanh toán và thiết bị vật lý (`AssetUnit`).
+> Tài liệu này khớp với các enum và state machine hiện tại trong `prisma/schema.prisma` và `src/modules/rental-orders/domain/rental-order-state-machine.ts`.
 
----
+## 1. Trạng thái chính của đơn (`OrderStatus`)
 
-## 1. Lưu đồ chuyển trạng thái chính
+| Trạng thái | Ý nghĩa |
+| --- | --- |
+| `CREATED` | Đơn đã tạo, đang chờ đủ điều kiện thanh toán/xác nhận và giữ máy. |
+| `CONFIRMED` | Đã đủ điều kiện bàn giao, allocation vẫn giữ lịch cho đơn. |
+| `RENTING` | Đã bàn giao máy cho khách. Nếu quá `endDate` mà chưa trả thì hiển thị quá hạn, không tạo thêm enum `OVERDUE`. |
+| `RETURNED` | Khách đã trả máy, đang chờ inspection và tất toán. |
+| `DONE` | Đơn hoàn tất vận hành và tài chính. Đây là trạng thái hoàn tất của đơn đã thuê, không dùng cho đơn bị hủy. |
+| `CANCELLED` | Đơn bị hủy trước bàn giao; allocation được giải phóng. Trạng thái này không tự biến thành `DONE`. |
+| `DISPUTED` | Đơn có tranh chấp cần quản trị viên xử lý đặc biệt. |
 
-Quy trình chuẩn cho một đơn thuê thành công:
+State machine hiện tại:
 
-```mermaid
-graph TD
-    DRAFT[1. DRAFT] -->|Admin xác nhận & Khách đặt cọc giữ máy| CONFIRMED[2. CONFIRMED]
-    CONFIRMED -->|Lấy máy khỏi kệ kho, chuẩn bị phụ kiện| PREPARING[3. PREPARING]
-    PREPARING -->|Sẵn sàng bàn giao| READY_FOR_PICKUP[4. READY_FOR_PICKUP]
-    PREPARING -->|Đưa cho shipper đi giao| DELIVERING[4. DELIVERING]
-    READY_FOR_PICKUP -->|Khách nhận máy & Ký biên bản giao| RENTING[5. RENTING]
-    DELIVERING -->|Khách nhận máy & Ký biên bản giao| RENTING
-    RENTING -->|Quá hạn trả máy hẹn trước| OVERDUE[6. OVERDUE]
-    RENTING -->|Khách trả máy & Kỹ thuật nhận máy| RETURNED[7. RETURNED]
-    OVERDUE -->|Khách trả máy & Kỹ thuật nhận máy| RETURNED
-    RETURNED -->|Kiểm tra máy & Tất toán tiền phạt/hoàn cọc| COMPLETED[8. COMPLETED]
-
-    DRAFT -->|Khách hủy hoặc admin hủy| CANCELLED[9. CANCELLED]
-    CONFIRMED -->|Khách hủy trước khi bàn giao| CANCELLED
-    
-    RENTING -->|Tranh chấp hư hỏng nặng, mất máy| DISPUTED[10. DISPUTED]
-    OVERDUE -->|Tranh chấp hư hỏng nặng, mất máy| DISPUTED
+```text
+CREATED   -> CONFIRMED -> RENTING -> RETURNED -> DONE
+   |             |           |          |
+   +-----------> CANCELLED  +-------> DISPUTED
+                                  RETURNED <-> DISPUTED -> DONE
 ```
 
----
+Các chuyển tiếp thực tế phải dùng state machine, không cập nhật trực tiếp `status` từ controller.
 
-## 2. Chi tiết 10 Trạng thái vận hành (`OrderStatus`)
+## 2. Trạng thái phụ
 
-| # | Trạng thái | Mô tả chi tiết nghiệp vụ | Điều kiện chuyển tiếp |
-|---|---|---|---|
-| 1 | **`DRAFT` (Nháp)** | Đơn mới tạo bởi nhân viên. Đang chọn sản phẩm, thời gian thuê, thông tin khách. Thiết bị vật lý gán vào đơn lúc này **chưa bị khóa lịch** (vẫn khả dụng cho đơn khác). | Tạo đơn hàng mới mặc định là `DRAFT`. |
-| 2 | **`CONFIRMED` (Đã xác nhận)** | Khách hàng đã cọc tiền giữ máy (`BookingHoldTotal`) hoặc được admin xác nhận giữ máy. Thiết bị vật lý gán vào dòng đơn **chính thức bị khóa lịch** trong khoảng thời gian từ `startDate` đến `blockedEndDate`. | Chuyển từ `DRAFT` khi khách cọc thành công hoặc admin xác nhận. |
-| 3 | **`PREPARING` (Đang chuẩn bị)** | Nhân viên kho tiến hành gom thiết bị, sạc pin, đóng gói phụ kiện vào túi/hộp chống sốc. | Chuyển từ `CONFIRMED` khi thủ kho bắt đầu chuẩn bị máy. |
-| 4 | **`READY_FOR_PICKUP` / `DELIVERING` (Sẵn sàng giao)** | Máy đã đóng gói xong. Đang chờ khách đến quầy nhận hoặc đang bàn giao cho đơn vị vận chuyển đi giao. | Chuyển từ `PREPARING` sau khi đã checklist đầy đủ phụ kiện. |
-| 5 | **`RENTING` (Đang thuê)** | Khách đã nhận thiết bị vật lý và ký vào biên bản bàn giao (`OrderHandover` loại `OUTGOING`). Khách đã thanh toán đủ tiền thu trước (`UpfrontTotal`). | Chuyển từ `READY_FOR_PICKUP` / `DELIVERING` sau khi ký bàn giao. |
-| 6 | **`OVERDUE` (Quá hạn)** | Đơn thuê đã vượt quá thời gian trả máy hẹn trước (`endDate`) mà khách chưa mang trả máy. | Hệ thống tự chuyển trạng thái (cron job quét) hoặc admin chuyển thủ công khi phát hiện trễ hẹn. |
-| 7 | **`RETURNED` (Đã trả máy)** | Khách đã mang máy đến trả tại quầy hoặc gửi ship trả về cửa hàng. Thiết bị được gán biên bản nhận trả (`OrderHandover` loại `RETURN`). Nhân viên kỹ thuật bắt đầu làm biên bản kiểm tra (`ReturnInspection`). | Chuyển từ `RENTING` / `OVERDUE` khi máy được hoàn trả về cửa hàng. |
-| 8 | **`COMPLETED` (Hoàn tất)** | Biên bản kiểm tra được chốt. Đã tính toán xong các chi phí phát sinh (tiền trễ, tiền hỏng máy nếu có), thu thêm tiền hoặc hoàn trả tiền cọc (`RefundTotal`) cho khách. Đơn thuê chính thức đóng lại. | Chuyển từ `RETURNED` sau khi tất toán toàn bộ công nợ. |
-| 9 | **`CANCELLED` (Đã hủy)** | Đơn thuê bị hủy trước khi bàn giao thiết bị. Tiền đặt cọc giữ máy có thể được hoàn lại một phần hoặc giữ lại tùy theo chính sách hủy đơn. | Chỉ được hủy khi đơn ở trạng thái `DRAFT` hoặc `CONFIRMED`. |
-| 10 | **`DISPUTED` (Tranh chấp)** | Thiết bị bị mất, hư hỏng nặng hoặc khách hàng từ chối đền bù. Đơn hàng chuyển sang trạng thái tranh chấp để quản lý xử lý đặc biệt. | Chuyển từ `RENTING`, `OVERDUE` hoặc `RETURNED` khi có bất đồng đền bù. |
+- `handoverStatus`: `PENDING_PAYMENT` -> `READY` -> `HANDED_OVER`.
+- `returnStatus`: `NOT_RETURNED` -> `RETURNED` -> `INSPECTED`.
+- `settlementStatus`: `NOT_STARTED`, `PAYMENT_DUE`, `REFUND_DUE`, `SETTLED`, `DISPUTED`.
 
----
+`status` trả lời đơn đang ở giai đoạn nào; `settlementStatus` trả lời tiền đã chốt chưa. Hai khái niệm này không được gộp vào một badge.
 
-## 3. Quy luật đồng bộ trạng thái tài chính & thiết bị
+## 3. Luồng hủy đơn có phát sinh hoàn tiền
 
-Khi trạng thái đơn thuê (`OrderStatus`) thay đổi, hệ thống bắt buộc phải tự động cập nhật trạng thái của thiết bị vật lý (`AssetUnit`) tương ứng:
+Ví dụ: khách đã thanh toán `800.000 đ`, trong đó `50.000 đ` là phí giữ lịch. Khách hủy sát giờ và cửa hàng giữ phí giữ lịch, hoàn lại `750.000 đ`.
 
-1. **Khóa lịch (Block Schedule)**:
-   - Chỉ khi đơn ở trạng thái `CONFIRMED`, `PREPARING`, `READY_FOR_PICKUP`, `DELIVERING`, `RENTING`, `OVERDUE` thì lịch thuê của thiết bị con gán trong đơn mới bị coi là **bận** (Blocked).
-   - Đơn ở trạng thái `DRAFT`, `CANCELLED` hoặc `COMPLETED` sẽ giải phóng lịch của thiết bị.
+### Bước 1: Hủy đơn
 
-2. **Cập nhật trạng thái máy (`AssetStatus`)**:
-   - Khi đơn chuyển sang `RENTING`, trạng thái của `AssetUnit` phải tự động chuyển thành `RENTED`.
-   - Khi đơn chuyển sang `RETURNED` và biên bản kiểm tra `ReturnInspection` ghi nhận máy ở tình trạng tốt, trạng thái của `AssetUnit` tự động chuyển về `AVAILABLE` (Sẵn sàng cho thuê tiếp).
-   - Nếu biên bản kiểm tra ghi nhận máy bị hỏng, trạng thái của `AssetUnit` chuyển thành `DAMAGED` hoặc `MAINTENANCE` (không cho phép gán vào đơn thuê mới).
+API hủy cần ghi nhận:
+
+- `RentalOrder.status = CANCELLED`;
+- `cancelReason` và ghi chú của quản trị viên;
+- giải phóng toàn bộ `RentalAssetAllocation`;
+- giữ lại khoản không hoàn dưới dạng `RentalOrderCharge(kind = CANCELLATION_FEE, amount = 50.000, refundable = false)`;
+- các khoản rental/delivery/deposit không còn nghĩa vụ sau hủy được đánh dấu `CANCELLED` hoặc `WAIVED` theo chính sách;
+- nếu quản trị viên chọn hoàn ngay, tạo `Refund(amount = 750.000, status = PENDING)`.
+
+Không được hủy `BOOKING_HOLD` thành khoản refundable nếu nghiệp vụ đang giữ phí đặt lịch. Nếu làm vậy, hệ thống sẽ tính nhầm toàn bộ `800.000 đ` là tiền có thể hoàn.
+
+### Bước 2: Xác nhận hoàn tiền
+
+`Refund.PENDING` chỉ là yêu cầu hoàn; chưa được cộng vào `actualRefundTotal`. Khi admin xác nhận giao dịch đã chuyển tiền:
+
+- chuyển `Refund.status` sang `REFUNDED`;
+- cập nhật `actualRefundTotal`;
+- chạy lại `recalculateOrder` trong cùng transaction.
+
+Sau ví dụ trên, kết quả phải là:
+
+| Trường | Giá trị |
+| --- | ---: |
+| `paidTotal` | 800.000 đ |
+| `actualRefundTotal` | 750.000 đ |
+| `totalCustomerObligation` | 50.000 đ |
+| `refundDue` | 0 đ |
+| `settlementStatus` | `SETTLED` |
+| `status` | `CANCELLED` |
+
+### Bước 3: Chốt hủy
+
+“Đóng đơn” trong trường hợp này nên gọi là **Chốt tài chính đơn đã hủy**, không đổi `CANCELLED` thành `DONE`.
+
+Có thể dùng `settlementStatus = SETTLED` làm trạng thái khóa tài chính. Nếu cần nút xác nhận rõ ràng trên UI, bổ sung action `closeCancelledOrder` với các điều kiện:
+
+- đơn có `status = CANCELLED`;
+- không còn `Refund` ở `PENDING` hoặc `PROCESSING`;
+- `refundDue = 0`;
+- không còn `additionalChargeDue` hoặc payment pending;
+- các charge đã ở trạng thái cuối (`SETTLED`, `WAIVED` hoặc `CANCELLED`);
+- ghi note và actor để audit.
+
+Action này có thể idempotent. Nó không tạo thêm refund, không thay đổi lịch máy và không đổi operational status.
+
+## 4. Quy tắc khóa hoàn tiền
+
+Backend là nguồn quyết định cuối cùng:
+
+- không cho `createRefund` khi `settlementStatus = SETTLED`;
+- không cho tổng `PENDING + PROCESSING + REFUNDED` vượt số tiền được hoàn;
+- không cho tạo hai yêu cầu vượt số dư do hai admin thao tác đồng thời; tính số dư và tạo refund phải nằm trong cùng transaction;
+- sau khi `REFUNDED`, luôn chạy lại `recalculateOrder`;
+- UI ẩn nút hoàn tiền khi đã chốt nhưng vẫn hiển thị lịch sử các refund đã tạo.
+
+Thông báo nên rõ với người dùng: “Đơn đã chốt tài chính, đã hoàn đủ số tiền được phép. Không thể tạo thêm yêu cầu hoàn tiền.”
+
+## 5. Nguồn sự thật tài chính
+
+- `RentalOrderCharge`: nghĩa vụ/phí được giữ lại hoặc phải thu.
+- `PaymentTransaction` và `PaymentAllocation`: tiền khách đã thanh toán và cách phân bổ.
+- `Refund`: yêu cầu và số tiền đã hoàn.
+- Các tổng tiền trên `RentalOrder`: projection để đọc nhanh, bắt buộc đồng bộ bằng `recalculateOrder` trong transaction.
+
+`PaymentTransaction.direction = OUTBOUND` chưa được dùng trong flow hiện tại. Giai đoạn này nên coi `Refund` là aggregate hoàn tiền; chỉ thêm payment outbound khi có yêu cầu đối soát giao dịch riêng và phải quy định rõ không được tính trùng với `Refund`.
+
+## 6. Gap hiện tại cần triển khai
+
+- `settleOrder` hiện chỉ chốt đơn `RETURNED`; cần thêm action chốt tài chính cho `CANCELLED` hoặc tự động chốt khi refund đã `REFUNDED` và `refundDue = 0`.
+- Nhánh hủy có hoàn tiền hiện cần bảo toàn `BOOKING_HOLD` thành `CANCELLATION_FEE` nếu chính sách giữ phí đặt lịch.
+- `createRefund` cần kiểm tra trạng thái `SETTLED` và gộp kiểm tra số dư/tạo refund trong một transaction.
+- `RentalOrderLog` cần ghi các action `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND`, `CLOSE_CANCELLED_ORDER` sau khi service audit được wire.

@@ -19,6 +19,14 @@ Khong dung `RentalOrderLog` de thay the:
 - `statusHistories`: chi ghi chuyen trang thai don.
 - `payments`: chi ghi dong tien thu/hoan.
 
+## Trang thai hien tai
+
+`RentalOrderLog` da co trong Prisma schema, migration va relation `RentalOrder.logs`, nhung code service hien tai chua tao log, chua include log trong detail va chua co API doc log. Vi vay day la phan backlog, khong duoc danh dau la da hoan tat khi kiem tra implementation.
+
+`OrderStatusHistory` van la nguon cho lich su chuyen `OrderStatus`. `RentalOrderLog` chi ghi audit chi tiet nhu thay doi snapshot, thoi gian, san pham, tai chinh, actor va ly do. Hai bang khong thay the nhau.
+
+Voi flow huy/hoan tien, cac action can audit sau nay gom `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND` va `CLOSE_CANCELLED_ORDER`.
+
 ## Prisma Model De Xuat
 
 Ten bang thong nhat la `RentalOrderLog`.
@@ -220,28 +228,28 @@ Nhat ky thay doi
 - [x] Them relation `RentalOrder.logs`.
 - [x] Tao migration.
 - [x] Generate Prisma client.
-- [x] Tao DTO output cho log.
-- [x] Include `logs` moi nhat trong detail response.
-- [x] Viet mapper `toRentalOrderLogOut`.
+- [ ] Tao DTO output cho log.
+- [ ] Include `logs` moi nhat trong detail response.
+- [ ] Viet mapper `toRentalOrderLogOut`.
 
 ### Phase 2 - Service Helper
 
-- [x] Tao helper/service `RentalOrderLogsService`.
-- [x] Ham `appendLog(tx, { orderId, actor, action, entity, changes, note })`.
-- [x] Ham build `actorSnapshot`.
-- [x] Ham diff field don gian cho scalar/date/money/string.
-- [x] Bo qua create log neu `changes` rong va action khong bat buoc.
+- [ ] Tao helper/service `RentalOrderLogsService`.
+- [ ] Ham `appendLog(tx, { orderId, actor, action, entity, changes, note })`.
+- [ ] Ham build `actorSnapshot`.
+- [ ] Ham diff field don gian cho scalar/date/money/string.
+- [ ] Bo qua create log neu `changes` rong va action khong bat buoc.
 
 ### Phase 3 - Wire Vao Cac API
 
-- [x] `POST /rental-orders`: log `CREATE_ORDER`.
-- [x] `PATCH /rental-orders/:id`: log `UPDATE_ORDER`, diff field customer/date/items/financials.
-- [x] `POST /rental-orders/:id/payments`: log `RECORD_PAYMENT`.
-- [x] `POST /rental-orders/:id/handover`: log `HANDOVER_ORDER`.
-- [x] `POST /rental-orders/:id/complete`: log `COMPLETE_ORDER`.
-- [x] `POST /rental-orders/:id/refunds`: log `REFUND_ORDER`.
-- [x] `POST /rental-orders/:id/cancel`: log `CANCEL_ORDER`.
-- [x] `DELETE /rental-orders`: log `DELETE_ORDER` truoc/hoac trong soft delete transaction.
+- [ ] `POST /rental-orders`: log `CREATE_ORDER`.
+- [ ] `PATCH /rental-orders/:id`: log `UPDATE_ORDER`, diff field customer/date/items/financials.
+- [ ] `POST /rental-orders/:id/payments`: log `RECORD_PAYMENT`.
+- [ ] `POST /rental-orders/:id/handover`: log `HANDOVER_ORDER`.
+- [ ] `POST /rental-orders/:id/complete`: log `COMPLETE_ORDER`.
+- [ ] `POST /rental-orders/:id/refunds`: log `REFUND_ORDER`.
+- [ ] `POST /rental-orders/:id/cancel`: log `CANCEL_ORDER`.
+- [ ] `DELETE /rental-orders`: log `DELETE_ORDER` truoc/hoac trong soft delete transaction.
 
 ### Phase 4 - Frontend
 

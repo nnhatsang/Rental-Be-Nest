@@ -46,6 +46,7 @@ datasource db {
   extensions = [pg_trgm, btree_gist]
 }
 
+/// Tài khoản nhân sự/admin dùng để đăng nhập, phân quyền và ghi nhận người thực hiện thao tác.
 model User {
   /// Primary user id.
   id             String             @id @default(uuid(7)) @db.Uuid
@@ -77,6 +78,7 @@ model User {
   @@index([deletedAt])
 }
 
+/// Vai trò nghiệp vụ của người dùng, tập hợp các quyền được cấp.
 model Role {
   /// Primary role id.
   id          String           @id @default(uuid(7)) @db.Uuid
@@ -96,6 +98,7 @@ model Role {
   users       UserRole[]
 }
 
+/// Danh mục quyền thao tác ổn định dùng cho RBAC và kiểm tra permission ở API.
 model Permission {
   /// Primary permission id.
   id          String           @id @default(uuid(7)) @db.Uuid
@@ -112,6 +115,7 @@ model Permission {
   roles       RolePermission[]
 }
 
+/// Bảng liên kết nhiều-nhiều giữa tài khoản người dùng và vai trò.
 model UserRole {
   /// User receiving the role.
   userId       String   @db.Uuid
@@ -128,6 +132,7 @@ model UserRole {
   @@index([roleId])
 }
 
+/// Bảng liên kết nhiều-nhiều giữa vai trò và quyền được cấp.
 model RolePermission {
   /// Role receiving the permission.
   roleId       String     @db.Uuid
@@ -144,6 +149,7 @@ model RolePermission {
   @@index([permissionId])
 }
 
+/// Hồ sơ khách hàng dùng cho tra cứu, liên hệ và tạo đơn thuê.
 model Customer {
   /// Primary customer id.
   id             String         @id @default(uuid(7)) @db.Uuid
@@ -181,6 +187,7 @@ model Customer {
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "Customer_searchText_trgm_idx", type: Gin)
 }
 
+/// Danh mục phân loại sản phẩm để tổ chức catalog và lọc sản phẩm.
 model ProductCategory {
   /// Primary category id.
   id         String                      @id @default(uuid(7)) @db.Uuid
@@ -205,6 +212,7 @@ model ProductCategory {
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "ProductCategory_searchText_trgm_idx", type: Gin)
 }
 
+/// Thương hiệu của sản phẩm, dùng để quản lý catalog và lọc sản phẩm.
 model Brand {
   /// Primary brand id.
   id         String    @id @default(uuid(7)) @db.Uuid
@@ -226,6 +234,7 @@ model Brand {
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "Brand_searchText_trgm_idx", type: Gin)
 }
 
+/// Loại/model sản phẩm cho thuê; một product có thể có nhiều thiết bị vật lý.
 model Product {
   /// Primary product id; represents the rentable product type/model.
   id                  String                      @id @default(uuid(7)) @db.Uuid
@@ -272,6 +281,7 @@ model Product {
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "Product_searchText_trgm_idx", type: Gin)
 }
 
+/// Bảng liên kết nhiều-nhiều giữa product và category.
 model ProductCategoryAssignment {
   /// Product/category relation id is represented by the composite primary key.
   productId  String          @db.Uuid
@@ -284,6 +294,7 @@ model ProductCategoryAssignment {
   @@index([categoryId, productId])
 }
 
+/// Các bậc giá thuê theo số ngày áp dụng cho một product.
 model ProductRentalPriceTier {
   /// Mã định danh chính của bậc giá thuê.
   id         String    @id @default(uuid(7)) @db.Uuid
@@ -309,6 +320,7 @@ model ProductRentalPriceTier {
   @@index([minDays, maxDays])
 }
 
+/// Một thiết bị vật lý cụ thể thuộc product, có serial và trạng thái vận hành riêng.
 model AssetUnit {
   /// Primary asset unit id; represents one physical device.
   id               String                  @id @default(uuid(7)) @db.Uuid
@@ -341,6 +353,7 @@ model AssetUnit {
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "AssetUnit_searchText_trgm_idx", type: Gin)
 }
 
+/// Cấu hình thuê cấp cửa hàng dạng singleton, ví dụ tiền giữ lịch và buffer giữa các lượt thuê.
 model SystemSettings {
   id Int @id @default(1)
 
@@ -357,6 +370,7 @@ model SystemSettings {
   updatedAt DateTime @updatedAt
 }
 
+/// Giờ hoạt động định kỳ của cửa hàng theo từng ngày trong tuần.
 model StoreBusinessHour {
   /// Thứ trong tuần: 0 = Chủ nhật, 1 = Thứ hai, ..., 6 = Thứ bảy.
   dayOfWeek Int      @id
@@ -372,6 +386,7 @@ model StoreBusinessHour {
   updatedAt DateTime @updatedAt
 }
 
+/// Khoảng thời gian cửa hàng đóng cửa, nghỉ lễ, bảo trì hoặc chặn nhận đơn.
 model StoreClosure {
   /// Mã định danh chính của lịch nghỉ/off/bảo trì.
   id        String           @id @default(uuid(7)) @db.Uuid
@@ -392,6 +407,7 @@ model StoreClosure {
   @@index([deletedAt])
 }
 
+/// Aggregate gốc của một đơn thuê, lưu trạng thái, snapshot khách hàng/chính sách và các tổng tiền.
 model RentalOrder {
   /// Mã định danh chính của đơn thuê.
   id               String                 @id @default(uuid(7)) @db.Uuid
@@ -474,6 +490,7 @@ model RentalOrder {
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "RentalOrder_searchText_trgm_idx", type: Gin)
 }
 
+/// Lịch sử chuyển trạng thái nghiệp vụ của đơn thuê theo thời gian.
 model OrderStatusHistory {
   id         String       @id @default(uuid(7)) @db.Uuid
   orderId    String       @db.Uuid
@@ -490,6 +507,7 @@ model OrderStatusHistory {
   @@index([createdAt])
 }
 
+/// Audit log chi tiết các thay đổi và hành động trên đơn thuê ngoài lịch sử trạng thái.
 model RentalOrderLog {
   id            String   @id @default(uuid(7)) @db.Uuid
   orderId       String   @db.Uuid
@@ -509,6 +527,7 @@ model RentalOrderLog {
   @@index([createdAt])
 }
 
+/// Báo giá tạm thời trước khi tạo đơn, gồm yêu cầu đầu vào, kết quả tính tiền và thời hạn.
 model RentalOrderQuote {
   id               String       @id @default(uuid(7)) @db.Uuid
   customerId       String?      @db.Uuid
@@ -530,6 +549,7 @@ model RentalOrderQuote {
   @@index([customerId])
 }
 
+/// Một dòng sản phẩm trong đơn thuê, lưu số lượng và snapshot giá tại thời điểm tạo đơn.
 model RentalOrderLine {
   id                    String   @id @default(uuid(7)) @db.Uuid
   orderId               String   @db.Uuid
@@ -557,6 +577,7 @@ model RentalOrderLine {
   @@index([productId])
 }
 
+/// Phân bổ một asset unit cho một dòng đơn trong một khoảng thời gian, dùng để giữ và kiểm tra lịch.
 model RentalAssetAllocation {
   id             String                 @id @default(uuid(7)) @db.Uuid
   orderLineId    String                 @db.Uuid
@@ -581,6 +602,7 @@ model RentalAssetAllocation {
   @@index([status])
 }
 
+/// Khoản phải thu/phải xử lý của đơn thuê, làm nguồn để phân bổ thanh toán và theo dõi công nợ.
 model RentalOrderCharge {
   id          String             @id @default(uuid(7)) @db.Uuid
   orderId     String             @db.Uuid
@@ -601,6 +623,7 @@ model RentalOrderCharge {
   @@index([status])
 }
 
+/// Giao dịch tiền vào hoặc tiền ra của đơn thuê, độc lập với các khoản charge cụ thể.
 model PaymentTransaction {
   id             String                   @id @default(uuid(7)) @db.Uuid
   orderId        String                   @db.Uuid
@@ -624,6 +647,7 @@ model PaymentTransaction {
   @@index([referenceCode])
 }
 
+/// Bảng phân bổ số tiền của một payment vào một hoặc nhiều charge.
 model PaymentAllocation {
   paymentId String   @db.Uuid
   chargeId  String   @db.Uuid
@@ -637,6 +661,7 @@ model PaymentAllocation {
   @@index([chargeId])
 }
 
+/// Yêu cầu hoặc kết quả hoàn tiền cho khách hàng phát sinh từ một đơn thuê.
 model Refund {
   id            String             @id @default(uuid(7)) @db.Uuid
   orderId       String             @db.Uuid
@@ -657,6 +682,7 @@ model Refund {
   @@index([orderId, status])
 }
 
+/// Phiên kiểm tra thiết bị ở bước bàn giao hoặc nhận trả của một đơn thuê.
 model RentalInspection {
   id          String               @id @default(uuid(7)) @db.Uuid
   orderId     String               @db.Uuid
@@ -671,6 +697,7 @@ model RentalInspection {
   @@unique([orderId, type])
 }
 
+/// Kết quả kiểm tra của từng allocation/thiết bị trong một phiên inspection.
 model RentalInspectionItem {
   id           String                    @id @default(uuid(7)) @db.Uuid
   inspectionId String                    @db.Uuid
@@ -685,6 +712,7 @@ model RentalInspectionItem {
   @@unique([inspectionId, allocationId])
 }
 
+/// Kết quả kiểm tra từng phụ kiện đi kèm một thiết bị.
 model RentalInspectionAccessory {
   id               String                @id @default(uuid(7)) @db.Uuid
   inspectionItemId String                @db.Uuid
@@ -699,6 +727,7 @@ model RentalInspectionAccessory {
   @@index([inspectionItemId])
 }
 
+/// Sự cố phát sinh trong quá trình thuê như hư hỏng, mất máy, thiếu phụ kiện hoặc trả trễ.
 model RentalIncident {
   id           String               @id @default(uuid(7)) @db.Uuid
   orderId      String               @db.Uuid
@@ -719,6 +748,7 @@ model RentalIncident {
   @@index([allocationId])
 }
 
+/// Khung HTML dùng chung để bao bọc nội dung của các email hệ thống.
 model EmailLayout {
   id         String          @id @default(uuid(7)) @db.Uuid
   key        String          @unique
@@ -735,6 +765,7 @@ model EmailLayout {
   @@index([isActive])
 }
 
+/// Mẫu email nghiệp vụ gồm subject, nội dung HTML, biến động và layout tùy chọn.
 model EmailTemplate {
   id          String       @id @default(uuid(7)) @db.Uuid
   key         String       @unique

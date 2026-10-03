@@ -117,6 +117,19 @@ Trends chưa phải báo cáo dòng tiền. Khi cần thống kê thu/hoàn theo
 
 V1 không phát aggregate qua socket. Frontend polling overview/attention theo chu kỳ khoảng 30 giây và refresh sau mutation. Giai đoạn sau có thể phát event invalidation cho order, payment, refund, handover, return, inspection và asset status.
 
+## Ranh giới với worklist vận hành trong ngày
+
+`attentionPreview` của Dashboard chỉ là preview giới hạn, thường một item cho mỗi đơn để quản trị viên biết nơi cần mở tiếp. Nó không thay thế worklist đầy đủ của module `rental-orders`.
+
+Khi cần trả lời câu hỏi “hôm nay cần làm gì”, hệ thống phải dùng tài liệu [daily-worklist.md](../rental-orders/daily-worklist.md):
+
+- query độc lập với phân trang của `GET /rental-orders`;
+- xét cả lịch bàn giao, lịch trả, quá hạn, thanh toán, kiểm tra, hoàn tiền và tranh chấp;
+- một đơn có thể sinh nhiều work item;
+- tổng số công việc do backend trả về, không đếm từ các item preview ở frontend.
+
+Gantt có thể hiển thị worklist ở khu vực phụ hoặc panel thu gọn, nhưng vai trò chính vẫn là lịch tài sản và allocation. Không dùng Dashboard để thay thế detail/action của đơn thuê.
+
 ## Capability chưa có dữ liệu
 
 - Chi phí sửa chữa cần bảng chi phí bảo trì hoặc chi phí incident riêng.

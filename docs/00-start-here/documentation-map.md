@@ -37,6 +37,7 @@ Nếu bạn là lập trình viên backend hoặc cần tìm hiểu cách cơ s�
 5. **Danh sách API**: Tra cứu tại [endpoints.md](file:///d:/Admin%20Rental/rental-admin-be/docs/04-applications/backend/endpoints.md).
 6. **Auth session & RBAC cache**: Đọc [auth-session-and-permission-cache.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/rbac/auth-session-and-permission-cache.md) để hiểu Redis session, refresh token rotation và định hướng cache permission.
 7. **Quy tắc Nghiệp vụ**: Đọc [status-flow-rules.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/rental-orders/status-flow-rules.md) (luồng đơn thuê) và [availability-rules.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/availability/availability-rules.md) (luật kiểm tra trùng lịch thiết bị).
+8. **Công việc vận hành trong ngày**: Đọc [daily-worklist.md](file:///d:/Admin%20Rental/rental-admin-be/docs/03-domains/rental-orders/daily-worklist.md) để hiểu work item bàn giao, thanh toán, trả máy, quá hạn, kiểm tra, hoàn tiền và tranh chấp; worklist độc lập với phân trang danh sách đơn.
 
 ### 2. Frontend Developer (Next.js App Router)
 Nếu bạn chịu trách nhiệm xây dựng giao diện Admin Dashboard và các flow xử lý:

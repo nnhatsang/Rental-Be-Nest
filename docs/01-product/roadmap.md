@@ -2,6 +2,10 @@
 
 > Tài liệu theo dõi tiến độ phát triển và kế hoạch ra mắt các tính năng của hệ thống Rental Admin qua các giai đoạn (Phases).
 
+## Kế hoạch nâng cấp mở rộng
+
+Bản tổng hợp các chức năng mở rộng, sitemap/sidebar mục tiêu, nguyên tắc dữ liệu và thứ tự ưu tiên P0–P6 được quản lý tại [expansion-roadmap.md](./plan/expansion-roadmap.md). Tài liệu này tiếp tục giữ checklist Phase hiện tại; khi triển khai thực tế, source code, Prisma schema và ADR vẫn là nguồn sự thật cao hơn roadmap.
+
 ---
 
 ## 🧭 Thứ tự ưu tiên phát triển (Phases)

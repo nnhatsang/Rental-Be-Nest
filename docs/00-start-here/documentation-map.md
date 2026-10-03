@@ -24,6 +24,12 @@ graph TD
     Start --> ADR[08-decisions/]
 ```
 
+### Tài liệu product và kế hoạch triển khai
+
+- **Kế hoạch nâng cấp mở rộng**: [expansion-roadmap.md](../01-product/plan/expansion-roadmap.md) — tổng hợp sidebar mục tiêu, logging/audit, rental core, voucher, giao nhận, hợp đồng, chủ máy/chia doanh thu, báo cáo và CMS theo ưu tiên P0–P6.
+- **Roadmap checklist**: [roadmap.md](../01-product/roadmap.md) — checklist tiến độ các Phase nền tảng hiện tại.
+- **Kế hoạch triển khai Phase 1**: [implementation-plan.md](../01-product/plan/implementation-plan.md) — chi tiết milestone kỹ thuật và kiểm thử Phase 1.
+
 ---
 
 ## 🧭 Lộ trình đọc tài liệu theo vai trò

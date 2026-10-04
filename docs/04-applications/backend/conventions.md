@@ -231,6 +231,28 @@ return this.prisma.$transaction(async (tx) => {
 });
 ```
 
+### Audit log trong detail của rental-order
+
+`RentalOrder` có hai loại lịch sử và phải giữ đúng ngữ nghĩa:
+
+- `statusHistories`: chỉ ghi các lần chuyển trạng thái workflow của đơn;
+- `activityLogs`: ghi thao tác nghiệp vụ chi tiết như tạo/sửa/hủy đơn, ghi nhận hoặc
+  xác nhận thanh toán, tạo/xác nhận hoàn tiền, bàn giao, trả máy, kiểm tra và chốt đơn.
+
+API detail `GET /rental-orders/:id` trả cả hai mảng trong cùng response. Không tạo thêm
+request riêng cho nhật ký khi mở dialog detail. Service phải include log theo
+`createdAt ASC`, map qua output DTO và không trả entity Prisma thô.
+
+Mọi mutation tạo log phải ghi trong cùng transaction với thay đổi nghiệp vụ. Dùng một
+helper/service nội bộ dùng chung, action lấy từ constant, và `changes` có envelope ổn
+định `{ version: 1, ... }`. Log nên lưu `actorId`, `actorSnapshot` tối thiểu gồm id,
+email, fullName và roles; thao tác tự động có thể chỉ cần `actorId`.
+
+Không dùng `activityLogs` để thay thế `statusHistories`, không suy diễn action từ label
+frontend và không ghi dữ liệu nhạy cảm ngoài phạm vi cần thiết. Khi số log lớn đến mức
+làm detail nặng, giữ field tóm tắt trong detail và tách endpoint cursor riêng; không
+phân trang ngầm bằng cách trả thiếu log.
+
 Với nghiệp vụ đặt máy/thuê máy:
 
 1. kiểm tra khoảng thời gian và availability;
@@ -388,17 +410,126 @@ Tài khoản của admin là self-service trong auth, không đi qua users:
 
 Email/avatar không được coi là field update cho đến khi có DTO, validation, uniqueness và flow upload/verify rõ ràng. Backend không cho phép user tự update role, permission, activity status hoặc session id.
 
-## 9. Module tương lai cần contract riêng
+## 9. Contract File Storage & Upload
+
+Đây là capability dùng chung cho file, không phải logic riêng của từng module. Module nghiệp vụ chỉ yêu cầu upload theo `purpose` và liên kết `FileObject`; không tự gọi R2, tự tạo object key hoặc tự ký URL.
+
+Trạng thái hiện tại: backend chưa có upload API, `FileObject`/media model hoặc R2 provider. Frontend mới chỉ preview avatar; avatar admin **không nằm trong phạm vi ưu tiên trước mắt**. Customer avatar đang xuất hiện trong một số type/component frontend nhưng chưa có field tương ứng trong Prisma `Customer`, cần đánh dấu `needs-review` trước khi triển khai.
+
+### 9.1 Phạm vi theo ưu tiên
+
+| Ưu tiên | Capability | File cần xử lý | Quyền lưu trữ |
+| --- | --- | --- | --- |
+| P0 | File storage dùng chung | Ảnh, PDF, bill, hợp đồng và metadata | R2 + PostgreSQL metadata |
+| P1 | Bàn giao/nhận trả/inspection/incident | Ảnh tình trạng máy, phụ kiện, chữ ký, biên bản | Private |
+| P1 | Payment/refund | Ảnh bill chuyển khoản, chứng từ hoàn tiền | Private |
+| P2 | Product/Catalog | Ảnh sản phẩm, gallery, banner sản phẩm | Public hoặc admin tùy use case |
+| P2 | AssetUnit/bảo trì | Ảnh máy theo serial, ảnh hỏng, phiếu sửa chữa | Private/admin |
+| P2 | Delivery/Shipper | Ảnh giao nhận, chữ ký, bằng chứng giao hàng | Private |
+| P2 | Hợp đồng thuê | PDF hợp đồng và giấy tờ đính kèm theo chính sách bảo mật | Private, signed URL |
+| P3 | Chủ máy/góp vốn | Hợp đồng góp vốn, giấy tờ sở hữu, chứng từ thanh toán | Private, bảo mật cao |
+| P4 | Chứng từ sinh tự động | PDF/Excel export, biên bản hoặc report | Private, URL có thời hạn |
+| P5 | CMS | Banner, bài viết, media, SEO image | Làm sau khi CMS được triển khai; public qua CDN |
+
+Không đưa avatar admin vào các phase đầu. Không triển khai CMS chỉ để có upload; CMS là capability P5 độc lập.
+
+### 9.2 Nguồn dữ liệu và model
+
+- R2 lưu binary/object; PostgreSQL/Prisma lưu metadata, trạng thái, quyền và quan hệ nghiệp vụ.
+- Không lưu binary trong PostgreSQL và không dùng URL public làm nguồn định danh duy nhất. Lưu `bucket` + `objectKey`, sau đó tạo URL khi đọc.
+- Không lưu URL file trong `PaymentTransaction.metadata` hoặc `Refund.metadata`; chứng từ thanh toán phải có relation rõ ràng.
+- Model đề xuất:
+
+```text
+FileObject
+- id
+- provider/bucket/objectKey
+- purpose
+- originalName/mimeType/sizeBytes
+- checksum/etag
+- visibility: PRIVATE | PUBLIC
+- status: PENDING | PROCESSING | READY | FAILED | DELETED
+- uploadedBy/createdAt/deletedAt
+```
+
+Các relation nên có foreign key rõ ràng thay vì một quan hệ polymorphic không kiểm soát được:
+
+```text
+RentalInspectionAttachment
+RentalIncidentAttachment
+PaymentProof
+DeliveryProof
+ContractDocument
+ProductMedia
+AssetMedia
+ContributorDocument
+```
+
+`User.avatarFileId` và `Customer.avatarFileId` chưa tạo ở phase đầu; chỉ bổ sung sau khi chốt nghiệp vụ avatar và đồng bộ backend/frontend.
+
+### 9.3 Upload API dự kiến
+
+Đây là contract định hướng, chưa phải endpoint đã triển khai:
+
+| Method | Path | Mục đích | Permission gợi ý |
+| --- | --- | --- | --- |
+| POST | `/files/presign` | Xác thực mục đích, MIME, dung lượng và cấp presigned upload URL | `files.upload` + permission domain |
+| POST | `/files/:id/complete` | Xác nhận upload, kiểm tra object/size/checksum và chuyển sang `READY` hoặc `PROCESSING` | `files.upload` |
+| GET | `/files/:id/download-url` | Cấp signed URL theo quyền đọc resource | `files.read` + permission domain |
+| DELETE | `/files/:id` | Xóa mềm metadata và xóa object theo policy | `files.delete` + permission domain |
+
+Quy tắc bắt buộc:
+
+- Frontend không được biết R2 access key/secret.
+- Backend tự sinh object key theo UUID và purpose; không dùng nguyên tên file từ client làm key.
+- `presign` không đồng nghĩa file đã hợp lệ; chỉ sau `complete` và kiểm tra hậu xử lý mới được gắn vào entity.
+- File private luôn đọc qua signed URL; file public chỉ dành cho product/CMS đã được phép public.
+- File mồ côi do upload không hoàn tất phải có cleanup job/lifecycle policy.
+- Mọi upload, complete, delete và cấp download URL cho file nhạy cảm phải có audit log.
+
+### 9.4 Validation và xử lý bất đồng bộ
+
+- Validate ở backend cả `purpose`, MIME allowlist, extension, dung lượng và quyền trên entity.
+- Không chỉ tin `Content-Type` do trình duyệt gửi; cần kiểm tra signature/magic bytes khi file đã nằm trên R2.
+- Ảnh inspection/bằng chứng: giữ bản gốc private, tạo thumbnail/preview để hiển thị; không ghi đè bản gốc nếu có khả năng dùng cho dispute.
+- Ảnh product/asset: có thể resize và chuyển WebP/AVIF; lưu preview/thumbnail theo nhu cầu UI.
+- PDF hợp đồng/bill không chuyển thành ảnh; giữ nguyên file và dùng signed download.
+- Tác vụ resize, virus scan và xử lý ảnh dùng queue `media`; tạo hợp đồng PDF, biên bản hoặc report export nặng dùng queue `document`. Không xử lý CPU/RAM lớn trong request upload.
+- Chỉ enqueue sau khi transaction metadata đã commit; retry phải idempotent theo `fileId`/processing version.
+
+### 9.5 Ma trận liên kết nghiệp vụ
+
+| Nghiệp vụ | Relation chính | Có giữ bản gốc? | Hiển thị |
+| --- | --- | --- | --- |
+| Inspection/incident | `RentalInspectionAttachment`, `RentalIncidentAttachment` | Có | Signed URL, staff có quyền xem |
+| Payment/refund | `PaymentProof` | Có | Signed URL, chỉ role tài chính/vận hành được cấp quyền |
+| Product/catalog | `ProductMedia` | Tùy policy | CDN/public hoặc admin |
+| Asset/bảo trì | `AssetMedia` | Có nếu là bằng chứng hỏng | Private/admin |
+| Delivery | `DeliveryProof` | Có | Private/signed URL |
+| Contract | `ContractDocument` | Có | Private/signed URL, audit download |
+| Contributor | `ContributorDocument` | Có | Private, retention riêng |
+| Report/export | `FileObject` với purpose export | Không nhất thiết lâu dài | Signed URL có expiry |
+
+### 9.6 Definition of Done cho module upload
+
+- Có Prisma migration, DTO input/output, Swagger và permission seed.
+- Có validation theo purpose, giới hạn dung lượng, checksum/magic bytes và cleanup file mồ côi.
+- Có signed URL cho file private và policy public rõ ràng cho file catalog/CMS.
+- Có audit cho upload/complete/delete/download nhạy cảm.
+- Có queue media/document khi xử lý vượt quá request ngắn.
+- Có test cho upload thất bại, retry, file sai MIME, file quá lớn, quyền sai và xóa entity nhưng không làm mất file lịch sử ngoài policy.
+
+## 10. Module tương lai cần contract riêng
 
 - reports: dashboard đã có aggregate vận hành cơ bản; báo cáo tài chính/kế toán độc lập vẫn phải thiết kế query, range, timezone, permission và aggregate riêng trước khi frontend gọi /reports.
 - blacklist: chốt model customer, reason, expiry, scope và rule không cho tạo đơn trước khi tạo controller.
 - audit-log: ghi actor, action, resource, before/after, request id và timestamp; không lấy status history của rental order làm audit log toàn hệ thống.
 
-## 10. Dashboard vận hành
+## 11. Dashboard vận hành
 
 Dashboard vận hành là capability đọc dữ liệu tổng hợp để điều phối cửa hàng. Dashboard không thay thế danh sách đơn thuê, Gantt availability hoặc module báo cáo.
 
-### 10.1 API và permission
+### 11.1 API và permission
 
 Các endpoint hiện có:
 
@@ -410,7 +541,7 @@ Các endpoint hiện có:
 
 Dashboard dùng `orders.read` vì đây là màn hình điều phối đơn thuê và availability. `reports.read` dành cho module báo cáo phân tích độc lập; khi nghiệp vụ tài chính tách riêng cần bổ sung permission tài chính thay vì mở rộng dữ liệu dashboard cho mọi role.
 
-### 10.2 Khoảng thời gian và timezone
+### 11.2 Khoảng thời gian và timezone
 
 Request bắt buộc có `fromDate` và `toDate`. Khoảng thời gian dùng nửa kín `[fromDate, toDate)`, tức bản ghi có thời điểm đúng `toDate` không thuộc kỳ.
 
@@ -426,7 +557,7 @@ Request có thể truyền `timezone`, mặc định `Asia/Ho_Chi_Minh`. Backend
 
 Dashboard v1 chưa phải sổ cái dòng tiền. `paidTotal` là tiền đã thu trên đơn và có thể gồm tiền thuê, tiền giữ lịch và tiền cọc; không được gắn nhãn là doanh thu kế toán. Nếu cần thống kê tiền theo ngày thanh toán, phải tạo query/report theo `PaymentTransaction.createdAt`.
 
-### 10.3 Quy tắc tổng hợp
+### 11.3 Quy tắc tổng hợp
 
 - Đơn hủy bị loại khỏi số liệu vận hành mặc định. `cancelledOrders` vẫn luôn đếm riêng các đơn hủy trong kỳ để KPI không bị hiểu sai.
 - `includeCancelled=true` mở rộng các tổng hợp kiểm tra (đơn, tiền và thiết bị); không biến đơn hủy thành việc cần nhận/trả máy.
@@ -443,7 +574,7 @@ Dashboard v1 chưa phải sổ cái dòng tiền. `paidTotal` là tiền đã th
 - `rentalDeviceDays` bằng thời lượng thuê theo ngày nhân số lượng trên line; đây là chỉ số vận hành, không phải công suất kế toán.
 - Top thiết bị trả tối đa 5 serial có nhiều allocation thực tế nhất; chỉ allocation `HANDED_OVER` hoặc `RETURNED` được tính, không tính lịch mới `RESERVED`.
 
-### 10.4 Việc cần xử lý
+### 11.4 Việc cần xử lý
 
 Mỗi đơn chỉ tạo một attention item chính theo thứ tự ưu tiên:
 
@@ -456,7 +587,7 @@ Mỗi đơn chỉ tạo một attention item chính theo thứ tự ưu tiên:
 
 `attentionOrders` là số đơn duy nhất khớp các điều kiện trên. Một đơn hủy chỉ xuất hiện trong attention khi còn nghĩa vụ hoàn tiền. FE dùng `type`, `priority`, `message` và enum status để render; không tự suy diễn việc cần làm từ màu badge.
 
-### 10.5 Availability trong dashboard
+### 11.5 Availability trong dashboard
 
 - `totalAssets`: tất cả asset chưa xóa mềm.
 - `scheduledAssets`: asset có allocation giao nhau với khoảng xem và allocation ở trạng thái blocking.
@@ -466,7 +597,7 @@ Mỗi đơn chỉ tạo một attention item chính theo thứ tự ưu tiên:
 
 Chi tiết lịch vẫn dùng `/availability/gantt`; dashboard chỉ trả summary để tải nhanh.
 
-### 10.6 Realtime và dữ liệu chưa có
+### 11.6 Realtime và dữ liệu chưa có
 
 V1 dùng frontend polling và nút làm mới. Backend chưa phát event riêng cho dashboard. Khi cần realtime, dùng event invalidation cho các thay đổi:
 

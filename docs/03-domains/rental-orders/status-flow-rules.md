@@ -114,7 +114,7 @@ Thông báo nên rõ với người dùng: “Đơn đã chốt tài chính, đ�
 ## 6. Gap còn lại sau khi triển khai flow hoàn tiền
 
 - `settleOrder` vẫn chỉ dùng cho đơn đã trả máy; đơn `CANCELLED` được chốt bằng `settlementStatus = SETTLED` hoặc endpoint `close-cancellation`.
-- `RentalOrderLog` hiện ghi nhận `CLOSE_CANCELLED_ORDER`; các action `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND` vẫn là phần audit tiếp theo.
+- `RentalOrderLog` hiện ghi nhận các action thao tác chính, bao gồm `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND` và `CLOSE_CANCELLED_ORDER`; `OrderStatusHistory` vẫn là nguồn chính cho timeline chuyển trạng thái.
 
 ## 7. Quy tắc đã triển khai cho hoàn tiền từng phần
 

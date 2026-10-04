@@ -383,6 +383,23 @@ Update chỉ cho sửa field mà backend cho phép ở trạng thái hiện tạ
 
 Không dùng customer hiện tại để thay thế snapshot trong phần lịch sử. Snapshot là bản ghi tại thời điểm tạo hoặc cập nhật nghiệp vụ.
 
+#### Lịch sử trong detail rental-order
+
+Detail rental-order nhận hai nguồn lịch sử từ cùng một response:
+
+- `statusHistories`: render timeline chuyển trạng thái, ví dụ `Mới tạo → Đã xác nhận`;
+- `activityLogs`: render nhật ký thao tác, gồm action, người thực hiện, ghi chú và thời điểm.
+
+Không gọi thêm API nhật ký khi mở dialog. Nhãn, icon và màu của `activityLogs.action`
+phải lấy từ `display-config.ts`; action chưa biết vẫn phải có fallback trung tính, không
+render enum thô làm giao diện chính. Không dump toàn bộ JSON `changes` cho user; chỉ hiển
+thị mô tả dễ hiểu và note, còn chi tiết kỹ thuật dành cho log developer.
+
+Tab `Lịch sử` nên tách hai khối có tiêu đề rõ ràng để quản trị viên phân biệt “đơn đổi
+trạng thái” với “ai đã thao tác”. Khi API chưa có log hoặc mảng rỗng, hiển thị empty
+state riêng; không làm mất timeline trạng thái. Sau mỗi mutation, refetch detail để hai
+timeline và các badge tài chính đồng bộ.
+
 ### Bước 9: Kiểm tra và hoàn thiện
 
 Trước khi kết thúc:

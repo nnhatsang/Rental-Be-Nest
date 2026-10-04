@@ -21,11 +21,11 @@ Khong dung `RentalOrderLog` de thay the:
 
 ## Trang thai hien tai
 
-`RentalOrderLog` da co trong Prisma schema, migration va relation `RentalOrder.logs`, nhung code service hien tai chua tao log, chua include log trong detail va chua co API doc log. Vi vay day la phan backlog, khong duoc danh dau la da hoan tat khi kiem tra implementation.
+`RentalOrderLog` da co trong Prisma schema, migration va relation `RentalOrder.logs`. Backend hien include log trong detail response voi ten `activityLogs` va ghi log trong cung transaction voi cac mutation rental-order chinh.
 
 `OrderStatusHistory` van la nguon cho lich su chuyen `OrderStatus`. `RentalOrderLog` chi ghi audit chi tiet nhu thay doi snapshot, thoi gian, san pham, tai chinh, actor va ly do. Hai bang khong thay the nhau.
 
-Voi flow huy/hoan tien, cac action can audit sau nay gom `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND` va `CLOSE_CANCELLED_ORDER`.
+Voi flow huy/hoan tien, cac action dang duoc audit gom `CANCEL_ORDER`, `CREATE_REFUND`, `CONFIRM_REFUND` va `CLOSE_CANCELLED_ORDER`.
 
 ## Prisma Model De Xuat
 
@@ -60,29 +60,14 @@ logs RentalOrderLog[]
 
 ## Shape Cua changes
 
-`changes` la JSON array, chi luu field that su thay doi. Khong luu full order snapshot neu khong can.
+`changes` la JSON object co envelope `version: 1`, chi luu thong tin can thiet cho thao tac. Khong luu full order snapshot neu khong can.
 
 ```json
-[
-  {
-    "field": "customerSnapshot.phone",
-    "label": "So dien thoai",
-    "oldValue": "0900000000",
-    "newValue": "0911111111"
-  },
-  {
-    "field": "rentalPeriod.endDate",
-    "label": "Gio tra",
-    "oldValue": "2026-08-15T11:00:00.000Z",
-    "newValue": "2026-08-16T11:00:00.000Z"
-  },
-  {
-    "field": "financials.depositTotal",
-    "label": "Tien coc ap dung",
-    "oldValue": 800000,
-    "newValue": 1600000
-  }
-]
+{
+  "version": 1,
+  "changedFields": ["customerSnapshot.phone", "rentalPeriod.endDate"],
+  "summary": "Cap nhat thong tin lien he va thoi gian thue"
+}
 ```
 
 `actorSnapshot` nen luu thong tin hien thi tai thoi diem thao tac:
@@ -104,9 +89,12 @@ POST   /rental-orders
 PATCH  /rental-orders/:id
 POST   /rental-orders/:id/payments
 POST   /rental-orders/:id/handover
-POST   /rental-orders/:id/complete
+POST   /rental-orders/:id/return
+POST   /rental-orders/:id/inspections
+POST   /rental-orders/:id/settle
 POST   /rental-orders/:id/refunds
 POST   /rental-orders/:id/cancel
+POST   /rental-orders/:id/close-cancellation
 DELETE /rental-orders
 ```
 
@@ -116,10 +104,17 @@ Action de xuat:
 CREATE_ORDER
 UPDATE_ORDER
 RECORD_PAYMENT
+CONFIRM_PAYMENT
+REJECT_PAYMENT
 HANDOVER_ORDER
-COMPLETE_ORDER
-REFUND_ORDER
+RETURN_ORDER
+INSPECT_ORDER
+SETTLE_ORDER
+CREATE_REFUND
+CONFIRM_REFUND
 CANCEL_ORDER
+AUTO_CONFIRM_ORDER
+CLOSE_CANCELLED_ORDER
 DELETE_ORDER
 ```
 
@@ -160,7 +155,9 @@ Can toi uu bang cach:
 - Chi luu diff fields trong `changes`.
 - Khong luu full order detail moi lan update.
 - Index `orderId`, `createdAt`, `action`, `actorId`.
-- Detail response chi include log moi nhat, vi du 30-50 records.
+- Detail response phase 1 tra toan bo log theo `createdAt ASC`. Neu volume thuc te tang,
+  giu hop dong `activityLogs` hien tai va tach endpoint cursor o phase sau; khong cat ngam
+  log trong detail.
 
 Phase 2 neu log nhieu:
 
@@ -172,11 +169,11 @@ Khi co API phan trang rieng, `GET /rental-orders/:id` co the chi tra `logsPrevie
 
 ## Response Detail Phase 1
 
-`GET /rental-orders/:id` co the tra them:
+`GET /rental-orders/:id` tra them:
 
 ```json
 {
-  "logs": [
+  "activityLogs": [
     {
       "id": "019fe-log-001",
       "actorId": "019fe-user-001",
@@ -186,7 +183,7 @@ Khi co API phan trang rieng, `GET /rental-orders/:id` co the chi tra `logsPrevie
       },
       "action": "UPDATE_ORDER",
       "entity": "RENTAL_ORDER",
-      "changes": [],
+      "changes": { "version": 1, "changedFields": ["customerSnapshot.phone"] },
       "note": "Gia han them 1 ngay",
       "createdAt": "2026-08-12T04:20:00.000Z"
     }
@@ -197,8 +194,7 @@ Khi co API phan trang rieng, `GET /rental-orders/:id` co the chi tra `logsPrevie
 Mac dinh sort:
 
 ```txt
-createdAt desc
-limit 50
+createdAt asc
 ```
 
 ## Frontend Plan
@@ -208,7 +204,7 @@ Trong tab `Lich su` cua detail/update dialog, chia thanh 3 card:
 ```txt
 Lich su thanh toan
 Lich su trang thai
-Nhat ky thay doi
+    Nhat ky thao tac
 ```
 
 `Nhat ky thay doi` render dang timeline:
@@ -228,34 +224,34 @@ Nhat ky thay doi
 - [x] Them relation `RentalOrder.logs`.
 - [x] Tao migration.
 - [x] Generate Prisma client.
-- [ ] Tao DTO output cho log.
-- [ ] Include `logs` moi nhat trong detail response.
-- [ ] Viet mapper `toRentalOrderLogOut`.
+- [x] Tao DTO output cho log.
+- [x] Include `logs` trong detail response va expose duoi ten `activityLogs`.
+- [x] Viet mapper `toActivityLogOut`.
 
 ### Phase 2 - Service Helper
 
-- [ ] Tao helper/service `RentalOrderLogsService`.
-- [ ] Ham `appendLog(tx, { orderId, actor, action, entity, changes, note })`.
-- [ ] Ham build `actorSnapshot`.
+- [x] Tao helper transaction noi bo `createRentalOrderLog`.
+- [x] Ham append log voi `{ orderId, actor, action, entity, changes, note }`.
+- [x] Ham build `actorSnapshot`.
 - [ ] Ham diff field don gian cho scalar/date/money/string.
 - [ ] Bo qua create log neu `changes` rong va action khong bat buoc.
 
 ### Phase 3 - Wire Vao Cac API
 
-- [ ] `POST /rental-orders`: log `CREATE_ORDER`.
-- [ ] `PATCH /rental-orders/:id`: log `UPDATE_ORDER`, diff field customer/date/items/financials.
-- [ ] `POST /rental-orders/:id/payments`: log `RECORD_PAYMENT`.
-- [ ] `POST /rental-orders/:id/handover`: log `HANDOVER_ORDER`.
-- [ ] `POST /rental-orders/:id/complete`: log `COMPLETE_ORDER`.
-- [ ] `POST /rental-orders/:id/refunds`: log `REFUND_ORDER`.
-- [ ] `POST /rental-orders/:id/cancel`: log `CANCEL_ORDER`.
-- [ ] `DELETE /rental-orders`: log `DELETE_ORDER` truoc/hoac trong soft delete transaction.
+- [x] `POST /rental-orders`: log `CREATE_ORDER`.
+- [x] `PATCH /rental-orders/:id`: log `UPDATE_ORDER`.
+- [x] Payment create/confirm/reject: log `RECORD_PAYMENT`, `CONFIRM_PAYMENT`, `REJECT_PAYMENT`.
+- [x] Handover/return/inspection/settle: log thao tac tuong ung.
+- [x] Refund create/confirm: log `CREATE_REFUND`, `CONFIRM_REFUND`.
+- [x] `POST /rental-orders/:id/cancel`: log `CANCEL_ORDER`.
+- [x] `POST /rental-orders/:id/close-cancellation`: log `CLOSE_CANCELLED_ORDER`.
+- [x] `DELETE /rental-orders`: log `DELETE_ORDER` trong soft delete transaction.
 
 ### Phase 4 - Frontend
 
-- [ ] Them type `RentalOrderLog`.
-- [ ] Detail/update response nhan `logs`.
-- [ ] Tab `Lich su` them card `Nhat ky thay doi`.
+- [x] Them type `RentalOrderActivityLog`.
+- [x] Detail response nhan `activityLogs`.
+- [x] Tab `Lich su` them card `Nhat ky thao tac`.
 - [ ] Render changes theo label, oldValue, newValue.
 - [ ] Format tien/ngay gio theo field/value type.
 

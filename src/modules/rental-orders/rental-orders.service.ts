@@ -32,6 +32,11 @@ import { buildRentalOrderSearchText, normalizeSearchText } from '@/libs/utils/se
 import { AuthUser } from '@/modules/auth/types/auth-user.type';
 import { PrismaService } from '@/modules/database/prisma.service';
 import { SystemSettingsService } from '@/modules/system-settings/system-settings.service';
+import {
+  rentalOrderLogAction,
+  type RentalOrderLogAction,
+  type RentalOrderLogEntity,
+} from './domain/rental-order-log.constants';
 import { assertRentalOrderTransition, getRentalOrderOverdue } from './domain/rental-order-state-machine';
 import { RentalOrderAvailabilityService } from './services/rental-order-availability.service';
 import { RentalOrderFinancialService } from './services/rental-order-financial.service';
@@ -54,6 +59,7 @@ import {
 import {
   RentalOrderChargeOutDto,
   RentalOrderFinancialsOutDto,
+  RentalOrderActivityLogOutDto,
   RentalOrderLineOutDto,
   RentalOrderListItemOutDto,
   RentalOrderOutDto,
@@ -98,6 +104,7 @@ const orderDetailInclude = {
     include: { items: { include: { accessories: true } } },
   },
   statusHistories: { orderBy: { createdAt: 'asc' } },
+  logs: { orderBy: { createdAt: 'asc' } },
 } as const satisfies Prisma.RentalOrderInclude;
 
 type RentalOrderDetailRecord = Prisma.RentalOrderGetPayload<{ include: typeof orderDetailInclude }>;
@@ -354,6 +361,23 @@ export class RentalOrdersService {
       await tx.orderStatusHistory.create({
         data: { orderId: order.id, fromStatus: null, toStatus: OrderStatus.CREATED, note: 'Order created from quote', createdBy: user.id },
       });
+      await this.createRentalOrderLog(tx, {
+        orderId: order.id,
+        actor: user,
+        action: rentalOrderLogAction.CREATE_ORDER,
+        entity: 'RentalOrder',
+        changes: {
+          status: { from: null, to: OrderStatus.CREATED },
+          quoteId: quote.id,
+          customerId: customer.id,
+          startDate: request.startDate.toISOString(),
+          endDate: request.endDate.toISOString(),
+          pickupMethod: request.pickupMethod,
+          lineCount: order.lines.length,
+          totals: prepared.totals,
+        },
+        note: dto.note ?? null,
+      });
       await tx.rentalOrderQuote.update({ where: { id: quote.id }, data: { consumedAt: new Date() } });
       await this.financialService.recalculateOrder(order.id, tx);
       return order.id;
@@ -379,26 +403,43 @@ export class RentalOrdersService {
     if (hasScheduleChange && !dto.quoteId) throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
 
     if (!dto.quoteId) {
-      await this.prisma.rentalOrder.update({
-        where: { id },
-        data: {
-          ...(dto.customerSnapshot ? { customerSnapshot: this.jsonValue(nextCustomerSnapshot) } : {}),
-          note: nextNote,
-          internalNote: nextInternalNote,
-          updatedBy: user.id,
-          searchText: buildRentalOrderSearchText({
-            code: existing.code,
-            customerName: nextCustomerSnapshot.name,
-            customerPhone: nextCustomerSnapshot.phone,
-            customerEmail: nextCustomerSnapshot.email,
-            customerIdentityNumber: nextCustomerSnapshot.identityNumber,
-            customerSocialContact: nextCustomerSnapshot.socialContact,
-            deliveryAddress: existing.deliveryAddress,
+      await this.prisma.$transaction(async (tx) => {
+        await tx.rentalOrder.update({
+          where: { id },
+          data: {
+            ...(dto.customerSnapshot ? { customerSnapshot: this.jsonValue(nextCustomerSnapshot) } : {}),
             note: nextNote,
             internalNote: nextInternalNote,
-            cancelReason: existing.cancelReason,
-          }),
-        },
+            updatedBy: user.id,
+            searchText: buildRentalOrderSearchText({
+              code: existing.code,
+              customerName: nextCustomerSnapshot.name,
+              customerPhone: nextCustomerSnapshot.phone,
+              customerEmail: nextCustomerSnapshot.email,
+              customerIdentityNumber: nextCustomerSnapshot.identityNumber,
+              customerSocialContact: nextCustomerSnapshot.socialContact,
+              deliveryAddress: existing.deliveryAddress,
+              note: nextNote,
+              internalNote: nextInternalNote,
+              cancelReason: existing.cancelReason,
+            }),
+          },
+        });
+        await this.createRentalOrderLog(tx, {
+          orderId: id,
+          actor: user,
+          action: rentalOrderLogAction.UPDATE_ORDER,
+          entity: 'RentalOrder',
+          changes: {
+            changedFields: [
+              ...(dto.customerSnapshot ? ['customerSnapshot'] : []),
+              ...(dto.note !== undefined ? ['note'] : []),
+              ...(dto.internalNote !== undefined ? ['internalNote'] : []),
+            ],
+            customerSnapshotChanged: Boolean(dto.customerSnapshot),
+          },
+          note: nextInternalNote ?? nextNote,
+        });
       });
       return this.getRentalOrderById(id);
     }
@@ -511,6 +552,21 @@ export class RentalOrdersService {
           }),
         },
       });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.UPDATE_ORDER,
+        entity: 'RentalOrder',
+        changes: {
+          changedFields: ['customerSnapshot', 'startDate', 'endDate', 'pickupMethod', 'deliveryAddress', 'lines'],
+          quoteId: quote.id,
+          lineCount: lines.length,
+          startDate: request.startDate.toISOString(),
+          endDate: request.endDate.toISOString(),
+          pickupMethod: request.pickupMethod,
+        },
+        note: nextInternalNote ?? nextNote,
+      });
       await tx.rentalOrderQuote.update({ where: { id: quote.id }, data: { consumedAt: new Date() } });
       await this.financialService.recalculateOrder(id, tx);
     });
@@ -529,6 +585,16 @@ export class RentalOrdersService {
         data: { status: RentalAllocationStatus.RELEASED, releasedAt: new Date() },
       });
       await tx.rentalOrder.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date(), deletedBy: user.id, updatedBy: user.id } });
+      for (const order of orders) {
+        await this.createRentalOrderLog(tx, {
+          orderId: order.id,
+          actor: user,
+          action: rentalOrderLogAction.DELETE_ORDER,
+          entity: 'RentalOrder',
+          changes: { deletedAt: 'SET', previousStatus: order.status },
+          note: 'Soft delete rental order',
+        });
+      }
     });
     return { success: true };
   }
@@ -612,6 +678,20 @@ export class RentalOrdersService {
       await tx.orderStatusHistory.create({
         data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.CANCELLED, note: dto.note ?? reason, createdBy: user.id },
       });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.CANCEL_ORDER,
+        entity: 'RentalOrder',
+        changes: {
+          status: { from: order.status, to: OrderStatus.CANCELLED },
+          reason,
+          allowRefund,
+          refundAmount: allowRefund ? refundAmount : 0,
+          availableRefundBeforeAction: availableRefund,
+        },
+        note: dto.note ?? reason,
+      });
       await this.financialService.recalculateOrder(id, tx);
     });
     return this.getRentalOrderById(id);
@@ -639,6 +719,20 @@ export class RentalOrdersService {
         },
       });
       if (status === PaymentTransactionStatus.SUCCESS) await this.financialService.allocatePayment(payment.id, tx);
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.RECORD_PAYMENT,
+        entity: 'PaymentTransaction',
+        changes: {
+          paymentId: payment.id,
+          amount: dto.amount,
+          method: dto.method,
+          status,
+          referenceCode: dto.referenceCode ?? null,
+        },
+        note: dto.note ?? null,
+      });
       await this.financialService.recalculateOrder(id, tx);
       if (status === PaymentTransactionStatus.SUCCESS) await this.promoteToConfirmedIfReady(id, user.id, tx);
       return payment.id;
@@ -653,19 +747,44 @@ export class RentalOrdersService {
       if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
       await tx.paymentTransaction.update({ where: { id: paymentId }, data: { status: PaymentTransactionStatus.SUCCESS, updatedAt: new Date() } });
       await this.financialService.allocatePayment(paymentId, tx);
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.CONFIRM_PAYMENT,
+        entity: 'PaymentTransaction',
+        changes: {
+          paymentId,
+          status: { from: PaymentTransactionStatus.PENDING, to: PaymentTransactionStatus.SUCCESS },
+          amount: Number(payment.amount),
+          method: payment.method,
+        },
+      });
       await this.financialService.recalculateOrder(id, tx);
       await this.promoteToConfirmedIfReady(id, user.id, tx);
     });
     return this.getRentalOrderById(id);
   }
 
-  async rejectPayment(id: string, paymentId: string, dto: RejectPaymentDto): Promise<RentalOrderOutDto> {
+  async rejectPayment(id: string, paymentId: string, dto: RejectPaymentDto, user: AuthUser): Promise<RentalOrderOutDto> {
     await this.prisma.$transaction(async (tx) => {
       const payment = await tx.paymentTransaction.findFirst({ where: { id: paymentId, orderId: id } });
       if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
       await tx.paymentTransaction.update({
         where: { id: paymentId },
         data: { status: PaymentTransactionStatus.FAILED, metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined },
+      });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.REJECT_PAYMENT,
+        entity: 'PaymentTransaction',
+        changes: {
+          paymentId,
+          status: { from: PaymentTransactionStatus.PENDING, to: PaymentTransactionStatus.FAILED },
+          amount: Number(payment.amount),
+          method: payment.method,
+        },
+        note: dto.note ?? null,
       });
     });
     return this.getRentalOrderById(id);
@@ -708,7 +827,7 @@ export class RentalOrdersService {
         });
       }
 
-      await tx.refund.create({
+      const refund = await tx.refund.create({
         data: {
           orderId: id,
           amount: dto.amount,
@@ -719,11 +838,25 @@ export class RentalOrdersService {
           createdBy: user.id,
         },
       });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.CREATE_REFUND,
+        entity: 'Refund',
+        changes: {
+          refundId: refund.id,
+          amount: dto.amount,
+          method: dto.method,
+          status: RentalRefundStatus.PENDING,
+          refundableRemainingBeforeAction: available,
+        },
+        note: dto.note ?? null,
+      });
     });
     return this.getRentalOrderById(id);
   }
 
-  async confirmRefund(id: string, refundId: string): Promise<RentalOrderOutDto> {
+  async confirmRefund(id: string, refundId: string, user: AuthUser): Promise<RentalOrderOutDto> {
     await this.prisma.$transaction(async (tx) => {
       const refund = await tx.refund.findFirst({ where: { id: refundId, orderId: id } });
       const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, select: { settlementStatus: true } });
@@ -735,6 +868,19 @@ export class RentalOrdersService {
         throw new BadRequestException(INCORRECT_INPUT);
       if (order.settlementStatus === RentalSettlementStatus.SETTLED) throw new BadRequestException(RENTAL_ORDER_FINANCIAL_CLOSED);
       await tx.refund.update({ where: { id: refundId }, data: { status: RentalRefundStatus.REFUNDED } });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.CONFIRM_REFUND,
+        entity: 'Refund',
+        changes: {
+          refundId,
+          status: { from: refund.status, to: RentalRefundStatus.REFUNDED },
+          amount: Number(refund.amount),
+          method: refund.method,
+        },
+        note: refund.note ?? null,
+      });
       await this.financialService.recalculateOrder(id, tx);
     });
     return this.getRentalOrderById(id);
@@ -764,19 +910,16 @@ export class RentalOrdersService {
           where: { id },
           data: { settlementStatus: RentalSettlementStatus.SETTLED, updatedBy: user.id },
         });
-        await tx.rentalOrderLog.create({
-          data: {
-            orderId: id,
-            actorId: user.id,
-            action: 'CLOSE_CANCELLED_ORDER',
-            entity: 'RentalOrder',
-            changes: this.jsonValue({
-              settlementStatus: { from: order.settlementStatus, to: RentalSettlementStatus.SETTLED },
-              refundDueAtClose: Number(order.refundDue),
-              note: dto.note,
-            }),
-            note: dto.note,
+        await this.createRentalOrderLog(tx, {
+          orderId: id,
+          actor: user,
+          action: rentalOrderLogAction.CLOSE_CANCELLED_ORDER,
+          entity: 'RentalOrder',
+          changes: {
+            settlementStatus: { from: order.settlementStatus, to: RentalSettlementStatus.SETTLED },
+            refundDueAtClose: Number(order.refundDue),
           },
+          note: dto.note,
         });
       }
       await this.financialService.recalculateOrder(id, tx);
@@ -823,6 +966,19 @@ export class RentalOrdersService {
       await tx.orderStatusHistory.create({
         data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RENTING, note: dto.note ?? 'Handover completed', createdBy: user.id },
       });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.HANDOVER_ORDER,
+        entity: 'RentalAssetAllocation',
+        changes: {
+          status: { from: OrderStatus.CONFIRMED, to: OrderStatus.RENTING },
+          allocationCount,
+          actualPickupDate: (dto.actualPickupDate ?? new Date()).toISOString(),
+          handoverStatus: { from: HandoverStatus.READY, to: HandoverStatus.HANDED_OVER },
+        },
+        note: dto.note ?? null,
+      });
     });
     return this.getRentalOrderById(id);
   }
@@ -848,6 +1004,18 @@ export class RentalOrdersService {
       });
       await tx.orderStatusHistory.create({
         data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.RETURNED, note: dto.note ?? 'Equipment returned', createdBy: user.id },
+      });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.RETURN_ORDER,
+        entity: 'RentalAssetAllocation',
+        changes: {
+          status: { from: OrderStatus.RENTING, to: OrderStatus.RETURNED },
+          actualReturnDate: (dto.actualReturnDate ?? new Date()).toISOString(),
+          returnStatus: { from: ReturnStatus.NOT_RETURNED, to: ReturnStatus.RETURNED },
+        },
+        note: dto.note ?? null,
       });
     });
     return this.getRentalOrderById(id);
@@ -971,6 +1139,20 @@ export class RentalOrdersService {
         if (chargeRows.length) await tx.rentalOrderCharge.createMany({ data: chargeRows });
       }
       await tx.rentalOrder.update({ where: { id }, data: { returnStatus: ReturnStatus.INSPECTED, updatedBy: user.id } });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.INSPECT_ORDER,
+        entity: 'RentalInspection',
+        changes: {
+          inspectionType: RentalInspectionType.RETURN,
+          inspectedItemCount: dto.items.length,
+          incidentCount: incidents.length,
+          incidentAmount: incidents.reduce((total, incident) => total + incident.amount, 0),
+          returnStatus: { from: ReturnStatus.RETURNED, to: ReturnStatus.INSPECTED },
+        },
+        note: dto.note ?? null,
+      });
       await this.financialService.recalculateOrder(id, tx);
     });
     return this.getRentalOrderById(id);
@@ -996,6 +1178,17 @@ export class RentalOrdersService {
       });
       await tx.orderStatusHistory.create({
         data: { orderId: id, fromStatus: order.status, toStatus: OrderStatus.DONE, note: dto.note ?? 'Order settled', createdBy: user.id },
+      });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action: rentalOrderLogAction.SETTLE_ORDER,
+        entity: 'RentalOrder',
+        changes: {
+          status: { from: OrderStatus.RETURNED, to: OrderStatus.DONE },
+          settlementStatus: { from: order.settlementStatus, to: RentalSettlementStatus.SETTLED },
+        },
+        note: dto.note ?? null,
       });
     });
     return this.getRentalOrderById(id);
@@ -1079,6 +1272,38 @@ export class RentalOrdersService {
     return customer;
   }
 
+  private async createRentalOrderLog(
+    tx: DbClient,
+    input: {
+      orderId: string;
+      actor?: AuthUser | null;
+      actorId?: string | null;
+      action: RentalOrderLogAction;
+      entity: RentalOrderLogEntity;
+      changes: Record<string, unknown>;
+      note?: string | null;
+    },
+  ): Promise<void> {
+    await tx.rentalOrderLog.create({
+      data: {
+        orderId: input.orderId,
+        actorId: input.actor?.id ?? input.actorId,
+        actorSnapshot: input.actor
+          ? this.jsonValue({
+              id: input.actor.id,
+              email: input.actor.email,
+              fullName: input.actor.fullName,
+              roles: input.actor.roles,
+            })
+          : undefined,
+        action: input.action,
+        entity: input.entity,
+        changes: this.jsonValue({ version: 1, ...input.changes }),
+        note: input.note ?? null,
+      },
+    });
+  }
+
   private async promoteToConfirmedIfReady(id: string, userId: string, tx: DbClient): Promise<void> {
     const order = await tx.rentalOrder.findUnique({ where: { id }, include: { lines: { include: { allocations: true } } } });
     if (!order || order.status !== OrderStatus.CREATED || Number(order.amountDueBeforeHandover) > 0) return;
@@ -1098,6 +1323,16 @@ export class RentalOrdersService {
         note: 'Payment obligation completed',
         createdBy: userId,
       },
+    });
+    await this.createRentalOrderLog(tx, {
+      orderId: id,
+      action: rentalOrderLogAction.AUTO_CONFIRM_ORDER,
+      entity: 'RentalOrder',
+      changes: {
+        status: { from: OrderStatus.CREATED, to: OrderStatus.CONFIRMED },
+        reason: 'PAYMENT_OBLIGATION_COMPLETED',
+      },
+      actorId: userId,
     });
   }
 
@@ -1311,6 +1546,7 @@ export class RentalOrdersService {
         })),
       })),
       statusHistories: order.statusHistories,
+      activityLogs: order.logs.map((log) => this.toActivityLogOut(log)),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       deletedAt: order.deletedAt,
@@ -1378,6 +1614,19 @@ export class RentalOrdersService {
       method: refund.method,
       referenceCode: refund.referenceCode,
       createdAt: refund.createdAt,
+    };
+  }
+
+  private toActivityLogOut(log: RentalOrderDetailRecord['logs'][number]): RentalOrderActivityLogOutDto {
+    return {
+      id: log.id,
+      action: log.action,
+      entity: log.entity,
+      changes: log.changes,
+      note: log.note,
+      actorId: log.actorId,
+      actorSnapshot: log.actorSnapshot,
+      createdAt: log.createdAt,
     };
   }
 

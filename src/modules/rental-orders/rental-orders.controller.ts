@@ -87,8 +87,13 @@ export class RentalOrdersController {
   @Post(':id/payments/:paymentId/reject')
   @RequirePermissions(PermissionCode.OrdersRecordPayment)
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async rejectPayment(@Param('id', IdValidatePipe) id: string, @Param('paymentId', IdValidatePipe) paymentId: string, @Body() dto: RejectPaymentDto) {
-    return new ApiRes(await this.rentalOrdersService.rejectPayment(id, paymentId, dto), 'Từ chối thanh toán thành công');
+  async rejectPayment(
+    @Param('id', IdValidatePipe) id: string,
+    @Param('paymentId', IdValidatePipe) paymentId: string,
+    @Body() dto: RejectPaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return new ApiRes(await this.rentalOrdersService.rejectPayment(id, paymentId, dto, user), 'Từ chối thanh toán thành công');
   }
 
   @Post(':id/refunds')
@@ -101,8 +106,12 @@ export class RentalOrdersController {
   @Post(':id/refunds/:refundId/confirm')
   @RequirePermissions(PermissionCode.OrdersRefund)
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async confirmRefund(@Param('id', IdValidatePipe) id: string, @Param('refundId', IdValidatePipe) refundId: string) {
-    return new ApiRes(await this.rentalOrdersService.confirmRefund(id, refundId), 'Xác nhận hoàn tiền thành công');
+  async confirmRefund(
+    @Param('id', IdValidatePipe) id: string,
+    @Param('refundId', IdValidatePipe) refundId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return new ApiRes(await this.rentalOrdersService.confirmRefund(id, refundId, user), 'Xác nhận hoàn tiền thành công');
   }
 
   @Post(':id/close-cancellation')

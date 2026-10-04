@@ -170,6 +170,17 @@ export class RentalOrderFinancialsOutDto {
   @ApiProperty() actualRefundTotal!: number;
 }
 
+export class RentalOrderActivityLogOutDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() action!: string;
+  @ApiProperty() entity!: string;
+  @ApiProperty({ type: Object }) changes!: unknown;
+  @ApiPropertyOptional({ nullable: true }) note!: string | null;
+  @ApiPropertyOptional({ nullable: true }) actorId!: string | null;
+  @ApiPropertyOptional({ type: Object, nullable: true }) actorSnapshot!: unknown;
+  @ApiProperty() createdAt!: Date;
+}
+
 export class RentalOrderOutDto {
   @ApiProperty() id!: string;
   @ApiProperty() code!: string;
@@ -193,6 +204,7 @@ export class RentalOrderOutDto {
   @ApiProperty({ type: [RentalOrderRefundOutDto] }) refunds!: RentalOrderRefundOutDto[];
   @ApiProperty({ type: [RentalInspectionOutDto] }) inspections!: RentalInspectionOutDto[];
   @ApiProperty({ type: [Object] }) statusHistories!: unknown[];
+  @ApiProperty({ type: [RentalOrderActivityLogOutDto] }) activityLogs!: RentalOrderActivityLogOutDto[];
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
   @ApiProperty({ nullable: true }) deletedAt!: Date | null;

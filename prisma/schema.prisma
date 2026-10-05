@@ -72,6 +72,9 @@ model User {
   deletedBy      String?            @map("deleted_by") @db.Uuid
   roles          UserRole[]
   authAuditLogs  AuthAuditLog[]
+  uploadedFiles  FileObject[]       @relation("FileUploadedBy")
+  fileEvents     FileObjectEvent[]  @relation("FileEventActor")
+  uploadBatches  UploadBatch[]      @relation("UploadBatchCreator")
 
   @@index([email])
   @@index([activityStatus])
@@ -814,6 +817,119 @@ model EmailTemplate {
   @@index([key])
   @@index([layoutId])
   @@index([isActive])
+}
+
+/// Metadata for an object stored outside the application server, currently Cloudflare R2.
+/// The database is the source of truth for ownership, purpose, lifecycle, and auditability.
+model FileObject {
+  id            String           @id @default(uuid(7)) @db.Uuid
+  provider      String           @default("R2")
+  bucket        String
+  objectKey     String           @unique
+  purpose       FilePurpose
+  status        FileObjectStatus @default(PENDING)
+  visibility    FileVisibility   @default(PRIVATE)
+  originalName  String
+  mimeType      String
+  sizeBytes     BigInt
+  etag          String?
+  uploadedBy    String           @db.Uuid
+  uploadBatchId String?          @db.Uuid
+  expiresAt     DateTime
+  completedAt   DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  uploadedByUser User              @relation("FileUploadedBy", fields: [uploadedBy], references: [id])
+  uploadBatch    UploadBatch?      @relation(fields: [uploadBatchId], references: [id], onDelete: SetNull)
+  events         FileObjectEvent[]
+
+  @@index([purpose, status, createdAt])
+  @@index([uploadedBy, createdAt])
+  @@index([uploadBatchId])
+  @@index([status, expiresAt])
+  @@index([deletedAt])
+}
+
+/// Groups one or more direct-to-R2 uploads without exposing an auth/session concept.
+model UploadBatch {
+  id                 String            @id @default(uuid(7)) @db.Uuid
+  purpose            FilePurpose
+  status             UploadBatchStatus @default(OPEN)
+  expectedFileCount  Int
+  expectedTotalBytes BigInt
+  uploadedBy         String            @db.Uuid
+  expiresAt          DateTime
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  creator User         @relation("UploadBatchCreator", fields: [uploadedBy], references: [id])
+  files   FileObject[]
+
+  @@index([uploadedBy, status, createdAt])
+  @@index([status, expiresAt])
+}
+
+/// Append-only audit trail for presign, completion, access, deletion, and failures.
+model FileObjectEvent {
+  id        String              @id @default(uuid(7)) @db.Uuid
+  fileId    String              @db.Uuid
+  actorId   String?             @db.Uuid
+  event     FileObjectEventType
+  metadata  Json?
+  createdAt DateTime            @default(now())
+
+  file  FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  actor User?      @relation("FileEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([fileId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([event, createdAt])
+}
+
+enum FilePurpose {
+  INSPECTION
+  INCIDENT
+  PAYMENT_PROOF
+  PRODUCT_MEDIA
+  ASSET_MEDIA
+  DELIVERY_PROOF
+  CONTRACT_DOCUMENT
+  CONTRIBUTOR_DOCUMENT
+  REPORT_EXPORT
+  CMS_MEDIA
+}
+
+enum FileObjectStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum UploadBatchStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+  FAILED
+  EXPIRED
+}
+
+enum FileVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum FileObjectEventType {
+  PRESIGNED
+  UPLOAD_COMPLETED
+  DOWNLOAD_URL_ISSUED
+  DELETED
+  FAILED
 }
 
 enum CustomerStatus {

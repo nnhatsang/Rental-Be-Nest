@@ -52,6 +52,10 @@ export const PermissionCode = {
   EmailTemplatesSendTest: 'email_templates.send_test',
 
   ReportsRead: 'reports.read',
+
+  FilesUpload: 'files.upload',
+  FilesRead: 'files.read',
+  FilesDelete: 'files.delete',
 } as const;
 
 export type PermissionCode = (typeof PermissionCode)[keyof typeof PermissionCode];
@@ -108,6 +112,8 @@ export const ROLE_SEEDS = [
       PermissionCode.AssetsRead,
       PermissionCode.CategoriesRead,
       PermissionCode.BrandsRead,
+      PermissionCode.FilesUpload,
+      PermissionCode.FilesRead,
     ],
   },
   {
@@ -122,6 +128,7 @@ export const ROLE_SEEDS = [
       PermissionCode.CategoriesRead,
       PermissionCode.BrandsRead,
       PermissionCode.ReportsRead,
+      PermissionCode.FilesRead,
     ],
   },
 ] as const;

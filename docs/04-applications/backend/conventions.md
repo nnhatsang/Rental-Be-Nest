@@ -414,7 +414,7 @@ Email/avatar không được coi là field update cho đến khi có DTO, valida
 
 Đây là capability dùng chung cho file, không phải logic riêng của từng module. Module nghiệp vụ chỉ yêu cầu upload theo `purpose` và liên kết `FileObject`; không tự gọi R2, tự tạo object key hoặc tự ký URL.
 
-Trạng thái hiện tại: backend chưa có upload API, `FileObject`/media model hoặc R2 provider. Frontend mới chỉ preview avatar; avatar admin **không nằm trong phạm vi ưu tiên trước mắt**. Customer avatar đang xuất hiện trong một số type/component frontend nhưng chưa có field tương ứng trong Prisma `Customer`, cần đánh dấu `needs-review` trước khi triển khai.
+Trạng thái hiện tại: P0 đã được triển khai ở backend với `FileObject`, `FileObjectEvent`, R2 presigned URL và signed download URL. Frontend mới chỉ preview avatar; avatar admin **không nằm trong phạm vi ưu tiên trước mắt**. Customer avatar đang xuất hiện trong một số type/component frontend nhưng chưa có field tương ứng trong Prisma `Customer`, cần đánh dấu `needs-review` trước khi triển khai.
 
 ### 9.1 Phạm vi theo ưu tiên
 
@@ -438,7 +438,7 @@ Không đưa avatar admin vào các phase đầu. Không triển khai CMS chỉ 
 - R2 lưu binary/object; PostgreSQL/Prisma lưu metadata, trạng thái, quyền và quan hệ nghiệp vụ.
 - Không lưu binary trong PostgreSQL và không dùng URL public làm nguồn định danh duy nhất. Lưu `bucket` + `objectKey`, sau đó tạo URL khi đọc.
 - Không lưu URL file trong `PaymentTransaction.metadata` hoặc `Refund.metadata`; chứng từ thanh toán phải có relation rõ ràng.
-- Model đề xuất:
+- Model P0 đã triển khai:
 
 ```text
 FileObject
@@ -449,8 +449,15 @@ FileObject
 - checksum/etag
 - visibility: PRIVATE | PUBLIC
 - status: PENDING | PROCESSING | READY | FAILED | DELETED
-- uploadedBy/createdAt/deletedAt
+- uploadedBy/expiresAt/completedAt/createdAt/updatedAt/deletedAt
+
+UploadBatch
+- id/purpose/status
+- expectedFileCount/expectedTotalBytes
+- uploadedBy/expiresAt/completedAt/cancelledAt
 ```
+
+`FileObjectEvent` lưu audit append-only cho `PRESIGNED`, `UPLOAD_COMPLETED`, `DOWNLOAD_URL_ISSUED`, `DELETED` và `FAILED`.
 
 Các relation nên có foreign key rõ ràng thay vì một quan hệ polymorphic không kiểm soát được:
 
@@ -467,14 +474,17 @@ ContributorDocument
 
 `User.avatarFileId` và `Customer.avatarFileId` chưa tạo ở phase đầu; chỉ bổ sung sau khi chốt nghiệp vụ avatar và đồng bộ backend/frontend.
 
-### 9.3 Upload API dự kiến
+### 9.3 Upload API P0 đã triển khai
 
-Đây là contract định hướng, chưa phải endpoint đã triển khai:
+Các endpoint dùng chung đã có trong `file-storage` module. Module nghiệp vụ chưa được phép lưu URL trực tiếp; sau khi complete mới liên kết `fileId` vào attachment relation riêng.
 
 | Method | Path | Mục đích | Permission gợi ý |
 | --- | --- | --- | --- |
-| POST | `/files/presign` | Xác thực mục đích, MIME, dung lượng và cấp presigned upload URL | `files.upload` + permission domain |
-| POST | `/files/:id/complete` | Xác nhận upload, kiểm tra object/size/checksum và chuyển sang `READY` hoặc `PROCESSING` | `files.upload` |
+| GET | `/uploads/policies` | Lấy giới hạn theo purpose, MIME, số file và tổng dung lượng | `files.upload` |
+| POST | `/uploads` | Tạo upload batch và cấp presigned upload URL cho từng file | `files.upload` |
+| POST | `/files/:id/complete` | Xác nhận từng object trên R2, kiểm tra size/MIME và chuyển sang `READY` | `files.upload` |
+| POST | `/uploads/:id/complete` | Kiểm tra tất cả file trong upload batch rồi chuyển batch sang `COMPLETED` | `files.upload` |
+| DELETE | `/uploads/:id` | Hủy upload batch và dọn các object chưa hoàn tất | `files.upload` |
 | GET | `/files/:id/download-url` | Cấp signed URL theo quyền đọc resource | `files.read` + permission domain |
 | DELETE | `/files/:id` | Xóa mềm metadata và xóa object theo policy | `files.delete` + permission domain |
 
@@ -482,10 +492,193 @@ Quy tắc bắt buộc:
 
 - Frontend không được biết R2 access key/secret.
 - Backend tự sinh object key theo UUID và purpose; không dùng nguyên tên file từ client làm key.
-- `presign` không đồng nghĩa file đã hợp lệ; chỉ sau `complete` và kiểm tra hậu xử lý mới được gắn vào entity.
+- `/uploads` không đồng nghĩa file đã hợp lệ; chỉ sau `complete` và kiểm tra hậu xử lý mới được gắn vào entity.
 - File private luôn đọc qua signed URL; file public chỉ dành cho product/CMS đã được phép public.
-- File mồ côi do upload không hoàn tất phải có cleanup job/lifecycle policy.
-- Mọi upload, complete, delete và cấp download URL cho file nhạy cảm phải có audit log.
+- Backend hiện xác minh object bằng `HEAD`, đối chiếu `Content-Length` và `Content-Type`; checksum/magic bytes và cleanup job là hạng mục hardening tiếp theo.
+- Mọi lần tạo upload, complete, delete và cấp download URL đều có audit event trong `FileObjectEvent`.
+
+R2 bucket phải có CORS cho origin admin thực tế, cho phép `PUT`, `GET`, `HEAD`, cho phép request header `Content-Type` và expose `ETag`. Access key/secret chỉ nằm ở backend; không đặt vào frontend hoặc URL cấu hình public.
+
+### 9.3.1 Flow logic upload trực tiếp lên R2
+
+Flow chuẩn của hệ thống là **FE gửi metadata cho BE, sau đó FE upload binary trực tiếp lên R2**. Backend không nhận binary bằng `multipart/form-data` trong flow thông thường và không dùng Multer làm lớp trung gian.
+
+```text
+FE chọn file
+    │
+    ├─ Validate local: MIME, extension, size từng file, số lượng, tổng size
+    │
+    ├─ POST /uploads (chỉ metadata, không có binary)
+    │      │
+    │      ├─ BE kiểm tra permission và policy
+    │      ├─ Tạo UploadBatch OPEN
+    │      ├─ Tạo FileObject PENDING cho từng file
+    │      └─ Tạo presigned PUT URL
+    │
+    ├─ FE PUT trực tiếp từng file lên R2
+    │      └─ Có progress, retry, giới hạn concurrency
+    │
+    ├─ POST /files/:fileId/complete cho từng file
+    │      └─ BE HEAD object, kiểm tra size/MIME, chuyển file sang READY
+    │
+    ├─ POST /uploads/:uploadId/complete
+    │      └─ BE kiểm tra tất cả file READY, chuyển batch sang COMPLETED
+    │
+    └─ Module nghiệp vụ lưu các fileId vào relation attachment riêng
+```
+
+#### Bước 1: FE chuẩn bị và validate
+
+1. Người dùng chọn một hoặc nhiều file.
+2. FE tạo `clientId` cho từng file để ghép kết quả với item đang hiển thị.
+3. FE kiểm tra sớm MIME, extension, kích thước từng file, số lượng file và tổng dung lượng theo policy.
+4. FE không chuyển file thành base64 và không đưa binary vào React state hoặc request tới BE.
+5. Nếu validation local thất bại, không gọi API.
+
+`GET /uploads/policies` là nguồn policy để FE hiển thị giới hạn; BE vẫn phải kiểm tra lại toàn bộ vì validation phía client không phải security boundary.
+
+#### Bước 2: BE tạo upload batch
+
+FE gọi `POST /uploads` với metadata:
+
+```json
+{
+  "purpose": "INSPECTION",
+  "visibility": "PRIVATE",
+  "files": [
+    {
+      "clientId": "local-file-1",
+      "originalName": "machine-front.jpg",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 5242880
+    }
+  ]
+}
+```
+
+BE thực hiện theo thứ tự:
+
+1. Kiểm tra user có `files.upload`.
+2. Kiểm tra `purpose`, MIME allowlist, extension, kích thước từng file, số lượng và tổng size.
+3. Chuẩn hóa `originalName`; không dùng tên gốc để làm object key.
+4. Sinh object key ngẫu nhiên theo `purpose`, user và UUID.
+5. Trong một transaction PostgreSQL:
+   - tạo `UploadBatch` với trạng thái `OPEN`;
+   - tạo các `FileObject` với trạng thái `PENDING`;
+   - ghi `FileObjectEvent.PRESIGNED`.
+6. Tạo presigned `PUT` URL cho từng object R2.
+7. Trả `uploadId`, `fileId`, `uploadUrl`, `requiredHeaders` và thời hạn URL cho FE.
+
+Permission của entity nghiệp vụ được kiểm tra ở bước liên kết `fileId` vào entity, không kiểm tra bằng một polymorphic upload endpoint.
+
+Nếu tạo presigned URL thất bại, batch chuyển sang `FAILED`; các file PENDING không được phép liên kết vào entity nghiệp vụ.
+
+#### Bước 3: FE upload trực tiếp lên R2
+
+1. FE dùng `XMLHttpRequest` hoặc `fetch` để `PUT` binary tới `uploadUrl`.
+2. FE gửi đúng header `Content-Type` đã được BE ký.
+3. FE theo dõi progress từng file và progress tổng theo trọng số `sizeBytes`.
+4. FE chỉ upload song song một số lượng nhỏ, mặc định 3 file; không mở hàng chục request đồng thời.
+5. Khi request R2 lỗi mạng, FE retry cùng URL nếu URL còn hạn.
+6. Nếu URL hết hạn, batch hiện tại phải được hủy/tạo lại; có thể bổ sung API cấp lại URL ở phase hardening.
+
+Request `PUT` trực tiếp lên R2 không đi qua NestJS và không tính là API upload của backend. R2 presigned URL là bearer token nên phải đặt thời hạn ngắn và không ghi vào log ứng dụng.
+
+#### Bước 4: BE complete từng file
+
+Sau khi `PUT` thành công, FE gọi:
+
+```http
+POST /files/:fileId/complete
+```
+
+BE thực hiện:
+
+1. Kiểm tra file tồn tại, chưa bị xóa và actor có quyền complete.
+2. Kiểm tra file còn trong thời hạn upload.
+3. Gọi `HEAD` tới R2 bằng `objectKey` trong database.
+4. So sánh `Content-Length` với `sizeBytes` đã đăng ký.
+5. So sánh `Content-Type` với MIME đã đăng ký.
+6. Nếu hợp lệ, cập nhật `FileObject` thành `READY`, lưu `etag`, `completedAt` và ghi event `UPLOAD_COMPLETED`.
+7. Nếu object không tồn tại hoặc metadata không khớp, file chuyển `FAILED`; object sai metadata bị xóa best-effort.
+
+Chỉ file `READY` mới được phép gắn vào relation nghiệp vụ.
+
+#### Bước 5: BE complete cả batch
+
+Sau khi tất cả file đã complete, FE gọi:
+
+```http
+POST /uploads/:uploadId/complete
+```
+
+BE kiểm tra:
+
+- batch thuộc actor hoặc actor có role quản trị;
+- batch đang ở trạng thái `OPEN`;
+- batch chưa hết hạn;
+- số file thực tế khớp `expectedFileCount`;
+- tất cả file đều ở trạng thái `READY`.
+
+Nếu còn file `PENDING` hoặc `FAILED`, trả lỗi `UPLOAD_INCOMPLETE` kèm danh sách `fileId` và status. Không chuyển batch sang `COMPLETED` một phần.
+
+Sau khi batch `COMPLETED`, module nghiệp vụ mới được lưu các `fileId`, ví dụ:
+
+```text
+RentalInspectionAttachment.fileId
+PaymentProof.fileId
+ContractDocument.fileId
+DeliveryProof.fileId
+```
+
+Không lưu `uploadUrl`, signed URL hoặc URL public trong bảng nghiệp vụ.
+
+#### Bước 6: Hủy upload và cleanup
+
+Khi người dùng bấm hủy hoặc form nghiệp vụ bị đóng trước khi lưu:
+
+```http
+DELETE /uploads/:uploadId
+```
+
+BE sẽ:
+
+1. Kiểm tra actor có quyền quản lý batch.
+2. Xóa các object R2 theo `objectKey` bằng thao tác best-effort.
+3. Đánh dấu các `FileObject` liên quan là `DELETED`.
+4. Chuyển `UploadBatch` sang `CANCELLED`.
+
+Job cleanup định kỳ phải tìm các batch/file `OPEN` hoặc `PENDING` quá hạn để xóa object mồ côi và cập nhật trạng thái. Không được coi database metadata là bằng chứng object đã tồn tại trên R2 nếu chưa complete.
+
+#### Trạng thái lifecycle
+
+```text
+UploadBatch:
+OPEN ────────────────→ COMPLETED
+  │
+  ├──────────────────→ CANCELLED
+  ├──────────────────→ FAILED
+  └──────────────────→ EXPIRED
+
+FileObject:
+PENDING ─────────────→ READY
+   │                     │
+   ├──────────────────→ FAILED
+   └──────────────────→ DELETED
+```
+
+#### Quyết định về Multer
+
+Multer không nằm trong flow upload chính vì nó khiến binary đi qua NestJS trước khi tới R2, làm tăng băng thông, RAM, latency, timeout và công việc cleanup file tạm.
+
+Chỉ dùng Multer hoặc server-side multipart khi:
+
+- client không hỗ trợ presigned URL;
+- cần xử lý file trước khi lưu và file đủ nhỏ;
+- cần nhận file từ một integration nội bộ/legacy;
+- có một pipeline riêng cho OCR, virus scan hoặc parse tài liệu.
+
+Với ảnh inspection, bill, hợp đồng và chứng từ, ưu tiên upload trực tiếp R2 trước; các tác vụ resize, scan, OCR hoặc tạo preview chạy sau đó bằng queue `media`/`document`.
 
 ### 9.4 Validation và xử lý bất đồng bộ
 
@@ -512,12 +705,36 @@ Quy tắc bắt buộc:
 
 ### 9.6 Definition of Done cho module upload
 
-- Có Prisma migration, DTO input/output, Swagger và permission seed.
-- Có validation theo purpose, giới hạn dung lượng, checksum/magic bytes và cleanup file mồ côi.
-- Có signed URL cho file private và policy public rõ ràng cho file catalog/CMS.
-- Có audit cho upload/complete/delete/download nhạy cảm.
-- Có queue media/document khi xử lý vượt quá request ngắn.
-- Có test cho upload thất bại, retry, file sai MIME, file quá lớn, quyền sai và xóa entity nhưng không làm mất file lịch sử ngoài policy.
+- P0 đã có Prisma migration, DTO input/output, Swagger, permission seed, upload/complete/download/delete và audit.
+- P0 đã validation theo purpose, MIME allowlist, giới hạn dung lượng và trạng thái lifecycle.
+- P0 có signed URL cho file private; `PUBLIC` mới chỉ là metadata policy cho product/CMS, chưa mở public bucket/CDN.
+- Còn phải bổ sung checksum/magic bytes, cleanup file mồ côi, queue resize/scan và các attachment relation theo từng domain.
+- Còn phải nối queue `media`/`document` khi xử lý vượt quá request ngắn.
+- Còn phải bổ sung test module cho upload thất bại, retry, file sai MIME, file quá lớn, quyền sai và cleanup theo policy.
+
+### 9.7 File lớn, nén ảnh và resumable upload
+
+P0 dùng single-part `PUT` trực tiếp lên R2 với giới hạn ứng dụng thấp hơn giới hạn hạ tầng:
+
+| Loại | Giới hạn hiện tại | FE | BE |
+| --- | ---: | --- | --- |
+| Ảnh | 12 MB | Kiểm tra trước khi gọi `/uploads`; có thể resize/nén bản sao với media catalog | Kiểm tra lại MIME, extension và size trước khi tạo metadata |
+| PDF | 30 MB | Không rasterize; báo lỗi rõ ràng hoặc yêu cầu nén PDF | Reject trước upload nếu vượt ngưỡng |
+| CSV/XLSX/export | 50 MB | Reject sớm nếu vượt ngưỡng | `@Max` và policy purpose kiểm tra lại |
+
+Không upload file quá giới hạn lên backend bằng `multipart/form-data` và không convert mọi ảnh bằng server trong request. FE dùng `File.slice()`/`XMLHttpRequest` để upload trực tiếp, không chuyển file thành base64 và không giữ toàn bộ bản sao trong state.
+
+Ảnh `PRODUCT_MEDIA`/catalog có thể resize theo kích thước hiển thị và chuyển WebP/JPEG trước khi upload. Ảnh `INSPECTION`, `INCIDENT`, `PAYMENT_PROOF` và `DELIVERY_PROOF` phải giữ bản gốc private; nếu cần preview thì tạo derivative riêng, không ghi đè bản gốc.
+
+Nếu nghiệp vụ bắt buộc nhận file lớn hơn các ngưỡng trên, mở rộng bằng multipart/resumable upload:
+
+1. `POST /uploads` tạo `FileObject` PENDING; nếu file vượt ngưỡng thì BE khởi tạo multipart upload trên R2.
+2. BE trả `uploadId`, `partSize`, `partCount`; FE gọi `POST /files/:id/parts` để lấy presigned URL cho từng part.
+3. FE dùng `File.slice()`, upload song song tối đa 3–4 part, retry từng part và lưu `partNumber`/`ETag` trong state.
+4. `POST /files/:id/complete` gửi danh sách part; BE gọi `CompleteMultipartUpload`, rồi `HEAD` kiểm tra tổng size/MIME và chuyển READY.
+5. `DELETE /uploads/:id` hủy batch và cleanup job dọn upload PENDING quá hạn; không dựa duy nhất vào ETag multipart để coi là checksum của toàn file.
+
+Flow multipart nên bổ sung `uploadMode`, `multipartUploadId`, `partSizeBytes` và bảng `FileObjectPart` nếu cần resume sau reload. Không bật multipart chỉ để xử lý ảnh thông thường; single-part hiện tại đủ cho các file vận hành của shop.
 
 ## 10. Module tương lai cần contract riêng
 

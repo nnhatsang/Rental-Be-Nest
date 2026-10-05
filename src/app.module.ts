@@ -1,30 +1,32 @@
+import { RedisModule } from '@liaoliaots/nestjs-redis';
+import { AuthModule } from '@modules/auth/auth.module';
+import { DatabaseModule } from '@modules/database/database.module';
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
+import * as Joi from 'joi';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { DatabaseModule } from '@modules/database/database.module';
-import { AuthModule } from '@modules/auth/auth.module';
-import { UsersModule } from './modules/users/users.module';
-import { CustomersModule } from './modules/customers/customers.module';
-import { ProductsModule } from './modules/products/products.module';
-import { CategoriesModule } from './modules/categories/categories.module';
-import { BrandsModule } from './modules/brands/brands.module';
+import { QueueModule } from './libs/queue/queue.module';
+import { RedisWrapperModule } from './libs/redis/redis.module';
+import { SocketModule } from './libs/socket/socket.module';
 import { AssetUnitsModule } from './modules/asset-units/asset-units.module';
-import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
+import { AvailabilityModule } from './modules/availability/availability.module';
+import { BrandsModule } from './modules/brands/brands.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { FileStorageModule } from './modules/file-storage/file-storage.module';
+import { MailTemplateModule } from './modules/mail-template/mail-template.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
+import { ProductsModule } from './modules/products/products.module';
+import { RentalOrdersModule } from './modules/rental-orders/rental-orders.module';
+import { RolesModule } from './modules/roles/roles.module';
 import { StoreBusinessHoursModule } from './modules/store-business-hours/store-business-hours.module';
 import { StoreClosureModule } from './modules/store-closure/store-closure.module';
-import { RentalOrdersModule } from './modules/rental-orders/rental-orders.module';
-import * as Joi from 'joi';
-import { RedisModule } from '@liaoliaots/nestjs-redis';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { RolesModule } from './modules/roles/roles.module';
-import { PermissionsModule } from './modules/permissions/permissions.module';
-import { SocketModule } from './libs/socket/socket.module';
-import { RedisWrapperModule } from './libs/redis/redis.module';
-import { ThrottlerModule } from '@nestjs/throttler';
-import { MailTemplateModule } from './modules/mail-template/mail-template.module';
-import { QueueModule } from './libs/queue/queue.module';
-import { AvailabilityModule } from './modules/availability/availability.module';
-import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -69,6 +71,13 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         SMTP_USER: Joi.string().allow('').optional(),
         SMTP_PASS: Joi.string().allow('').optional(),
         MAIL_FROM: Joi.string().default('Rental Admin <no-reply@rental.local>'),
+
+        // Optional during local development; the file module returns a clear 503 until configured.
+        R2_ACCOUNT_ID: Joi.string().allow('').optional(),
+        R2_ACCESS_KEY_ID: Joi.string().allow('').optional(),
+        R2_SECRET_ACCESS_KEY: Joi.string().allow('').optional(),
+        R2_BUCKET_NAME: Joi.string().allow('').optional(),
+        R2_PRESIGN_EXPIRES_SECONDS: Joi.number().integer().min(60).max(3600).default(900),
       }),
     }),
     RedisModule.forRootAsync(
@@ -106,6 +115,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     QueueModule,
     AvailabilityModule,
     DashboardModule,
+    FileStorageModule,
   ],
   controllers: [AppController],
   providers: [AppService],

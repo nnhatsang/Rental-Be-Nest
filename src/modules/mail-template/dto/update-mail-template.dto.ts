@@ -1,7 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsOptional, IsString, IsUUID, ArrayUnique } from 'class-validator';
-import { INVALID_ARRAY, INVALID_BOOLEAN, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
+
+import { INVALID_BOOLEAN, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export class UpdateMailTemplateDto {
   @ApiPropertyOptional({ example: 'Reset password' })
@@ -24,17 +25,10 @@ export class UpdateMailTemplateDto {
   @IsString({ message: INVALID_STRING })
   htmlBody?: string;
 
-  @ApiPropertyOptional({ example: 'Xin chao {{userName}}' })
+  @ApiPropertyOptional({ example: 'Xin chao {{userName}}', nullable: true })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
-  description?: string;
-
-  @ApiPropertyOptional({ type: [String], example: ['userName', 'resetPasswordUrl', 'appName'] })
-  @IsOptional()
-  @IsArray({ message: INVALID_ARRAY })
-  @ArrayUnique()
-  @IsString({ each: true, message: INVALID_STRING })
-  variables?: string[];
+  description?: string | null;
 
   @ApiPropertyOptional({ example: true })
   @Type(() => Boolean)

@@ -1,8 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsObject } from 'class-validator';
+
 import { INVALID_EMAIL, INVALID_OBJECT } from '@/libs/constants/invalid.constant';
 
-export class SendTestMailTemplateDto {
+import { MailTemplateDraftDto } from './mail-template-draft.dto';
+
+export class SendTestMailTemplateDto extends MailTemplateDraftDto {
   @ApiProperty({ example: 'admin@rental.local' })
   @IsEmail({}, { message: INVALID_EMAIL })
   toEmail!: string;

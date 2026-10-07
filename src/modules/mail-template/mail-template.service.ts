@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '@modules/database/prisma.service';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+
 import {
   EMAIL_LAYOUT_KEY_EXISTED,
   EMAIL_LAYOUT_NOT_FOUND,
@@ -8,7 +10,11 @@ import {
   EMAIL_TEMPLATE_VARIABLE_INVALID,
   EMAIL_TEMPLATE_VARIABLE_MISSING,
 } from '@/libs/constants/error.constants';
+import { EmailQueue } from '@/libs/queue/email-queue';
+
+import { mailTemplateCatalog } from './const/mail-template.catalog';
 import { CreateMailLayoutDto } from './dto/create-mail-layout.dto';
+import { GetAllMailLayoutsDto } from './dto/get-all-mail-layouts.dto';
 import { GetAllMailTemplatesDto } from './dto/get-all-mail-templates.dto';
 import { MailLayoutOutDto } from './dto/mail-layout-out.dto';
 import { MailTemplateOutDto, RenderedMailTemplateOutDto, SendTestMailTemplateOutDto } from './dto/mail-template-out.dto';
@@ -16,7 +22,6 @@ import { PreviewMailTemplateDto } from './dto/preview-mail-template.dto';
 import { SendTestMailTemplateDto } from './dto/send-test-mail-template.dto';
 import { UpdateMailLayoutDto } from './dto/update-mail-layout.dto';
 import { UpdateMailTemplateDto } from './dto/update-mail-template.dto';
-import { EmailQueue } from '@/libs/queue/email-queue';
 
 export type MailTemplateFallback = {
   subject: string;
@@ -26,15 +31,22 @@ export type MailTemplateFallback = {
 type MailTemplateEntity = Awaited<ReturnType<MailTemplateService['findMailTemplateById']>>;
 type ExistingMailTemplateEntity = NonNullable<MailTemplateEntity>;
 
+const emptyVariableSpanPattern = /<span\b[^>]*data-email-variable\s*=\s*["']\s*["'][^>]*>\s*{{\s*}}\s*<\/span>/gi;
+const legacyVariableAttributePattern =
+  /(\b(?:href|src)\s*=\s*["'])&lt;span\b[^>]*data-email-variable\s*=\s*["'][^>]*(?:>|&gt;)\s*{{\s*([a-zA-Z0-9_.-]+)\s*}}\s*(?=["'])/gi;
+const legacyTokenAnchorEndPattern = /(<a\b[^>]*\bclass\s*=\s*["'][^"']*\bemail-variable-token\b[^"']*["'][^>]*?)\s*&gt;([\s\S]*?)<\/a>/gi;
+const legacyTokenAnchorClassPattern = /(<a\b[^>]*?)\sclass\s*=\s*(["'])([^"']*\bemail-variable-token\b[^"']*)\2/gi;
+
 @Injectable()
 export class MailTemplateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailQueue: EmailQueue,
+    private readonly configService: ConfigService,
   ) {}
 
-  async getAllMailLayouts(query: GetAllMailTemplatesDto) {
-    const { page, perPage, search, sort, isActive } = query;
+  async getAllMailLayouts(query: GetAllMailLayoutsDto) {
+    const { page, perPage, search, sort, sortBy, isActive } = query;
     const skip = (page - 1) * perPage;
     const where: Prisma.EmailLayoutWhereInput = {
       ...(isActive !== undefined && { isActive }),
@@ -48,7 +60,7 @@ export class MailTemplateService {
         where,
         skip,
         take: perPage,
-        orderBy: [{ updatedAt: sort }, { id: 'asc' }],
+        orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
       }),
       this.prisma.emailLayout.count({ where }),
     ]);
@@ -67,6 +79,7 @@ export class MailTemplateService {
 
   async createMailLayout(dto: CreateMailLayoutDto, userId: string): Promise<MailLayoutOutDto> {
     await this.ensureEmailLayoutKeyAvailable(dto.key);
+    this.assertLayoutValid(dto.htmlLayout);
 
     const layout = await this.prisma.emailLayout.create({
       data: {
@@ -86,6 +99,10 @@ export class MailTemplateService {
 
     if (dto.key && dto.key !== existingLayout.key) {
       await this.ensureEmailLayoutKeyAvailable(dto.key);
+    }
+
+    if (dto.htmlLayout !== undefined) {
+      this.assertLayoutValid(dto.htmlLayout);
     }
 
     const layout = await this.prisma.emailLayout.update({
@@ -133,6 +150,45 @@ export class MailTemplateService {
     };
   }
 
+  async getMailTemplateCatalog() {
+    const templates = await this.prisma.emailTemplate.findMany({
+      where: {
+        key: {
+          in: mailTemplateCatalog.map((item) => item.key),
+        },
+      },
+      select: {
+        id: true,
+        key: true,
+        isActive: true,
+      },
+    });
+    const templatesByKey = new Map(templates.map((template) => [template.key, template]));
+    const sampleResetPasswordUrl = `${this.getAdminWebOrigin()}/auth/reset-password?token=sample`;
+
+    return mailTemplateCatalog.map((definition) => {
+      const template = templatesByKey.get(definition.key);
+      const variables = definition.variables.map((variable) =>
+        variable.key === 'resetPasswordUrl' ? { ...variable, sampleValue: sampleResetPasswordUrl } : variable,
+      );
+      const samplePayload = {
+        ...definition.samplePayload,
+        ...(typeof definition.samplePayload.resetPasswordUrl === 'string' && {
+          resetPasswordUrl: sampleResetPasswordUrl,
+        }),
+      };
+
+      return {
+        ...definition,
+        variables,
+        samplePayload,
+        templateId: template?.id ?? null,
+        isConfigured: Boolean(template),
+        isActive: template?.isActive ?? false,
+      };
+    });
+  }
+
   async getMailTemplateById(id: string): Promise<MailTemplateOutDto> {
     return this.toMailTemplateOut(await this.findExistingMailTemplateById(id));
   }
@@ -140,8 +196,8 @@ export class MailTemplateService {
   async updateMailTemplate(id: string, dto: UpdateMailTemplateDto, userId: string): Promise<MailTemplateOutDto> {
     const existingTemplate = await this.findExistingMailTemplateById(id);
     const nextSubject = dto.subject ?? existingTemplate.subject;
-    const nextHtmlBody = dto.htmlBody ?? existingTemplate.htmlBody;
-    const nextVariables = dto.variables ?? this.parseVariables(existingTemplate.variables);
+    const nextHtmlBody = this.normalizeLegacyEmailVariableMarkup(dto.htmlBody ?? existingTemplate.htmlBody);
+    const nextVariables = this.parseVariables(existingTemplate.variables);
     const nextLayout =
       this.hasOwn(dto, 'layoutId') && dto.layoutId
         ? await this.findExistingEmailLayoutById(dto.layoutId)
@@ -162,9 +218,8 @@ export class MailTemplateService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(this.hasOwn(dto, 'layoutId') && { layoutId: dto.layoutId ?? null }),
         ...(dto.subject !== undefined && { subject: dto.subject }),
-        ...(dto.htmlBody !== undefined && { htmlBody: dto.htmlBody }),
+        ...(dto.htmlBody !== undefined && { htmlBody: nextHtmlBody }),
         ...(this.hasOwn(dto, 'description') && { description: dto.description ?? null }),
-        ...(dto.variables !== undefined && { variables: dto.variables }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         updatedBy: userId,
       },
@@ -176,13 +231,15 @@ export class MailTemplateService {
 
   async previewMailTemplate(id: string, dto: PreviewMailTemplateDto): Promise<RenderedMailTemplateOutDto> {
     const template = await this.findExistingMailTemplateById(id);
+    const renderableTemplate = await this.resolveTemplateDraft(template, dto);
 
-    return this.renderTemplate(template, dto.payload);
+    return this.renderTemplate(renderableTemplate, dto.payload);
   }
 
   async sendTestMailTemplate(id: string, dto: SendTestMailTemplateDto): Promise<SendTestMailTemplateOutDto> {
     const template = await this.findExistingMailTemplateById(id);
-    const rendered = this.renderTemplate(template, dto.payload);
+    const renderableTemplate = await this.resolveTemplateDraft(template, dto);
+    const rendered = this.renderTemplate(renderableTemplate, dto.payload);
     const { jobId } = await this.enqueueRenderedEmail({
       templateId: template.id,
       toEmail: dto.toEmail,
@@ -215,10 +272,36 @@ export class MailTemplateService {
     });
   }
 
+  private async resolveTemplateDraft(
+    template: ExistingMailTemplateEntity,
+    draft: { subject?: string; htmlBody?: string; layoutId?: string | null },
+  ): Promise<ExistingMailTemplateEntity> {
+    const layout = this.hasOwn(draft, 'layoutId')
+      ? draft.layoutId
+        ? await this.findExistingEmailLayoutById(draft.layoutId)
+        : null
+      : template.layout;
+    const renderableTemplate = {
+      ...template,
+      subject: draft.subject ?? template.subject,
+      htmlBody: this.normalizeLegacyEmailVariableMarkup(draft.htmlBody ?? template.htmlBody),
+      layout,
+    };
+
+    this.assertTemplateVariablesValid({
+      subject: renderableTemplate.subject,
+      htmlBody: renderableTemplate.htmlBody,
+      layoutHtml: renderableTemplate.layout?.htmlLayout,
+      variables: this.parseVariables(renderableTemplate.variables),
+    });
+
+    return renderableTemplate;
+  }
+
   private renderTemplate(template: ExistingMailTemplateEntity, payload: Record<string, unknown>): RenderedMailTemplateOutDto {
     const variables = this.parseVariables(template.variables);
     this.assertPayloadHasVariables(template, variables, payload);
-    const htmlBody = this.renderString(template.htmlBody, payload);
+    const htmlBody = this.renderString(this.normalizeLegacyEmailVariableMarkup(template.htmlBody), payload);
 
     return {
       subject: this.renderString(template.subject, payload),
@@ -246,6 +329,15 @@ export class MailTemplateService {
     }
   }
 
+  private assertLayoutValid(htmlLayout: string): void {
+    if (!this.extractPlaceholders(htmlLayout).includes('content')) {
+      throw new BadRequestException({
+        code: 'EMAIL_LAYOUT_CONTENT_MISSING',
+        message: 'Layout email phai co placeholder {{content}}',
+      });
+    }
+  }
+
   private assertPayloadHasVariables(template: ExistingMailTemplateEntity, variables: string[], payload: Record<string, unknown>): void {
     const placeholders = new Set([
       ...this.extractPlaceholders(template.subject),
@@ -266,7 +358,7 @@ export class MailTemplateService {
   }
 
   private renderString(template: string, payload: Record<string, unknown>): string {
-    return template.replace(/{{\s*([a-zA-Z0-9_.-]+)\s*}}/g, (_, variable: string) => this.escapeHtml(String(payload[variable] ?? '')));
+    return template.replace(/{{\s*([a-zA-Z0-9_.-]+)\s*}}/g, (_, variable: string) => this.escapeHtml(this.stringifyPayloadValue(payload[variable])));
   }
 
   private renderLayoutString(layout: string, renderedContent: string, payload: Record<string, unknown>): string {
@@ -275,12 +367,20 @@ export class MailTemplateService {
         return renderedContent;
       }
 
-      return this.escapeHtml(String(payload[variable] ?? ''));
+      return this.escapeHtml(this.stringifyPayloadValue(payload[variable]));
     });
   }
 
   private extractPlaceholders(value: string): string[] {
     return [...value.matchAll(/{{\s*([a-zA-Z0-9_.-]+)\s*}}/g)].map((match) => match[1]);
+  }
+
+  private stringifyPayloadValue(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return value.toString();
+
+    return JSON.stringify(value) ?? '';
   }
 
   private parseVariables(value: Prisma.JsonValue): string[] {
@@ -368,7 +468,7 @@ export class MailTemplateService {
       layoutId: template.layoutId,
       layoutName: template.layout?.name ?? null,
       subject: template.subject,
-      htmlBody: template.htmlBody,
+      htmlBody: this.normalizeLegacyEmailVariableMarkup(template.htmlBody),
       description: template.description,
       variables: this.parseVariables(template.variables),
       isActive: template.isActive,
@@ -405,5 +505,23 @@ export class MailTemplateService {
 
   private escapeHtml(value: string): string {
     return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  private getAdminWebOrigin(): string {
+    return (this.configService.get<string>('ADMIN_WEB_ORIGIN', 'http://localhost:3000') ?? 'http://localhost:3000').replace(/\/+$/, '');
+  }
+
+  private normalizeLegacyEmailVariableMarkup(html: string): string {
+    let normalized = html.replace(legacyVariableAttributePattern, '$1{{$2}}');
+
+    normalized = normalized.replace(legacyTokenAnchorEndPattern, '$1>$2</a>');
+    normalized = normalized.replace(legacyTokenAnchorClassPattern, (_match, prefix: string, quote: string, classValue: string) => {
+      const classes = classValue.split(/\s+/).filter((className) => className && className !== 'email-variable-token');
+
+      return classes.length ? `${prefix} class=${quote}${classes.join(' ')}${quote}` : prefix;
+    });
+    normalized = normalized.replace(emptyVariableSpanPattern, '');
+
+    return normalized;
   }
 }

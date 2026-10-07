@@ -1,16 +1,20 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiAcceptedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
 import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
 import { AuthUser } from '@modules/auth/types/auth-user.type';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiAcceptedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+
 import { PermissionCode } from '@/libs/constants/rbac.constant';
 import { IdValidatePipe } from '@/libs/pipe/id-validate.pipe';
 import { ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
+
 import { CreateMailLayoutDto } from './dto/create-mail-layout.dto';
+import { GetAllMailLayoutsDto } from './dto/get-all-mail-layouts.dto';
 import { GetAllMailTemplatesDto } from './dto/get-all-mail-templates.dto';
 import {
   MailLayoutResponseDto,
   MailLayoutsPaginatedResponseDto,
+  MailTemplateCatalogResponseDto,
   MailTemplateResponseDto,
   MailTemplatesPaginatedResponseDto,
   RenderedMailTemplateResponseDto,
@@ -31,7 +35,7 @@ export class MailTemplateController {
   @RequirePermissions(PermissionCode.EmailTemplatesRead)
   @ApiOperation({ summary: 'Lay danh sach layout email' })
   @ApiOkResponse({ type: MailLayoutsPaginatedResponseDto })
-  async getAllMailLayouts(@Query() query: GetAllMailTemplatesDto) {
+  async getAllMailLayouts(@Query() query: GetAllMailLayoutsDto) {
     return new ApiPaginatedResponseDto(await this.mailTemplateService.getAllMailLayouts(query), 'Lay danh sach layout email thanh cong');
   }
 
@@ -65,6 +69,14 @@ export class MailTemplateController {
   @ApiOkResponse({ type: MailTemplatesPaginatedResponseDto })
   async getAllMailTemplates(@Query() query: GetAllMailTemplatesDto) {
     return new ApiPaginatedResponseDto(await this.mailTemplateService.getAllMailTemplates(query), 'Lay danh sach mau email thanh cong');
+  }
+
+  @Get('catalog')
+  @RequirePermissions(PermissionCode.EmailTemplatesRead)
+  @ApiOperation({ summary: 'Lay catalog muc dich va bien cua mau email' })
+  @ApiOkResponse({ type: MailTemplateCatalogResponseDto })
+  async getMailTemplateCatalog() {
+    return new ApiRes(await this.mailTemplateService.getMailTemplateCatalog(), 'Lay catalog mau email thanh cong');
   }
 
   @Get(':id')

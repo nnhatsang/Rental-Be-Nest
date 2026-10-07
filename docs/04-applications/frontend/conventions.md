@@ -323,12 +323,12 @@ context và không bị cắt bởi lớp overlay của Dialog.
 Portal host phải là một lớp overlay tuyệt đối, không tham gia layout của Dialog:
 
 ```tsx
-<DialogContent className="relative flex max-h-[90dvh] flex-col overflow-hidden">
+<DialogContent>
   <div ref={setPortalContainer} className="pointer-events-none absolute inset-0" />
 
   <DialogHeader className="shrink-0" />
   <form className="min-h-0">
-    <ScrollArea className="min-h-0 flex-1">
+    <ScrollArea className="h-[calc(60dvh-105px)] min-h-0">
       {/* form fields */}
     </ScrollArea>
     <DialogFooter className="shrink-0" />
@@ -580,7 +580,23 @@ Luồng UI:
 - Không cho phép user tự sửa role, permission, activity status hoặc session id.
 - Dialog/sheet phải tách footer khỏi ScrollArea và dùng chung quy tắc portal combobox/dialog trong tài liệu này.
 
-### 8.4 Chức năng cần backend trước khi làm frontend
+### 8.4 Thiết kế module Mẫu email
+
+Route quản trị dùng module riêng, không ghép vào `/settings`:
+
+    app/(admin)/mail-templates/page.tsx
+    app/(admin)/mail-templates/[id]/page.tsx
+    app/(admin)/mail-templates/layouts/...
+    modules/mail-templates/
+
+- Backend catalog là source of truth cho purpose, biến và payload mẫu. FE không tự tạo template key, variables hoặc purpose; template mới cần BE thêm catalog/seed và nối vào flow nghiệp vụ.
+- Dùng Tiptap cho `htmlBody` dạng nội dung đơn giản, variable node khi serialize phải giữ nguyên token `{{variable}}` để backend render.
+- `htmlLayout` là email HTML source có inline style/table; dùng textarea/source editor, không dùng rich-text editor.
+- Preview và gửi thử gửi draft hiện tại tới API backend; preview render trong iframe `sandbox`. Gửi thử yêu cầu quyền `email_templates.send_test`, preview yêu cầu `email_templates.preview`.
+- ID resource và `layoutId` dùng UUIDv7 từ backend; FE chỉ xem chúng là chuỗi opaque, không tự sinh ID.
+- Email delivery history chỉ làm UI khi backend công bố log/audit API; queue `jobId` không thay thế log gửi mail.
+
+### 8.5 Chức năng cần backend trước khi làm frontend
 
 - reports: backend chưa có module/contract báo cáo; không dùng dashboard số liệu mẫu làm báo cáo thật.
 - blacklist: backend chưa có module; cần chốt model, lý do, thời hạn và rule chặn trước khi tạo page.

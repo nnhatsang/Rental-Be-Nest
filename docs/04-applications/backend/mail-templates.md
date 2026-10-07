@@ -5,7 +5,7 @@ MVP module quan ly mau email dong cho admin. Template duoc luu trong PostgreSQL,
 ## Scope MVP
 
 - Admin co the xem, cap nhat, preview va gui thu template qua API.
-- He thong luu log gui mail vao `EmailLog` voi enum `EmailStatus`: `SENT` hoac `FAILED`.
+- Email duoc dua vao BullMQ email queue; email delivery log chua nam trong pham vi editor MVP.
 - Chua lam version history, rollback, multi-language, queue retry, attachment.
 
 ## Data model
@@ -30,7 +30,7 @@ MVP module quan ly mau email dong cho admin. Template duoc luu trong PostgreSQL,
 - `isActive`: neu false, email nghiep vu se dung fallback trong code.
 - `createdBy`, `updatedBy`: audit user id.
 
-### EmailLog
+### EmailLog (planned)
 
 - `templateId`: template da dung, nullable neu email gui bang fallback.
 - `toEmail`: email nguoi nhan.
@@ -72,10 +72,15 @@ Base path: `/api/mail-templates`
 | `POST` | `/layouts` | `email_templates.update` | Tao layout moi. |
 | `PATCH` | `/layouts/:id` | `email_templates.update` | Cap nhat layout. |
 | `GET` | `/` | `email_templates.read` | List templates co pagination/search/filter. |
+| `GET` | `/catalog` | `email_templates.read` | Lay purpose, bien va sample payload do backend quan ly. |
 | `GET` | `/:id` | `email_templates.read` | Lay chi tiet template. |
-| `PATCH` | `/:id` | `email_templates.update` | Cap nhat subject/body/variables/isActive. |
+| `PATCH` | `/:id` | `email_templates.update` | Cap nhat ten, layout, subject/body/mo ta/trang thai. Variables va key do backend quan ly. |
 | `POST` | `/:id/preview` | `email_templates.preview` | Render template voi payload mau. |
-| `POST` | `/:id/send-test` | `email_templates.send_test` | Gui thu va ghi EmailLog. |
+| `POST` | `/:id/send-test` | `email_templates.send_test` | Render draft va dua email thu vao queue. |
+
+`POST /:id/preview` va `POST /:id/send-test` co the nhan them draft fields `subject`, `htmlBody`, `layoutId`. Neu khong truyen, backend render noi dung da luu. Draft van phai dung cac bien da khai bao cua template va payload phai co du gia tri.
+
+Catalog purpose la source of truth cua cac key nghiep vu. FE khong tu tao template key hay tu dinh nghia payload; khi them email hop dong, BE them key/catalog/seed va goi `sendTemplateEmail()` tai flow nghiep vu.
 
 ## Example preview payload
 

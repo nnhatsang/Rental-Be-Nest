@@ -56,7 +56,7 @@ import { UsersModule } from './modules/users/users.module';
 
         AUTH_COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
         AUTH_COOKIE_SAME_SITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
-        ADMIN_WEB_ORIGIN: Joi.string().default('http://localhost:3001'),
+        ADMIN_WEB_ORIGIN: Joi.string().default('http://localhost:3000'),
 
         REDIS_HOST: Joi.string().default('localhost'),
         REDIS_PORT: Joi.number().default(6379),

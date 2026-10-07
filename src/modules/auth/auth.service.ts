@@ -657,8 +657,11 @@ export class AuthService {
   }
 
   private buildPasswordResetUrl(token: string): string {
-    const adminOrigin = this.configService.get<string>('ADMIN_WEB_ORIGIN', 'http://localhost:3001').replace(/\/$/, '');
-    return `${adminOrigin}/auth/reset-password?token=${encodeURIComponent(token)}`;
+    return `${this.getAdminWebOrigin()}/auth/reset-password?token=${encodeURIComponent(token)}`;
+  }
+
+  private getAdminWebOrigin(): string {
+    return (this.configService.get<string>('ADMIN_WEB_ORIGIN', 'http://localhost:3000') ?? 'http://localhost:3000').replace(/\/+$/, '');
   }
 
   private assertUserCanLogin(activityStatus: EUserActivityStatus): void {

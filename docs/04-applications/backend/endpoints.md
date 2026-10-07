@@ -108,7 +108,8 @@
 | `POST` | `/layouts` | `email_templates.update` | Tao layout email. |
 | `PATCH` | `/layouts/:id` | `email_templates.update` | Cap nhat layout email. |
 | `GET` | `/` | `email_templates.read` | Danh sach mau email co phan trang, search va filter `isActive`. |
+  | `GET` | `/catalog` | `email_templates.read` | Lay purpose, bien va sample payload do backend quan ly. |
 | `GET` | `/:id` | `email_templates.read` | Xem chi tiet mau email. |
-| `PATCH` | `/:id` | `email_templates.update` | Cap nhat subject, body, variables va trang thai active. |
+  | `PATCH` | `/:id` | `email_templates.update` | Cap nhat ten, layout, subject/body/mo ta/trang thai; key va variables do backend quan ly. |
 | `POST` | `/:id/preview` | `email_templates.preview` | Render preview voi payload mau. |
-| `POST` | `/:id/send-test` | `email_templates.send_test` | Gui thu email va ghi log ket qua. |
+  | `POST` | `/:id/send-test` | `email_templates.send_test` | Render draft va dua email thu vao queue. |

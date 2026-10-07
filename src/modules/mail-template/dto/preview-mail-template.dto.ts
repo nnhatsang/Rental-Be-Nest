@@ -1,8 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsObject } from 'class-validator';
+
 import { INVALID_OBJECT } from '@/libs/constants/invalid.constant';
 
-export class PreviewMailTemplateDto {
+import { MailTemplateDraftDto } from './mail-template-draft.dto';
+
+export class PreviewMailTemplateDto extends MailTemplateDraftDto {
   @ApiProperty({
     type: Object,
     example: {

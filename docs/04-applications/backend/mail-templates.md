@@ -16,7 +16,10 @@ MVP module quan ly mau email dong cho admin. Template duoc luu trong PostgreSQL,
 - `name`: ten hien thi cho admin.
 - `htmlLayout`: khung HTML dung placeholder he thong `{{content}}` de chen noi dung template.
 - `isActive`: neu false, template gan layout nay se render body truc tiep.
+- `usedByCount`: so template dang tham chieu layout, dung de canh bao truoc khi sua/tat layout.
 - `createdBy`, `updatedBy`: audit user id.
+
+Layout co the tao, cap nhat va xoa neu chua co template nao tham chieu. Backend tu choi xoa layout dang duoc su dung; database dung foreign key `ON DELETE RESTRICT` de bao ve them trong truong hop race condition. Frontend hien nut xoa trong action menu va vo hieu hoa nut nay khi `usedByCount > 0`.
 
 ### EmailTemplate
 
@@ -71,6 +74,7 @@ Base path: `/api/mail-templates`
 | `GET` | `/layouts/:id` | `email_templates.read` | Lay chi tiet layout. |
 | `POST` | `/layouts` | `email_templates.update` | Tao layout moi. |
 | `PATCH` | `/layouts/:id` | `email_templates.update` | Cap nhat layout. |
+| `DELETE` | `/layouts/:id` | `email_templates.update` | Xoa layout neu khong co template dang tham chieu; tra `409 EMAIL_LAYOUT_IN_USE` neu dang duoc su dung. |
 | `GET` | `/` | `email_templates.read` | List templates co pagination/search/filter. |
 | `GET` | `/catalog` | `email_templates.read` | Lay purpose, bien va sample payload do backend quan ly. |
 | `GET` | `/:id` | `email_templates.read` | Lay chi tiet template. |

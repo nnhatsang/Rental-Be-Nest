@@ -16,6 +16,16 @@ export class MailLayoutsPaginatedResponseDto extends ApiRes<ApiPag<MailLayoutOut
   declare data: ApiPag<MailLayoutOutDto>;
 }
 
+export class DeleteMailLayoutDataDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+}
+
+export class DeleteMailLayoutResponseDto extends ApiRes<DeleteMailLayoutDataDto> {
+  @ApiProperty({ type: DeleteMailLayoutDataDto })
+  declare data: DeleteMailLayoutDataDto;
+}
+
 export class MailTemplateResponseDto extends ApiRes<MailTemplateOutDto> {
   @ApiProperty({ type: MailTemplateOutDto })
   declare data: MailTemplateOutDto;

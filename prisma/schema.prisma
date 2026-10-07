@@ -812,7 +812,7 @@ model EmailTemplate {
   updatedAt   DateTime     @updatedAt
   createdBy   String?      @db.Uuid
   updatedBy   String?      @db.Uuid
-  layout      EmailLayout? @relation(fields: [layoutId], references: [id])
+  layout      EmailLayout? @relation(fields: [layoutId], references: [id], onDelete: Restrict)
 
   @@index([key])
   @@index([layoutId])

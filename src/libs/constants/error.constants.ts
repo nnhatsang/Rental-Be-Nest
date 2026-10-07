@@ -341,6 +341,11 @@ export const EMAIL_LAYOUT_KEY_EXISTED = new ErrorResponse({
   message: 'Mã layout email đã tồn tại',
 });
 
+export const EMAIL_LAYOUT_IN_USE = new ErrorResponse({
+  code: 'EMAIL_LAYOUT_IN_USE',
+  message: 'Layout \u0111ang \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng b\u1edfi m\u1eabu email, kh\u00f4ng th\u1ec3 x\u00f3a',
+});
+
 export const EMAIL_TEMPLATE_VARIABLE_INVALID = new ErrorResponse({
   code: 'EMAIL_TEMPLATE_VARIABLE_INVALID',
   message: 'Giá trị mẫu email không hợp lệ',

@@ -16,6 +16,9 @@ export class MailLayoutOutDto {
   @ApiProperty({ example: true })
   isActive!: boolean;
 
+  @ApiProperty({ example: 2, description: 'Number of email templates currently using this layout.' })
+  usedByCount!: number;
+
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   createdBy!: string | null;
 

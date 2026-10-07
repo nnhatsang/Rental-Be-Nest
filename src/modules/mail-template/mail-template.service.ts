@@ -1,9 +1,10 @@
 import { Prisma } from '@generated/prisma/client';
 import { PrismaService } from '@modules/database/prisma.service';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
+  EMAIL_LAYOUT_IN_USE,
   EMAIL_LAYOUT_KEY_EXISTED,
   EMAIL_LAYOUT_NOT_FOUND,
   EMAIL_TEMPLATE_NOT_FOUND,
@@ -30,6 +31,18 @@ export type MailTemplateFallback = {
 
 type MailTemplateEntity = Awaited<ReturnType<MailTemplateService['findMailTemplateById']>>;
 type ExistingMailTemplateEntity = NonNullable<MailTemplateEntity>;
+type MailLayoutRecord = {
+  id: string;
+  key: string;
+  name: string;
+  htmlLayout: string;
+  isActive: boolean;
+  createdBy: string | null;
+  updatedBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  _count?: { templates: number };
+};
 
 const emptyVariableSpanPattern = /<span\b[^>]*data-email-variable\s*=\s*["']\s*["'][^>]*>\s*{{\s*}}\s*<\/span>/gi;
 const legacyVariableAttributePattern =
@@ -61,6 +74,11 @@ export class MailTemplateService {
         skip,
         take: perPage,
         orderBy: [{ [sortBy]: sort }, { id: 'asc' }],
+        include: {
+          _count: {
+            select: { templates: true },
+          },
+        },
       }),
       this.prisma.emailLayout.count({ where }),
     ]);
@@ -91,7 +109,27 @@ export class MailTemplateService {
       },
     });
 
-    return this.toMailLayoutOut(layout);
+    return this.toMailLayoutOut(await this.findExistingEmailLayoutById(layout.id));
+  }
+
+  async deleteMailLayout(id: string): Promise<{ success: true }> {
+    const existingLayout = await this.findExistingEmailLayoutById(id);
+
+    if (existingLayout._count.templates > 0) {
+      throw new ConflictException(EMAIL_LAYOUT_IN_USE);
+    }
+
+    try {
+      await this.prisma.emailLayout.delete({ where: { id } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException(EMAIL_LAYOUT_IN_USE);
+      }
+
+      throw error;
+    }
+
+    return { success: true };
   }
 
   async updateMailLayout(id: string, dto: UpdateMailLayoutDto, userId: string): Promise<MailLayoutOutDto> {
@@ -118,7 +156,7 @@ export class MailTemplateService {
       },
     });
 
-    return this.toMailLayoutOut(layout);
+    return this.toMailLayoutOut(await this.findExistingEmailLayoutById(layout.id));
   }
 
   async getAllMailTemplates(query: GetAllMailTemplatesDto) {
@@ -436,6 +474,11 @@ export class MailTemplateService {
       where: {
         id,
       },
+      include: {
+        _count: {
+          select: { templates: true },
+        },
+      },
     });
 
     if (!layout) {
@@ -485,13 +528,14 @@ export class MailTemplateService {
     } as const;
   }
 
-  private toMailLayoutOut(layout: Awaited<ReturnType<MailTemplateService['findExistingEmailLayoutById']>>): MailLayoutOutDto {
+  private toMailLayoutOut(layout: MailLayoutRecord): MailLayoutOutDto {
     return {
       id: layout.id,
       key: layout.key,
       name: layout.name,
       htmlLayout: layout.htmlLayout,
       isActive: layout.isActive,
+      usedByCount: layout._count?.templates ?? 0,
       createdBy: layout.createdBy,
       updatedBy: layout.updatedBy,
       createdAt: layout.createdAt,

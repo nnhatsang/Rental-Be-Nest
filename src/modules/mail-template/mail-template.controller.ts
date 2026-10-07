@@ -1,7 +1,7 @@
 import { CurrentUser } from '@modules/auth/decorators/current-user.decorator';
 import { RequirePermissions } from '@modules/auth/decorators/require-permissions.decorator';
 import { AuthUser } from '@modules/auth/types/auth-user.type';
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiAcceptedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { PermissionCode } from '@/libs/constants/rbac.constant';
@@ -12,6 +12,7 @@ import { CreateMailLayoutDto } from './dto/create-mail-layout.dto';
 import { GetAllMailLayoutsDto } from './dto/get-all-mail-layouts.dto';
 import { GetAllMailTemplatesDto } from './dto/get-all-mail-templates.dto';
 import {
+  DeleteMailLayoutResponseDto,
   MailLayoutResponseDto,
   MailLayoutsPaginatedResponseDto,
   MailTemplateCatalogResponseDto,
@@ -61,6 +62,14 @@ export class MailTemplateController {
   @ApiOkResponse({ type: MailLayoutResponseDto })
   async updateMailLayout(@CurrentUser() user: AuthUser, @Param('id', IdValidatePipe) id: string, @Body() dto: UpdateMailLayoutDto) {
     return new ApiRes(await this.mailTemplateService.updateMailLayout(id, dto, user.id), 'Cap nhat layout email thanh cong');
+  }
+
+  @Delete('layouts/:id')
+  @RequirePermissions(PermissionCode.EmailTemplatesUpdate)
+  @ApiOperation({ summary: 'Xoa layout email' })
+  @ApiOkResponse({ type: DeleteMailLayoutResponseDto })
+  async deleteMailLayout(@Param('id', IdValidatePipe) id: string) {
+    return new ApiRes(await this.mailTemplateService.deleteMailLayout(id), 'Xoa layout email thanh cong');
   }
 
   @Get()

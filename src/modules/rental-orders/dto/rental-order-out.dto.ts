@@ -131,6 +131,13 @@ export class RentalOrderPaymentReviewQueueItemOutDto {
   @ApiProperty() customerName!: string;
   @ApiProperty({ nullable: true }) customerPhone!: string | null;
   @ApiProperty() orderStatus!: OrderStatus;
+  @ApiProperty() startDate!: Date;
+  @ApiProperty() endDate!: Date;
+  @ApiProperty() isOverdue!: boolean;
+  @ApiProperty() overdueHours!: number;
+  @ApiProperty() totalCustomerObligation!: number;
+  @ApiProperty() paidTotal!: number;
+  @ApiProperty() amountDueBeforeHandover!: number;
   @ApiProperty() amount!: number;
   @ApiProperty({ enum: PaymentMethod }) method!: PaymentMethod;
   @ApiProperty({ enum: PaymentTransactionStatus }) status!: PaymentTransactionStatus;
@@ -139,6 +146,13 @@ export class RentalOrderPaymentReviewQueueItemOutDto {
   @ApiProperty({ nullable: true }) proofFileMimeType!: string | null;
   @ApiProperty({ nullable: true }) referenceCode!: string | null;
   @ApiProperty() createdAt!: Date;
+}
+
+export class RentalOrderPaymentReviewSummaryOutDto {
+  @ApiProperty() pendingCount!: number;
+  @ApiProperty() pendingAmount!: number;
+  @ApiProperty() urgentCount!: number;
+  @ApiProperty() pendingOrderCount!: number;
 }
 
 export class RentalOrderRefundOutDto {

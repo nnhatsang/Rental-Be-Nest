@@ -4,6 +4,7 @@ import {
   RentalOrderListItemOutDto,
   RentalOrderOutDto,
   RentalOrderPaymentReviewQueueItemOutDto,
+  RentalOrderPaymentReviewSummaryOutDto,
   RentalOrderQuoteOutDto,
 } from './rental-order-out.dto';
 
@@ -35,6 +36,11 @@ export class RentalPaymentReviewQueuePaginatedDataDto extends ApiPag<RentalOrder
 export class RentalPaymentReviewQueuePaginatedResponseDto extends ApiPaginatedResponseDto<RentalOrderPaymentReviewQueueItemOutDto> {
   @ApiProperty({ type: RentalPaymentReviewQueuePaginatedDataDto })
   declare data: RentalPaymentReviewQueuePaginatedDataDto;
+}
+
+export class RentalPaymentReviewSummaryResponseDto extends ApiRes<RentalOrderPaymentReviewSummaryOutDto> {
+  @ApiProperty({ type: RentalOrderPaymentReviewSummaryOutDto })
+  declare data: RentalOrderPaymentReviewSummaryOutDto;
 }
 
 export class DeleteRentalOrderDataDto {

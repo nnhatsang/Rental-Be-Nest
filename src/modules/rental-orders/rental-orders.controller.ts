@@ -28,6 +28,7 @@ import {
   RentalOrderQuoteResponseDto,
   RentalOrderResponseDto,
   RentalPaymentReviewQueuePaginatedResponseDto,
+  RentalPaymentReviewSummaryResponseDto,
   RentalOrdersPaginatedResponseDto,
 } from './dto/rental-orders-response.dto';
 import { UpdateRentalOrderDto } from './dto/update-rental-order.dto';
@@ -51,6 +52,14 @@ export class RentalOrdersController {
   @ApiOkResponse({ type: RentalPaymentReviewQueuePaginatedResponseDto })
   async getPaymentReviewQueue(@Query() query: GetPaymentReviewQueueDto) {
     return new ApiPaginatedResponseDto(await this.rentalOrdersService.getPaymentReviewQueue(query), SUCCESS);
+  }
+
+  @Get('payment-review-summary')
+  @RequirePermissions(PermissionCode.OrdersRecordPayment)
+  @ApiOperation({ summary: 'Thống kê giao dịch chuyển khoản đang chờ duyệt bill' })
+  @ApiOkResponse({ type: RentalPaymentReviewSummaryResponseDto })
+  async getPaymentReviewSummary(@Query() query: GetPaymentReviewQueueDto) {
+    return new ApiRes(await this.rentalOrdersService.getPaymentReviewSummary(query), SUCCESS);
   }
 
   @Get(':id')

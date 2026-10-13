@@ -99,7 +99,8 @@
 | `POST` | `/:id/identity-review` | `orders.identity_review` | Duyệt hoặc từ chối hai ảnh giấy tờ đã gắn vào đơn. |
 | `DELETE` | `/:id` | `orders.cancel` | Xóa mềm đơn thuê nháp. |
 
-| `GET` | `/payment-review-queue` | `orders.record_payment` | Danh sach giao dich chuyen khoan dang cho duyet bill. |
+| `GET` | `/payment-review-queue` | `orders.record_payment` | Danh sach giao dich chuyen khoan dang cho duyet bill, uu tien don co lich nhan may gan. |
+| `GET` | `/payment-review-summary` | `orders.record_payment` | Thong ke bill chuyen khoan dang cho duyet, tong tien, so don va don can uu tien. Chi ap dung cho giao dich `INBOUND + PENDING + BANK_TRANSFER`. |
 
 ### 2.7 Nhom Mau Email (Mail Templates)
 - Base Path: `/api/mail-templates`

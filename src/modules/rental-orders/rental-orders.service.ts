@@ -217,9 +217,9 @@ export class RentalOrdersService {
     };
   }
 
-  async getPaymentReviewQueue(query: GetPaymentReviewQueueDto) {
+  private buildPaymentReviewWhere(query: GetPaymentReviewQueueDto): Prisma.PaymentTransactionWhereInput {
     const searchText = normalizeSearchText(query.search);
-    const where: Prisma.PaymentTransactionWhereInput = {
+    return {
       direction: PaymentDirection.INBOUND,
       status: PaymentTransactionStatus.PENDING,
       method: PaymentMethod.BANK_TRANSFER,
@@ -239,13 +239,30 @@ export class RentalOrdersService {
           : {}),
       },
     };
+  }
+
+  private isPaymentReviewUrgent(
+    order: { status: OrderStatus; startDate: Date; endDate: Date; actualReturnDate: Date | null },
+    now = new Date(),
+  ) {
+    const startSoon = order.startDate.getTime() - now.getTime() <= 24 * 60 * 60 * 1000;
+    if (order.status === OrderStatus.CREATED || order.status === OrderStatus.CONFIRMED) return startSoon;
+
+    if (order.status !== OrderStatus.RENTING) return false;
+    const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate, now);
+    const returnSoon = order.endDate.getTime() - now.getTime() <= 2 * 60 * 60 * 1000;
+    return overdue.isOverdue || returnSoon;
+  }
+
+  async getPaymentReviewQueue(query: GetPaymentReviewQueueDto) {
+    const where = this.buildPaymentReviewWhere(query);
     const skip = (query.page - 1) * query.perPage;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.paymentTransaction.findMany({
         where,
         skip,
         take: query.perPage,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ order: { startDate: 'asc' } }, { createdAt: 'asc' }, { id: 'asc' }],
         select: {
           id: true,
           orderId: true,
@@ -261,6 +278,12 @@ export class RentalOrdersService {
               id: true,
               code: true,
               status: true,
+              startDate: true,
+              endDate: true,
+              actualReturnDate: true,
+              totalCustomerObligation: true,
+              paidTotal: true,
+              amountDueBeforeHandover: true,
               customer: { select: { name: true, phone: true } },
             },
           },
@@ -277,6 +300,12 @@ export class RentalOrdersService {
         customerName: payment.order.customer.name,
         customerPhone: payment.order.customer.phone,
         orderStatus: payment.order.status,
+        startDate: payment.order.startDate,
+        endDate: payment.order.endDate,
+        ...getRentalOrderOverdue(payment.order.endDate, payment.order.status, payment.order.actualReturnDate),
+        totalCustomerObligation: Number(payment.order.totalCustomerObligation),
+        paidTotal: Number(payment.order.paidTotal),
+        amountDueBeforeHandover: Number(payment.order.amountDueBeforeHandover),
         amount: Number(payment.amount),
         method: payment.method,
         status: payment.status,
@@ -289,6 +318,43 @@ export class RentalOrdersService {
       total,
       page: query.page,
       perPage: query.perPage,
+    };
+  }
+
+  async getPaymentReviewSummary(query: GetPaymentReviewQueueDto) {
+    const where = this.buildPaymentReviewWhere(query);
+    const [aggregate, payments] = await this.prisma.$transaction([
+      this.prisma.paymentTransaction.aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.paymentTransaction.findMany({
+        where,
+        select: {
+          orderId: true,
+          order: {
+            select: {
+              status: true,
+              startDate: true,
+              endDate: true,
+              actualReturnDate: true,
+            },
+          },
+        },
+      }),
+    ]);
+    const now = new Date();
+    const pendingOrderIds = new Set(payments.map((payment) => payment.orderId));
+    const urgentOrderIds = new Set(
+      payments.filter((payment) => this.isPaymentReviewUrgent(payment.order, now)).map((payment) => payment.orderId),
+    );
+
+    return {
+      pendingCount: aggregate._count._all,
+      pendingAmount: Number(aggregate._sum.amount ?? 0),
+      urgentCount: urgentOrderIds.size,
+      pendingOrderCount: pendingOrderIds.size,
     };
   }
 

@@ -261,6 +261,31 @@ export const RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT = new ErrorResponse({
   message: 'Số tiền khách đã thanh toán chưa đủ để bàn giao thiết bị',
 });
 
+export const RENTAL_ORDER_IDENTITY_FILES_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_IDENTITY_FILES_INVALID',
+  message: 'Giấy tờ của khách hàng chưa đủ hoặc không hợp lệ',
+});
+
+export const RENTAL_ORDER_IDENTITY_REVIEW_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_IDENTITY_REVIEW_INVALID',
+  message: 'Không thể duyệt giấy tờ cho đơn thuê này',
+});
+
+export const RENTAL_ORDER_IDENTITY_NOT_VERIFIED = new ErrorResponse({
+  code: 'RENTAL_ORDER_IDENTITY_NOT_VERIFIED',
+  message: 'Cần xác minh giấy tờ khách hàng trước khi bàn giao thiết bị',
+});
+
+export const RENTAL_ORDER_PAYMENT_PROOF_REQUIRED = new ErrorResponse({
+  code: 'RENTAL_ORDER_PAYMENT_PROOF_REQUIRED',
+  message: 'Thanh toán chuyển khoản phải có bill để chờ nhân viên duyệt',
+});
+
+export const RENTAL_ORDER_PAYMENT_PROOF_INVALID = new ErrorResponse({
+  code: 'RENTAL_ORDER_PAYMENT_PROOF_INVALID',
+  message: 'Bill thanh toán không hợp lệ hoặc chưa hoàn tất upload',
+});
+
 export const RENTAL_ORDER_REFUND_AMOUNT_INVALID = new ErrorResponse({
   code: 'RENTAL_ORDER_REFUND_AMOUNT_INVALID',
   message: 'Số tiền hoàn không được vượt quá số tiền khách đã thanh toán chưa hoàn',

@@ -34,6 +34,7 @@
 // ne an toan thi migrate
 // pnpm exec prisma migrate deploy tránh apply tránh reset
 // pnpm.cmd prisma migrate dev
+// pnpm exec prisma migrate deploy
 generator client {
   provider        = "prisma-client"
   output          = "../generated/prisma"
@@ -442,25 +443,34 @@ model StoreClosure {
 /// Aggregate gốc của một đơn thuê, lưu trạng thái, snapshot khách hàng/chính sách và các tổng tiền.
 model RentalOrder {
   /// Mã định danh chính của đơn thuê.
-  id               String                 @id @default(uuid(7)) @db.Uuid
+  id                   String                      @id @default(uuid(7)) @db.Uuid
   /// Mã đơn dễ đọc để admin tra cứu, ví dụ ORD-000001.
-  code             String                 @unique
+  code                 String                      @unique
   /// Nguồn tạo đơn; giai đoạn 1 chủ yếu là ADMIN, WEBSITE để dành cho flow khách tự đặt sau này.
-  source           OrderSource            @default(ADMIN)
+  source               OrderSource                 @default(ADMIN)
   /// Trạng thái vận hành của đơn thuê.
-  status           OrderStatus            @default(CREATED)
-  handoverStatus   HandoverStatus         @default(PENDING_PAYMENT)
-  returnStatus     ReturnStatus           @default(NOT_RETURNED)
-  settlementStatus RentalSettlementStatus @default(NOT_STARTED)
+  status               OrderStatus                 @default(CREATED)
+  handoverStatus       HandoverStatus              @default(PENDING_PAYMENT)
+  returnStatus         ReturnStatus                @default(NOT_RETURNED)
+  settlementStatus     RentalSettlementStatus      @default(NOT_STARTED)
   /// Chính sách thuê được áp dụng khi tạo đơn; order vẫn lưu snapshot để không bị ảnh hưởng khi policy thay đổi.
-  settingsSnapshot Json
-  policyVersion    String                 @default("v1")
+  settingsSnapshot     Json
+  policyVersion        String                      @default("v1")
   /// Khách hàng thuê thiết bị.
-  customerId       String                 @db.Uuid
-  customerSnapshot Json
-  startDate        DateTime
+  customerId           String                      @db.Uuid
+  customerSnapshot     Json
+  /// Loại giấy tờ được dùng để đối chiếu trong chính đơn thuê này.
+  identityDocumentType RentalIdentityDocumentType?
+  /// File mặt trước của giấy tờ; metadata nằm trong FileObject, binary nằm trên R2.
+  identityFrontFileId  String?                     @db.Uuid
+  /// File mặt sau của giấy tờ; metadata nằm trong FileObject, binary nằm trên R2.
+  identityBackFileId   String?                     @db.Uuid
+  /// Nhân viên duyệt giấy tờ trước khi bàn giao thiết bị.
+  identityReviewStatus RentalIdentityReviewStatus  @default(NOT_SUBMITTED)
+  identityReviewNote   String?
+  startDate            DateTime
   /// Thời gian kết thúc thuê hoặc thời gian khách dự kiến trả máy.
-  endDate          DateTime
+  endDate              DateTime
 
   /// Thời gian khách nhận máy thực tế do admin nhập hoặc ghi nhận khi bắt đầu thuê.
   actualPickupDate        DateTime?
@@ -510,6 +520,8 @@ model RentalOrder {
   refunds                 Refund[]
   inspections             RentalInspection[]
   incidents               RentalIncident[]
+  identityFrontFile       FileObject?          @relation("RentalOrderIdentityFront", fields: [identityFrontFileId], references: [id], onDelete: SetNull)
+  identityBackFile        FileObject?          @relation("RentalOrderIdentityBack", fields: [identityBackFileId], references: [id], onDelete: SetNull)
   quoteId                 String?              @unique @db.Uuid
   quote                   RentalOrderQuote?    @relation(fields: [quoteId], references: [id])
 
@@ -519,6 +531,7 @@ model RentalOrder {
   @@index([startDate, endDate])
   @@index([startDate])
   @@index([status, startDate, deletedAt])
+  @@index([identityReviewStatus, startDate, deletedAt])
   @@index([searchText(ops: raw("gin_trgm_ops"))], map: "RentalOrder_searchText_trgm_idx", type: Gin)
 }
 
@@ -663,6 +676,8 @@ model PaymentTransaction {
   amount         Decimal                  @db.Decimal(12, 2)
   method         PaymentMethod
   status         PaymentTransactionStatus @default(PENDING)
+  /// Bill/chứng từ thanh toán đã upload lên R2; chỉ lưu metadata fileId.
+  proofFileId    String?                  @db.Uuid
   referenceCode  String?
   idempotencyKey String?
   metadata       Json?
@@ -673,9 +688,11 @@ model PaymentTransaction {
   order       RentalOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   allocations PaymentAllocation[]
   refund      Refund?
+  proofFile   FileObject?          @relation("PaymentProofFile", fields: [proofFileId], references: [id], onDelete: SetNull)
 
   @@unique([orderId, idempotencyKey])
   @@index([orderId, status])
+  @@index([status, method, createdAt])
   @@index([referenceCode])
 }
 
@@ -841,9 +858,12 @@ model FileObject {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  uploadedByUser User              @relation("FileUploadedBy", fields: [uploadedBy], references: [id])
-  uploadBatch    UploadBatch?      @relation(fields: [uploadBatchId], references: [id], onDelete: SetNull)
-  events         FileObjectEvent[]
+  uploadedByUser            User              @relation("FileUploadedBy", fields: [uploadedBy], references: [id])
+  uploadBatch               UploadBatch?      @relation(fields: [uploadBatchId], references: [id], onDelete: SetNull)
+  events                    FileObjectEvent[]
+  rentalOrderIdentityFronts RentalOrder[]     @relation("RentalOrderIdentityFront")
+  rentalOrderIdentityBacks  RentalOrder[]     @relation("RentalOrderIdentityBack")
+  paymentProofs             PaymentTransaction[] @relation("PaymentProofFile")
 
   @@index([purpose, status, createdAt])
   @@index([uploadedBy, createdAt])
@@ -901,6 +921,20 @@ enum FilePurpose {
   CONTRIBUTOR_DOCUMENT
   REPORT_EXPORT
   CMS_MEDIA
+  CUSTOMER_IDENTITY
+}
+
+enum RentalIdentityDocumentType {
+  CITIZEN_ID
+  DRIVER_LICENSE
+  PASSPORT
+}
+
+enum RentalIdentityReviewStatus {
+  NOT_SUBMITTED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
 }
 
 enum FileObjectStatus {

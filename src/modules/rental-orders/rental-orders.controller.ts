@@ -10,8 +10,26 @@ import { AuthUser } from '@/modules/auth/types/auth-user.type';
 import { CreateRentalOrderDto, CreateRentalQuoteDto } from './dto/create-rental-order.dto';
 import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 import { GetAllRentalOrdersDto } from './dto/get-all-rental-orders.dto';
-import { CancelRentalOrderDto, CloseCancelledRentalOrderDto, CreateRefundDto, HandoverRentalOrderDto, InspectRentalOrderDto, RecordRentalOrderPaymentDto, RejectPaymentDto, ReturnRentalOrderDto, SettleRentalOrderDto } from './dto/rental-order-actions.dto';
-import { DeleteRentalOrderResponseDto, RentalOrderQuoteResponseDto, RentalOrderResponseDto, RentalOrdersPaginatedResponseDto } from './dto/rental-orders-response.dto';
+import { GetPaymentReviewQueueDto } from './dto/get-payment-review-queue.dto';
+import {
+  CancelRentalOrderDto,
+  CloseCancelledRentalOrderDto,
+  CreateRefundDto,
+  HandoverRentalOrderDto,
+  InspectRentalOrderDto,
+  RecordRentalOrderPaymentDto,
+  RejectPaymentDto,
+  ReviewRentalOrderIdentityDto,
+  ReturnRentalOrderDto,
+  SettleRentalOrderDto,
+} from './dto/rental-order-actions.dto';
+import {
+  DeleteRentalOrderResponseDto,
+  RentalOrderQuoteResponseDto,
+  RentalOrderResponseDto,
+  RentalPaymentReviewQueuePaginatedResponseDto,
+  RentalOrdersPaginatedResponseDto,
+} from './dto/rental-orders-response.dto';
 import { UpdateRentalOrderDto } from './dto/update-rental-order.dto';
 import { RentalOrdersService } from './rental-orders.service';
 
@@ -25,6 +43,14 @@ export class RentalOrdersController {
   @ApiOkResponse({ type: RentalOrdersPaginatedResponseDto })
   async getAll(@Query() query: GetAllRentalOrdersDto) {
     return new ApiPaginatedResponseDto(await this.rentalOrdersService.getAllRentalOrders(query), SUCCESS);
+  }
+
+  @Get('payment-review-queue')
+  @RequirePermissions(PermissionCode.OrdersRecordPayment)
+  @ApiOperation({ summary: 'Danh sách giao dịch chuyển khoản đang chờ duyệt bill' })
+  @ApiOkResponse({ type: RentalPaymentReviewQueuePaginatedResponseDto })
+  async getPaymentReviewQueue(@Query() query: GetPaymentReviewQueueDto) {
+    return new ApiPaginatedResponseDto(await this.rentalOrdersService.getPaymentReviewQueue(query), SUCCESS);
   }
 
   @Get(':id')
@@ -56,6 +82,14 @@ export class RentalOrdersController {
     return new ApiRes(await this.rentalOrdersService.updateRentalOrder(id, dto, user), 'Cập nhật đơn thuê thành công');
   }
 
+  @Post(':id/identity-review')
+  @RequirePermissions(PermissionCode.OrdersIdentityReview)
+  @ApiOperation({ summary: 'Review identity documents attached to a rental order' })
+  @ApiOkResponse({ type: RentalOrderResponseDto })
+  async reviewIdentity(@Param('id', IdValidatePipe) id: string, @Body() dto: ReviewRentalOrderIdentityDto, @CurrentUser() user: AuthUser) {
+    return new ApiRes(await this.rentalOrdersService.reviewIdentityDocument(id, dto, user), 'Duyệt giấy tờ khách hàng thành công');
+  }
+
   @Delete()
   @RequirePermissions(PermissionCode.OrdersCancel)
   @ApiOkResponse({ type: DeleteRentalOrderResponseDto })
@@ -80,7 +114,11 @@ export class RentalOrdersController {
   @Post(':id/payments/:paymentId/confirm')
   @RequirePermissions(PermissionCode.OrdersRecordPayment)
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async confirmPayment(@Param('id', IdValidatePipe) id: string, @Param('paymentId', IdValidatePipe) paymentId: string, @CurrentUser() user: AuthUser) {
+  async confirmPayment(
+    @Param('id', IdValidatePipe) id: string,
+    @Param('paymentId', IdValidatePipe) paymentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
     return new ApiRes(await this.rentalOrdersService.confirmPayment(id, paymentId, user), 'Xác nhận thanh toán thành công');
   }
 
@@ -106,11 +144,7 @@ export class RentalOrdersController {
   @Post(':id/refunds/:refundId/confirm')
   @RequirePermissions(PermissionCode.OrdersRefund)
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async confirmRefund(
-    @Param('id', IdValidatePipe) id: string,
-    @Param('refundId', IdValidatePipe) refundId: string,
-    @CurrentUser() user: AuthUser,
-  ) {
+  async confirmRefund(@Param('id', IdValidatePipe) id: string, @Param('refundId', IdValidatePipe) refundId: string, @CurrentUser() user: AuthUser) {
     return new ApiRes(await this.rentalOrdersService.confirmRefund(id, refundId, user), 'Xác nhận hoàn tiền thành công');
   }
 
@@ -118,11 +152,7 @@ export class RentalOrdersController {
   @RequirePermissions(PermissionCode.OrdersRefund)
   @ApiOperation({ summary: 'Chốt phần tiền còn lại không hoàn của đơn đã hủy' })
   @ApiOkResponse({ type: RentalOrderResponseDto })
-  async closeCancellation(
-    @Param('id', IdValidatePipe) id: string,
-    @Body() dto: CloseCancelledRentalOrderDto,
-    @CurrentUser() user: AuthUser,
-  ) {
+  async closeCancellation(@Param('id', IdValidatePipe) id: string, @Body() dto: CloseCancelledRentalOrderDto, @CurrentUser() user: AuthUser) {
     return new ApiRes(await this.rentalOrdersService.closeCancelledOrder(id, dto, user), 'Chốt tài chính đơn đã hủy thành công');
   }
 

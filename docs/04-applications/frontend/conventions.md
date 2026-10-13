@@ -255,9 +255,7 @@ const table = useDataTable({
   data,
   columns,
   enableRowContextMenu: true,
-  renderRowContextMenuItems: ({ row }) => (
-    <DomainContextMenu row={row} />
-  ),
+  renderRowContextMenuItems: ({ row }) => <DomainContextMenu row={row} />,
 });
 ```
 
@@ -274,7 +272,7 @@ Dùng layout mặc định khi form có ít field, mô tả ngắn và vẫn v�
 viewport desktop/mobile. Mẫu tham chiếu là
 modules/store-closures/components/store-closure-form-dialog.tsx.
 
-- DialogContent dùng layout mặc định; chỉ thêm sm:max-w-* khi cần;
+- DialogContent dùng layout mặc định; chỉ thêm sm:max-w-\* khi cần;
 - không thêm flex, max-h, overflow-y-auto hoặc ScrollArea nếu chưa có nhu cầu
   cuộn;
 - DialogHeader, form và DialogFooter là các vùng trực tiếp của DialogContent;
@@ -293,10 +291,8 @@ Với dialog dài:
 ```tsx
 <DialogContent className="flex max-h-[90vh] flex-col p-0">
   <DialogHeader className="shrink-0 px-6 py-5" />
-  <ScrollArea className="min-h-0 flex-1">
-    <div className="px-6 py-5">
-      {/* form */}
-    </div>
+  <ScrollArea className="h-[24dvh] max-h-[calc(100dvh-220px)]">
+    <div className="px-6 py-5">{/* form */}</div>
   </ScrollArea>
   <DialogFooter className="shrink-0 border-t px-6 py-4" />
 </DialogContent>
@@ -328,9 +324,7 @@ Portal host phải là một lớp overlay tuyệt đối, không tham gia layou
 
   <DialogHeader className="shrink-0" />
   <form className="min-h-0">
-    <ScrollArea className="h-[calc(60dvh-105px)] min-h-0">
-      {/* form fields */}
-    </ScrollArea>
+    <ScrollArea className="h-[calc(60dvh-105px)] min-h-0">{/* form fields */}</ScrollArea>
     <DialogFooter className="shrink-0" />
   </form>
 </DialogContent>
@@ -432,10 +426,7 @@ Không render status bằng enum thô hoặc màu tự viết trong JSX.
 Action condition nên đặt ở action-definitions.ts, ví dụ:
 
 ```ts
-const canRecordPayment =
-  order.status !== 'DONE' &&
-  order.status !== 'CANCELLED' &&
-  order.amountDueBeforeHandover > 0;
+const canRecordPayment = order.status !== 'DONE' && order.status !== 'CANCELLED' && order.amountDueBeforeHandover > 0;
 ```
 
 Nếu điều kiện này được dùng ở nhiều nơi, đưa thành helper hoặc display utility có tên nghĩa rõ ràng. Không copy điều kiện vào columns, detail và dialog.
@@ -473,10 +464,7 @@ Chi tiết kỹ thuật chỉ ghi vào log dành cho developer.
 Ví dụ:
 
 ```ts
-import {
-  RentalOrderActionsCell,
-  RentalOrderContextMenuItems,
-} from './components/actions';
+import { RentalOrderActionsCell, RentalOrderContextMenuItems } from './components/actions';
 ```
 
 Không nên import trực tiếp action item nội bộ trong page hoặc columns, trừ khi đang làm việc bên trong chính cụm actions.
@@ -531,11 +519,11 @@ Nếu repository đang có lỗi nền từ trước, ghi rõ lỗi đó trong h
 
 Không phải module backend nào cũng cần một màn hình frontend. Trước khi tạo route, xác định module thuộc một trong ba nhóm:
 
-| Nhóm | Module | Quy tắc frontend |
-| --- | --- | --- |
-| Quản trị có UI | users, roles, system-settings, store-business-hours, store-closure, mail-template | Có route/module riêng khi có thao tác admin thực tế |
-| Nghiệp vụ vận hành | customers, products, asset-units, rental-orders, availability, categories, brands | Có page và workflow theo use case |
-| Hạ tầng/domain nội bộ | database, mail, rbac, asset-reservations | Không tạo page trùng lên module. Chỉ tạo UI nếu backend sau này công bố contract quản trị riêng. |
+| Nhóm                  | Module                                                                            | Quy tắc frontend                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Quản trị có UI        | users, roles, system-settings, store-business-hours, store-closure, mail-template | Có route/module riêng khi có thao tác admin thực tế                                              |
+| Nghiệp vụ vận hành    | customers, products, asset-units, rental-orders, availability, categories, brands | Có page và workflow theo use case                                                                |
+| Hạ tầng/domain nội bộ | database, mail, rbac, asset-reservations                                          | Không tạo page trùng lên module. Chỉ tạo UI nếu backend sau này công bố contract quản trị riêng. |
 
 asset-reservations hiện không có controller; allocation/reservation đang được thao tác qua rental-orders và availability. Frontend không được tự gọi domain service hoặc tạo màn hình cho module này.
 
@@ -573,14 +561,54 @@ Luồng UI:
                 ├─ Thông tin cá nhân
                 └─ Bảo mật
 
-- Thông tin cá nhân: cho sửa fullName và phone; hiển thị email read-only vì backend hiện chưa cho phép đổi email và avatar chưa có API upload.
-- Avatar chỉ được chọn và xem trước ở FE bằng `useFileUpload`; không đưa file vào request cập nhật profile cho đến khi backend công bố contract upload, lưu trữ, validate và xoá ảnh.
+- Thông tin cá nhân: cho sửa fullName và phone; hiển thị email read-only vì backend hiện chưa cho phép đổi email. Avatar chưa có field/relation trong Prisma `User`.
+- Không nối avatar vào profile chỉ vì đã có file-storage API; chờ backend công bố relation, permission và contract update avatar riêng.
 - Bảo mật: nhận mật khẩu cũ và mật khẩu mới, gọi PATCH /admin/auth/me/password; thông báo rõ backend sẽ thu hồi các phiên khác.
 - Sau PATCH /admin/auth/me, cập nhật auth store hoặc refetch /admin/auth/me; không reload toàn app.
 - Không cho phép user tự sửa role, permission, activity status hoặc session id.
 - Dialog/sheet phải tách footer khỏi ScrollArea và dùng chung quy tắc portal combobox/dialog trong tài liệu này.
 
-### 8.4 Thiết kế module Mẫu email
+### 8.4 Thiết kế upload dùng chung
+
+Upload là capability dùng chung, không tạo một trang quản lý file riêng ở Phase 1. Mỗi module nghiệp vụ chỉ dùng `UploadField` và lưu các `fileId` đã ở trạng thái `READY`.
+
+```text
+modules/file-storage/
+├─ types.ts
+├─ schema.ts
+├─ services.ts
+├─ upload-client.ts
+├─ components/upload-field.tsx
+└─ hooks/
+   ├─ use-upload-file.ts
+   ├─ use-upload-files.ts
+   └─ use-delete-file.ts
+```
+
+`UploadField` bọc `components/motion/file-upload.tsx` và nhận tối thiểu:
+
+- `purpose`: mục đích nghiệp vụ, không cho người dùng tự nhập tùy ý.
+- `value`/`onChange`: danh sách `IFileObjectOut` đã `READY`.
+- `maxFiles`, `accept`, `disabled` và callback lỗi.
+
+Flow của component:
+
+1. Validate tại FE: ảnh JPG/PNG/WebP tối đa 10MB/file, PDF tối đa 20MB/file, tối đa 10 file và tổng tối đa 100MB.
+2. Gọi `POST /uploads` chỉ với metadata.
+3. PUT trực tiếp binary lên URL R2 bằng `XMLHttpRequest`, hiển thị progress từng file.
+4. Gọi `POST /files/:id/complete` cho từng file; chỉ trả file `READY` qua `onChange`.
+5. Retry tạo lại upload cho file lỗi; remove gọi `DELETE /files/:id` nếu file đã có metadata.
+
+RentalOrder dùng lại component này ở hai điểm:
+
+- Form tạo đơn: upload mặt trước/mặt sau với `purpose="CUSTOMER_IDENTITY"`, sau đó gửi hai `fileId` cùng `POST /rental-orders`.
+- Detail đơn: xem ảnh bằng `GET /files/:id/download-url`, duyệt/từ chối giấy tờ qua `POST /rental-orders/:id/identity-review`; nếu bị từ chối thì cho upload lại bằng `PATCH /rental-orders/:id`.
+
+FE không lưu access key, signed URL lâu dài hoặc binary trong state; signed URL chỉ dùng tạm để PUT/GET. UI có thể dùng motion component hiện tại vì nó chỉ là lớp hiển thị queue, không chứa logic R2.
+
+Không làm trong Phase 1: multipart/resume, resize/convert ảnh, OCR, antivirus, CMS media library và upload avatar. Identity document của RentalOrder là flow tối giản theo từng đơn; chưa tạo bảng hồ sơ giấy tờ riêng cho Customer.
+
+### 8.5 Thiết kế module Mẫu email
 
 Route quản trị dùng module riêng, không ghép vào `/settings`:
 
@@ -596,7 +624,7 @@ Route quản trị dùng module riêng, không ghép vào `/settings`:
 - ID resource và `layoutId` dùng UUIDv7 từ backend; FE chỉ xem chúng là chuỗi opaque, không tự sinh ID.
 - Email delivery history chỉ làm UI khi backend công bố log/audit API; queue `jobId` không thay thế log gửi mail.
 
-### 8.5 Chức năng cần backend trước khi làm frontend
+### 8.6 Chức năng cần backend trước khi làm frontend
 
 - reports: backend chưa có module/contract báo cáo; không dùng dashboard số liệu mẫu làm báo cáo thật.
 - blacklist: backend chưa có module; cần chốt model, lý do, thời hạn và rule chặn trước khi tạo page.

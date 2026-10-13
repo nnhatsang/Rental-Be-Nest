@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsDate, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, ValidateNested } from 'class-validator';
-import { PickupMethod } from '@generated/prisma/enums';
+import { PickupMethod, RentalIdentityDocumentType } from '@generated/prisma/enums';
 import { INVALID_ARRAY, INVALID_DATE, INVALID_EMAIL, INVALID_PHONE_NUMBER, INVALID_REQUIRED, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 import { RentalOrderItemDto } from './create-rental-order.dto';
 
@@ -90,4 +90,19 @@ export class UpdateRentalOrderDto {
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   internalNote?: string | null;
+
+  @ApiPropertyOptional({ enum: Object.values(RentalIdentityDocumentType), description: 'Gửi đủ 3 field identity để thay lại giấy tờ trước khi duyệt.' })
+  @IsOptional()
+  @IsEnum(RentalIdentityDocumentType)
+  identityDocumentType?: RentalIdentityDocumentType;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
+  @IsUUID('7', { message: INVALID_UUID })
+  identityFrontFileId?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
+  @IsUUID('7', { message: INVALID_UUID })
+  identityBackFileId?: string;
 }

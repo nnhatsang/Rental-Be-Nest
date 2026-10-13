@@ -1,8 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayNotEmpty, IsEnum, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
-import { FilePurpose, FileVisibility } from '@generated/prisma/enums';
-import { FILE_MAX_EXPORT_SIZE_BYTES, FILE_MIME_TYPES } from '../constants/file-storage.constant';
+import { ArrayMaxSize, ArrayNotEmpty, IsEnum, IsIn, IsInt, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
+import { FilePurpose } from '@generated/prisma/enums';
+import { FILE_MAX_DOCUMENT_SIZE_BYTES, FILE_MIME_TYPES } from '../constants/file-storage.constant';
 
 export class CreateUploadItemDto {
   @ApiProperty({ example: 'local-file-1', maxLength: 100 })
@@ -20,11 +20,11 @@ export class CreateUploadItemDto {
   @IsIn(FILE_MIME_TYPES)
   mimeType!: string;
 
-  @ApiProperty({ example: 245760, minimum: 1, maximum: FILE_MAX_EXPORT_SIZE_BYTES })
+  @ApiProperty({ example: 245760, minimum: 1, maximum: FILE_MAX_DOCUMENT_SIZE_BYTES })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(FILE_MAX_EXPORT_SIZE_BYTES)
+  @Max(FILE_MAX_DOCUMENT_SIZE_BYTES)
   sizeBytes!: number;
 }
 
@@ -33,14 +33,9 @@ export class CreateUploadDto {
   @IsEnum(FilePurpose)
   purpose!: FilePurpose;
 
-  @ApiPropertyOptional({ enum: FileVisibility, enumName: 'FileVisibility', default: FileVisibility.PRIVATE })
-  @IsOptional()
-  @IsEnum(FileVisibility)
-  visibility?: FileVisibility;
-
   @ApiProperty({ type: [CreateUploadItemDto] })
   @ArrayNotEmpty()
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(10)
   @ValidateNested({ each: true })
   @Type(() => CreateUploadItemDto)
   files!: CreateUploadItemDto[];

@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
 import {
   CustomerStatus,
+  FileObjectStatus,
+  FilePurpose,
   HandoverStatus,
   OrderSource,
   OrderStatus,
@@ -12,18 +13,26 @@ import {
   RentalAllocationStatus,
   RentalChargeKind,
   RentalChargeStatus,
+  RentalIdentityReviewStatus,
   RentalInspectionCondition,
   RentalInspectionType,
   RentalRefundStatus,
   RentalSettlementStatus,
   ReturnStatus,
 } from '@generated/prisma/enums';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+
 import {
   INCORRECT_INPUT,
   RENTAL_ORDER_CUSTOMER_INVALID,
-  RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT,
   RENTAL_ORDER_FINANCIAL_CLOSED,
+  RENTAL_ORDER_HANDOVER_PAYMENT_INSUFFICIENT,
+  RENTAL_ORDER_IDENTITY_FILES_INVALID,
+  RENTAL_ORDER_IDENTITY_NOT_VERIFIED,
+  RENTAL_ORDER_IDENTITY_REVIEW_INVALID,
   RENTAL_ORDER_NOT_FOUND,
+  RENTAL_ORDER_PAYMENT_PROOF_INVALID,
+  RENTAL_ORDER_PAYMENT_PROOF_REQUIRED,
   RENTAL_ORDER_PRODUCT_INVALID,
   RENTAL_ORDER_REFUND_AMOUNT_INVALID,
   RENTAL_ORDER_UNAVAILABLE,
@@ -31,20 +40,15 @@ import {
 import { buildRentalOrderSearchText, normalizeSearchText } from '@/libs/utils/search-text.util';
 import { AuthUser } from '@/modules/auth/types/auth-user.type';
 import { PrismaService } from '@/modules/database/prisma.service';
+import { FileStorageService } from '@/modules/file-storage/file-storage.service';
 import { SystemSettingsService } from '@/modules/system-settings/system-settings.service';
-import {
-  rentalOrderLogAction,
-  type RentalOrderLogAction,
-  type RentalOrderLogEntity,
-} from './domain/rental-order-log.constants';
+
+import { type RentalOrderLogAction, rentalOrderLogAction, type RentalOrderLogEntity } from './domain/rental-order-log.constants';
 import { assertRentalOrderTransition, getRentalOrderOverdue } from './domain/rental-order-state-machine';
-import { RentalOrderAvailabilityService } from './services/rental-order-availability.service';
-import { RentalOrderFinancialService } from './services/rental-order-financial.service';
-import { RentalOrderPricingService } from './services/rental-order-pricing.service';
 import { CreateRentalOrderDto, CreateRentalQuoteDto, RentalOrderItemDto } from './dto/create-rental-order.dto';
-import { RentalOrderUnavailableItemDto } from './dto/rental-order-unavailable-item.dto';
 import { DeleteRentalOrdersDto } from './dto/delete-rental-orders.dto';
 import { GetAllRentalOrdersDto, RentalOrderSortBy } from './dto/get-all-rental-orders.dto';
+import { GetPaymentReviewQueueDto } from './dto/get-payment-review-queue.dto';
 import {
   CancelRentalOrderDto,
   CloseCancelledRentalOrderDto,
@@ -54,12 +58,13 @@ import {
   RecordRentalOrderPaymentDto,
   RejectPaymentDto,
   ReturnRentalOrderDto,
+  ReviewRentalOrderIdentityDto,
   SettleRentalOrderDto,
 } from './dto/rental-order-actions.dto';
 import {
+  RentalOrderActivityLogOutDto,
   RentalOrderChargeOutDto,
   RentalOrderFinancialsOutDto,
-  RentalOrderActivityLogOutDto,
   RentalOrderLineOutDto,
   RentalOrderListItemOutDto,
   RentalOrderOutDto,
@@ -67,7 +72,11 @@ import {
   RentalOrderQuoteOutDto,
   RentalOrderRefundOutDto,
 } from './dto/rental-order-out.dto';
+import { RentalOrderUnavailableItemDto } from './dto/rental-order-unavailable-item.dto';
 import { UpdateRentalOrderCustomerSnapshotDto, UpdateRentalOrderDto } from './dto/update-rental-order.dto';
+import { RentalOrderAvailabilityService } from './services/rental-order-availability.service';
+import { RentalOrderFinancialService } from './services/rental-order-financial.service';
+import { RentalOrderPricingService } from './services/rental-order-pricing.service';
 
 const orderDetailInclude = {
   customer: true,
@@ -97,7 +106,10 @@ const orderDetailInclude = {
     },
   },
   charges: { orderBy: { createdAt: 'asc' } },
-  paymentTransactions: { orderBy: { createdAt: 'asc' } },
+  paymentTransactions: {
+    orderBy: { createdAt: 'asc' },
+    include: { proofFile: { select: { originalName: true, mimeType: true } } },
+  },
   refunds: { orderBy: { createdAt: 'asc' } },
   inspections: {
     orderBy: { inspectedAt: 'asc' },
@@ -127,6 +139,7 @@ export class RentalOrdersService {
     private readonly pricingService: RentalOrderPricingService,
     private readonly financialService: RentalOrderFinancialService,
     private readonly systemSettingsService: SystemSettingsService,
+    private readonly fileStorageService: FileStorageService,
   ) {}
 
   async getAllRentalOrders(query: GetAllRentalOrdersDto) {
@@ -204,6 +217,81 @@ export class RentalOrdersService {
     };
   }
 
+  async getPaymentReviewQueue(query: GetPaymentReviewQueueDto) {
+    const searchText = normalizeSearchText(query.search);
+    const where: Prisma.PaymentTransactionWhereInput = {
+      direction: PaymentDirection.INBOUND,
+      status: PaymentTransactionStatus.PENDING,
+      method: PaymentMethod.BANK_TRANSFER,
+      ...(query.fromDate || query.toDate
+        ? { createdAt: { ...(query.fromDate ? { gte: query.fromDate } : {}), ...(query.toDate ? { lte: query.toDate } : {}) } }
+        : {}),
+      order: {
+        deletedAt: null,
+        ...(searchText
+          ? {
+              OR: [
+                { code: { contains: searchText, mode: 'insensitive' } },
+                { searchText: { contains: searchText } },
+                { customer: { name: { contains: searchText, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      },
+    };
+    const skip = (query.page - 1) * query.perPage;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.paymentTransaction.findMany({
+        where,
+        skip,
+        take: query.perPage,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          orderId: true,
+          amount: true,
+          method: true,
+          status: true,
+          proofFileId: true,
+          proofFile: { select: { originalName: true, mimeType: true } },
+          referenceCode: true,
+          createdAt: true,
+          order: {
+            select: {
+              id: true,
+              code: true,
+              status: true,
+              customer: { select: { name: true, phone: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.paymentTransaction.count({ where }),
+    ]);
+
+    return {
+      items: items.map((payment) => ({
+        paymentId: payment.id,
+        orderId: payment.orderId,
+        orderCode: payment.order.code,
+        customerName: payment.order.customer.name,
+        customerPhone: payment.order.customer.phone,
+        orderStatus: payment.order.status,
+        amount: Number(payment.amount),
+        method: payment.method,
+        status: payment.status,
+        proofFileId: payment.proofFileId,
+        proofFileName: payment.proofFile?.originalName ?? null,
+        proofFileMimeType: payment.proofFile?.mimeType ?? null,
+        referenceCode: payment.referenceCode,
+        createdAt: payment.createdAt,
+      })),
+      total,
+      page: query.page,
+      perPage: query.perPage,
+    };
+  }
+
   async getRentalOrderById(id: string): Promise<RentalOrderOutDto> {
     return this.toDetailOut(await this.findDetailOrThrow(id));
   }
@@ -217,7 +305,7 @@ export class RentalOrdersService {
         source: OrderSource.ADMIN,
         startDate: dto.startDate,
         endDate: dto.endDate,
-        pickupMethod: dto.pickupMethod as PickupMethod,
+        pickupMethod: dto.pickupMethod,
         deliveryAddress: dto.deliveryAddress,
         requestSnapshot: this.jsonValue(this.quoteRequestSnapshot(dto)),
         responseSnapshot: this.jsonValue({
@@ -255,6 +343,7 @@ export class RentalOrdersService {
       throw new BadRequestException(RENTAL_ORDER_UNAVAILABLE);
     }
     const customer = await this.findCustomerOrThrow(request.customerId);
+    await this.fileStorageService.assertReadyFilesForPurpose([dto.identityFrontFileId, dto.identityBackFileId], FilePurpose.CUSTOMER_IDENTITY, user);
     const orderId = await this.prisma.$transaction(async (tx) => {
       const code = await this.generateOrderCode();
       const order = await tx.rentalOrder.create({
@@ -269,9 +358,13 @@ export class RentalOrdersService {
           policyVersion: prepared.policyVersion,
           customerId: customer.id,
           customerSnapshot: this.jsonValue(this.customerSnapshot(customer)),
+          identityDocumentType: dto.identityDocumentType,
+          identityFrontFileId: dto.identityFrontFileId,
+          identityBackFileId: dto.identityBackFileId,
+          identityReviewStatus: RentalIdentityReviewStatus.PENDING_REVIEW,
           startDate: request.startDate,
           endDate: request.endDate,
-          pickupMethod: request.pickupMethod as PickupMethod,
+          pickupMethod: request.pickupMethod,
           deliveryAddress: request.deliveryAddress,
           note: dto.note,
           internalNote: dto.internalNote,
@@ -370,6 +463,8 @@ export class RentalOrdersService {
           status: { from: null, to: OrderStatus.CREATED },
           quoteId: quote.id,
           customerId: customer.id,
+          identityDocumentType: dto.identityDocumentType,
+          identityFileCount: 2,
           startDate: request.startDate.toISOString(),
           endDate: request.endDate.toISOString(),
           pickupMethod: request.pickupMethod,
@@ -389,14 +484,39 @@ export class RentalOrdersService {
   async updateRentalOrder(id: string, dto: UpdateRentalOrderDto, user: AuthUser): Promise<RentalOrderOutDto> {
     const existing = await this.prisma.rentalOrder.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
-    if (existing.status !== OrderStatus.CREATED) throw new BadRequestException(INCORRECT_INPUT);
+    const hasIdentityUpdate = Boolean(dto.identityDocumentType || dto.identityFrontFileId || dto.identityBackFileId);
+    if (existing.status !== OrderStatus.CREATED && !(hasIdentityUpdate && existing.status === OrderStatus.CONFIRMED && !dto.quoteId)) {
+      throw new BadRequestException(INCORRECT_INPUT);
+    }
     const successfulPayment = await this.prisma.paymentTransaction.count({ where: { orderId: id, status: PaymentTransactionStatus.SUCCESS } });
-    if (successfulPayment > 0) throw new BadRequestException(INCORRECT_INPUT);
+    if (successfulPayment > 0 && !hasIdentityUpdate) throw new BadRequestException(INCORRECT_INPUT);
 
     const existingCustomerSnapshot = existing.customerSnapshot as unknown as RentalOrderCustomerSnapshotValue;
     const nextCustomerSnapshot = dto.customerSnapshot ? this.customerSnapshotFromUpdate(dto.customerSnapshot) : existingCustomerSnapshot;
     const nextNote = dto.note !== undefined ? dto.note : existing.note;
     const nextInternalNote = dto.internalNote !== undefined ? dto.internalNote : existing.internalNote;
+    if (hasIdentityUpdate) {
+      if (!dto.identityDocumentType || !dto.identityFrontFileId || !dto.identityBackFileId) {
+        throw new BadRequestException(RENTAL_ORDER_IDENTITY_FILES_INVALID);
+      }
+      if (existing.identityReviewStatus === RentalIdentityReviewStatus.VERIFIED) {
+        throw new BadRequestException(RENTAL_ORDER_IDENTITY_REVIEW_INVALID);
+      }
+      await this.fileStorageService.assertReadyFilesForPurpose(
+        [dto.identityFrontFileId, dto.identityBackFileId],
+        FilePurpose.CUSTOMER_IDENTITY,
+        user,
+      );
+    }
+    const identityData = hasIdentityUpdate
+      ? {
+          identityDocumentType: dto.identityDocumentType!,
+          identityFrontFileId: dto.identityFrontFileId!,
+          identityBackFileId: dto.identityBackFileId!,
+          identityReviewStatus: RentalIdentityReviewStatus.PENDING_REVIEW,
+          identityReviewNote: null,
+        }
+      : {};
     const hasScheduleChange = Boolean(
       dto.quoteId || dto.items || dto.startDate || dto.endDate || dto.pickupMethod || dto.deliveryAddress !== undefined,
     );
@@ -407,6 +527,7 @@ export class RentalOrdersService {
         await tx.rentalOrder.update({
           where: { id },
           data: {
+            ...identityData,
             ...(dto.customerSnapshot ? { customerSnapshot: this.jsonValue(nextCustomerSnapshot) } : {}),
             note: nextNote,
             internalNote: nextInternalNote,
@@ -428,15 +549,17 @@ export class RentalOrdersService {
         await this.createRentalOrderLog(tx, {
           orderId: id,
           actor: user,
-          action: rentalOrderLogAction.UPDATE_ORDER,
+          action: hasIdentityUpdate ? rentalOrderLogAction.ATTACH_IDENTITY_DOCUMENT : rentalOrderLogAction.UPDATE_ORDER,
           entity: 'RentalOrder',
           changes: {
             changedFields: [
               ...(dto.customerSnapshot ? ['customerSnapshot'] : []),
               ...(dto.note !== undefined ? ['note'] : []),
               ...(dto.internalNote !== undefined ? ['internalNote'] : []),
+              ...(hasIdentityUpdate ? ['identityDocumentType', 'identityFrontFileId', 'identityBackFileId', 'identityReviewStatus'] : []),
             ],
             customerSnapshotChanged: Boolean(dto.customerSnapshot),
+            ...(hasIdentityUpdate ? { identityDocumentType: dto.identityDocumentType, identityFileCount: 2 } : {}),
           },
           note: nextInternalNote ?? nextNote,
         });
@@ -529,10 +652,11 @@ export class RentalOrdersService {
       await tx.rentalOrder.update({
         where: { id },
         data: {
+          ...identityData,
           customerSnapshot: this.jsonValue(nextCustomerSnapshot),
           startDate: request.startDate,
           endDate: request.endDate,
-          pickupMethod: request.pickupMethod as PickupMethod,
+          pickupMethod: request.pickupMethod,
           deliveryAddress: request.deliveryAddress,
           note: nextNote,
           internalNote: nextInternalNote,
@@ -555,10 +679,19 @@ export class RentalOrdersService {
       await this.createRentalOrderLog(tx, {
         orderId: id,
         actor: user,
-        action: rentalOrderLogAction.UPDATE_ORDER,
+        action: hasIdentityUpdate ? rentalOrderLogAction.ATTACH_IDENTITY_DOCUMENT : rentalOrderLogAction.UPDATE_ORDER,
         entity: 'RentalOrder',
         changes: {
-          changedFields: ['customerSnapshot', 'startDate', 'endDate', 'pickupMethod', 'deliveryAddress', 'lines'],
+          changedFields: [
+            'customerSnapshot',
+            'startDate',
+            'endDate',
+            'pickupMethod',
+            'deliveryAddress',
+            'lines',
+            ...(hasIdentityUpdate ? ['identityDocumentType', 'identityFrontFileId', 'identityBackFileId', 'identityReviewStatus'] : []),
+          ],
+          ...(hasIdentityUpdate ? { identityDocumentType: dto.identityDocumentType, identityFileCount: 2 } : {}),
           quoteId: quote.id,
           lineCount: lines.length,
           startDate: request.startDate.toISOString(),
@@ -569,6 +702,65 @@ export class RentalOrdersService {
       });
       await tx.rentalOrderQuote.update({ where: { id: quote.id }, data: { consumedAt: new Date() } });
       await this.financialService.recalculateOrder(id, tx);
+    });
+
+    return this.getRentalOrderById(id);
+  }
+
+  async reviewIdentityDocument(id: string, dto: ReviewRentalOrderIdentityDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    if (dto.status !== RentalIdentityReviewStatus.VERIFIED && dto.status !== RentalIdentityReviewStatus.REJECTED) {
+      throw new BadRequestException(RENTAL_ORDER_IDENTITY_REVIEW_INVALID);
+    }
+
+    const note = dto.note?.trim() || null;
+    if (dto.status === RentalIdentityReviewStatus.REJECTED && !note) {
+      throw new BadRequestException(RENTAL_ORDER_IDENTITY_REVIEW_INVALID);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null } });
+      if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
+      if (order.status !== OrderStatus.CREATED && order.status !== OrderStatus.CONFIRMED) {
+        throw new BadRequestException(RENTAL_ORDER_IDENTITY_REVIEW_INVALID);
+      }
+      if (order.identityReviewStatus !== RentalIdentityReviewStatus.PENDING_REVIEW || !order.identityFrontFileId || !order.identityBackFileId) {
+        throw new BadRequestException(RENTAL_ORDER_IDENTITY_REVIEW_INVALID);
+      }
+
+      const files = await tx.fileObject.findMany({
+        where: {
+          id: { in: [order.identityFrontFileId, order.identityBackFileId] },
+          deletedAt: null,
+          status: FileObjectStatus.READY,
+          purpose: FilePurpose.CUSTOMER_IDENTITY,
+        },
+        select: { id: true },
+      });
+      if (files.length !== 2) throw new BadRequestException(RENTAL_ORDER_IDENTITY_FILES_INVALID);
+
+      await tx.rentalOrder.update({
+        where: { id },
+        data: {
+          identityReviewStatus: dto.status,
+          identityReviewNote: note,
+          updatedBy: user.id,
+        },
+      });
+      await this.createRentalOrderLog(tx, {
+        orderId: id,
+        actor: user,
+        action:
+          dto.status === RentalIdentityReviewStatus.VERIFIED
+            ? rentalOrderLogAction.VERIFY_IDENTITY_DOCUMENT
+            : rentalOrderLogAction.REJECT_IDENTITY_DOCUMENT,
+        entity: 'RentalOrder',
+        changes: {
+          identityReviewStatus: { from: order.identityReviewStatus, to: dto.status },
+          identityDocumentType: order.identityDocumentType,
+          identityFileCount: 2,
+        },
+        note,
+      });
     });
 
     return this.getRentalOrderById(id);
@@ -700,6 +892,15 @@ export class RentalOrdersService {
   async recordPayment(id: string, dto: RecordRentalOrderPaymentDto, user: AuthUser): Promise<RentalOrderOutDto> {
     await this.findActionableOrder(id);
     const status = dto.status ?? PaymentTransactionStatus.PENDING;
+    if (dto.method === PaymentMethod.BANK_TRANSFER && !dto.proofFileId) {
+      throw new BadRequestException(RENTAL_ORDER_PAYMENT_PROOF_REQUIRED);
+    }
+    if (dto.method === PaymentMethod.BANK_TRANSFER && status !== PaymentTransactionStatus.PENDING) {
+      throw new BadRequestException(RENTAL_ORDER_PAYMENT_PROOF_INVALID);
+    }
+    if (dto.proofFileId) {
+      await this.fileStorageService.assertReadyFilesForPurpose([dto.proofFileId], FilePurpose.PAYMENT_PROOF, user);
+    }
     const paymentId = await this.prisma.$transaction(async (tx) => {
       if (dto.idempotencyKey) {
         const existing = await tx.paymentTransaction.findFirst({ where: { orderId: id, idempotencyKey: dto.idempotencyKey } });
@@ -712,6 +913,7 @@ export class RentalOrdersService {
           amount: dto.amount,
           method: dto.method,
           status,
+          proofFileId: dto.proofFileId ?? null,
           referenceCode: dto.referenceCode,
           idempotencyKey: dto.idempotencyKey,
           metadata: dto.note ? this.jsonValue({ note: dto.note }) : undefined,
@@ -745,6 +947,9 @@ export class RentalOrdersService {
     await this.prisma.$transaction(async (tx) => {
       const payment = await tx.paymentTransaction.findFirst({ where: { id: paymentId, orderId: id } });
       if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
+      if (payment.method === PaymentMethod.BANK_TRANSFER && !payment.proofFileId) {
+        throw new BadRequestException(RENTAL_ORDER_PAYMENT_PROOF_REQUIRED);
+      }
       await tx.paymentTransaction.update({ where: { id: paymentId }, data: { status: PaymentTransactionStatus.SUCCESS, updatedAt: new Date() } });
       await this.financialService.allocatePayment(paymentId, tx);
       await this.createRentalOrderLog(tx, {
@@ -766,6 +971,7 @@ export class RentalOrdersService {
   }
 
   async rejectPayment(id: string, paymentId: string, dto: RejectPaymentDto, user: AuthUser): Promise<RentalOrderOutDto> {
+    if (!dto.note?.trim()) throw new BadRequestException(INCORRECT_INPUT);
     await this.prisma.$transaction(async (tx) => {
       const payment = await tx.paymentTransaction.findFirst({ where: { id: paymentId, orderId: id } });
       if (!payment || payment.status !== PaymentTransactionStatus.PENDING) throw new BadRequestException(INCORRECT_INPUT);
@@ -860,11 +1066,7 @@ export class RentalOrdersService {
     await this.prisma.$transaction(async (tx) => {
       const refund = await tx.refund.findFirst({ where: { id: refundId, orderId: id } });
       const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, select: { settlementStatus: true } });
-      if (
-        !refund ||
-        !order ||
-        (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING)
-      )
+      if (!refund || !order || (refund.status !== RentalRefundStatus.PENDING && refund.status !== RentalRefundStatus.PROCESSING))
         throw new BadRequestException(INCORRECT_INPUT);
       if (order.settlementStatus === RentalSettlementStatus.SETTLED) throw new BadRequestException(RENTAL_ORDER_FINANCIAL_CLOSED);
       await tx.refund.update({ where: { id: refundId }, data: { status: RentalRefundStatus.REFUNDED } });
@@ -932,6 +1134,21 @@ export class RentalOrdersService {
       const order = await tx.rentalOrder.findFirst({ where: { id, deletedAt: null }, include: { lines: { include: { allocations: true } } } });
       if (!order) throw new NotFoundException(RENTAL_ORDER_NOT_FOUND);
       if (order.status !== OrderStatus.CONFIRMED) throw new BadRequestException(INCORRECT_INPUT);
+      if (order.identityReviewStatus !== RentalIdentityReviewStatus.VERIFIED) {
+        throw new BadRequestException(RENTAL_ORDER_IDENTITY_NOT_VERIFIED);
+      }
+      if (!order.identityFrontFileId || !order.identityBackFileId) {
+        throw new BadRequestException(RENTAL_ORDER_IDENTITY_NOT_VERIFIED);
+      }
+      const identityFileCount = await tx.fileObject.count({
+        where: {
+          id: { in: [order.identityFrontFileId, order.identityBackFileId] },
+          status: FileObjectStatus.READY,
+          purpose: FilePurpose.CUSTOMER_IDENTITY,
+          deletedAt: null,
+        },
+      });
+      if (identityFileCount !== 2) throw new BadRequestException(RENTAL_ORDER_IDENTITY_NOT_VERIFIED);
       const allocationCount = order.lines.reduce(
         (total, line) => total + line.allocations.filter((allocation) => allocation.status !== RentalAllocationStatus.RELEASED).length,
         0,
@@ -1421,32 +1638,35 @@ export class RentalOrdersService {
     };
   }
 
-  private toListOut(order: {
-    id: string;
-    code: string;
-    source: OrderSource;
-    pickupMethod: PickupMethod;
-    status: OrderStatus;
-    handoverStatus: HandoverStatus;
-    returnStatus: ReturnStatus;
-    settlementStatus: RentalSettlementStatus;
-    customerSnapshot: Prisma.JsonValue;
-    startDate: Date;
-    endDate: Date;
-    actualReturnDate: Date | null;
-    rentalFeeTotal: Prisma.Decimal;
-    deliveryFeeTotal: Prisma.Decimal;
-    bookingHoldTotal: Prisma.Decimal;
-    securityDepositTotal: Prisma.Decimal;
-    totalCustomerObligation: Prisma.Decimal;
-    paidTotal: Prisma.Decimal;
-    amountDueBeforeHandover: Prisma.Decimal;
-    refundDue: Prisma.Decimal;
-    actualRefundTotal: Prisma.Decimal;
-    additionalChargeDue: Prisma.Decimal;
-    createdAt: Date;
-    updatedAt: Date;
-  }, pendingRefundTotal: number): RentalOrderListItemOutDto {
+  private toListOut(
+    order: {
+      id: string;
+      code: string;
+      source: OrderSource;
+      pickupMethod: PickupMethod;
+      status: OrderStatus;
+      handoverStatus: HandoverStatus;
+      returnStatus: ReturnStatus;
+      settlementStatus: RentalSettlementStatus;
+      customerSnapshot: Prisma.JsonValue;
+      startDate: Date;
+      endDate: Date;
+      actualReturnDate: Date | null;
+      rentalFeeTotal: Prisma.Decimal;
+      deliveryFeeTotal: Prisma.Decimal;
+      bookingHoldTotal: Prisma.Decimal;
+      securityDepositTotal: Prisma.Decimal;
+      totalCustomerObligation: Prisma.Decimal;
+      paidTotal: Prisma.Decimal;
+      amountDueBeforeHandover: Prisma.Decimal;
+      refundDue: Prisma.Decimal;
+      actualRefundTotal: Prisma.Decimal;
+      additionalChargeDue: Prisma.Decimal;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    pendingRefundTotal: number,
+  ): RentalOrderListItemOutDto {
     const overdue = getRentalOrderOverdue(order.endDate, order.status, order.actualReturnDate);
     const refundDue = Number(order.refundDue);
     const actualRefundTotal = Number(order.actualRefundTotal);
@@ -1519,6 +1739,11 @@ export class RentalOrdersService {
       ...overdue,
       customerId: order.customerId,
       customerSnapshot: this.customerSnapshotOut(order.customerSnapshot),
+      identityDocumentType: order.identityDocumentType,
+      identityFrontFileId: order.identityFrontFileId,
+      identityBackFileId: order.identityBackFileId,
+      identityReviewStatus: order.identityReviewStatus,
+      identityReviewNote: order.identityReviewNote,
       settingsSnapshot: order.settingsSnapshot,
       rentalPeriod: {
         startDate: order.startDate,
@@ -1600,6 +1825,9 @@ export class RentalOrdersService {
       amount: Number(payment.amount),
       method: payment.method,
       status: payment.status,
+      proofFileId: payment.proofFileId,
+      proofFileName: payment.proofFile?.originalName ?? null,
+      proofFileMimeType: payment.proofFile?.mimeType ?? null,
       referenceCode: payment.referenceCode,
       idempotencyKey: payment.idempotencyKey,
       createdAt: payment.createdAt,

@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@generated/prisma/client';
-import { FileObjectEventType, FileObjectStatus, FilePurpose, FileVisibility, UploadBatchStatus } from '@generated/prisma/enums';
+import { FileObjectEventType, FileObjectStatus, FilePurpose, FileVisibility } from '@generated/prisma/enums';
 import { PrismaService } from '@modules/database/prisma.service';
 import { AuthUser } from '@modules/auth/types/auth-user.type';
 import { FORBIDDEN, INCORRECT_INPUT, RECORD_NOT_FOUND } from '@/libs/constants/error.constants';
@@ -12,14 +12,12 @@ import {
   FILE_EXTENSION_BY_MIME,
   FILE_UPLOAD_POLICY_BY_PURPOSE,
   FILE_MAX_DOCUMENT_SIZE_BYTES,
-  FILE_MAX_EXPORT_SIZE_BYTES,
   FILE_MAX_IMAGE_SIZE_BYTES,
   FILE_STORAGE_PROVIDER,
-  PUBLIC_FILE_PURPOSES,
   SupportedFileMimeType,
 } from './constants/file-storage.constant';
 import { CreateUploadDto } from './dto/create-upload.dto';
-import { FileDownloadUrlOutDto, FileObjectOutDto, FileUploadPoliciesOutDto, UploadCompleteOutDto, UploadOutDto } from './dto/file-storage-out.dto';
+import { FileDownloadUrlOutDto, FileObjectOutDto, FileUploadPoliciesOutDto, UploadOutDto } from './dto/file-storage-out.dto';
 import { R2StorageService } from './r2-storage.service';
 
 @Injectable()
@@ -49,7 +47,6 @@ export class FileStorageService {
 
   async createUpload(dto: CreateUploadDto, actor: AuthUser): Promise<UploadOutDto> {
     this.r2Storage.assertConfigured();
-    const visibility = dto.visibility ?? FileVisibility.PRIVATE;
     const policy = FILE_UPLOAD_POLICY_BY_PURPOSE[dto.purpose];
     const totalBytes = dto.files.reduce((total, file) => total + file.sizeBytes, 0);
 
@@ -65,36 +62,25 @@ export class FileStorageService {
       throw new BadRequestException({
         ...INCORRECT_INPUT,
         code: 'UPLOAD_TOTAL_SIZE_EXCEEDED',
-        message: `Upload batch exceeds the ${Math.round(policy.maxTotalSizeBytes / (1024 * 1024))}MB total limit`,
+        message: `Upload exceeds the ${Math.round(policy.maxTotalSizeBytes / (1024 * 1024))}MB total limit`,
       });
     }
 
     const normalizedFiles = dto.files.map((file) => {
       const mimeType = file.mimeType as SupportedFileMimeType;
-      this.validateUploadRequest(dto.purpose, mimeType, file.sizeBytes, visibility, file.originalName);
+      this.validateUploadRequest(dto.purpose, mimeType, file.sizeBytes, file.originalName);
 
       return {
         clientId: file.clientId,
         originalName: this.normalizeOriginalName(file.originalName),
         mimeType,
         sizeBytes: file.sizeBytes,
-        objectKey: this.buildObjectKey(dto.purpose, actor.id, mimeType),
+        objectKey: this.buildObjectKey(dto.purpose, mimeType),
       };
     });
 
     const expiresAt = this.r2Storage.getExpiresAt();
-    const created = await this.prisma.$transaction(async (transaction) => {
-      const upload = await transaction.uploadBatch.create({
-        data: {
-          purpose: dto.purpose,
-          status: UploadBatchStatus.OPEN,
-          expectedFileCount: normalizedFiles.length,
-          expectedTotalBytes: BigInt(totalBytes),
-          uploadedBy: actor.id,
-          expiresAt,
-        },
-      });
-
+    const createdFiles = await this.prisma.$transaction(async (transaction) => {
       const files = [];
       for (const item of normalizedFiles) {
         const file = await transaction.fileObject.create({
@@ -104,12 +90,11 @@ export class FileStorageService {
             objectKey: item.objectKey,
             purpose: dto.purpose,
             status: FileObjectStatus.PENDING,
-            visibility,
+            visibility: FileVisibility.PRIVATE,
             originalName: item.originalName,
             mimeType: item.mimeType,
             sizeBytes: BigInt(item.sizeBytes),
             uploadedBy: actor.id,
-            uploadBatchId: upload.id,
             expiresAt,
           },
         });
@@ -119,112 +104,33 @@ export class FileStorageService {
             fileId: file.id,
             actorId: actor.id,
             event: FileObjectEventType.PRESIGNED,
-            metadata: this.jsonValue({ uploadId: upload.id, purpose: dto.purpose, mimeType: item.mimeType, sizeBytes: item.sizeBytes }),
+            metadata: this.jsonValue({ purpose: dto.purpose, mimeType: item.mimeType, sizeBytes: item.sizeBytes }),
           },
         });
 
         files.push({ clientId: item.clientId, file });
       }
 
-      return { upload, files };
+      return files;
     });
 
     try {
-      const files = await Promise.all(
-        created.files.map(async ({ clientId, file }) => ({
-          clientId,
-          file: this.toFileObjectOut(file),
-          uploadUrl: await this.r2Storage.createUploadUrl({ objectKey: file.objectKey, mimeType: file.mimeType }),
-          method: 'PUT' as const,
-          requiredHeaders: { 'Content-Type': file.mimeType },
-          expiresAt,
-        })),
-      );
-
       return {
-        uploadId: created.upload.id,
-        purpose: created.upload.purpose,
-        status: created.upload.status,
-        expectedFileCount: created.upload.expectedFileCount,
-        expectedTotalBytes: Number(created.upload.expectedTotalBytes),
-        expiresAt: created.upload.expiresAt,
-        files,
+        files: await Promise.all(
+          createdFiles.map(async ({ clientId, file }) => ({
+            clientId,
+            file: this.toFileObjectOut(file),
+            uploadUrl: await this.r2Storage.createUploadUrl({ objectKey: file.objectKey, mimeType: file.mimeType }),
+            method: 'PUT' as const,
+            requiredHeaders: { 'Content-Type': file.mimeType },
+            expiresAt,
+          })),
+        ),
       };
     } catch (error) {
-      await this.markUploadFailed(created.upload.id, actor.id, 'presign_failed');
+      await this.markFilesFailed(createdFiles.map(({ file }) => file.id), actor.id, 'presign_failed');
       throw error;
     }
-  }
-
-  async completeUploadBatch(uploadId: string, actor: AuthUser): Promise<UploadCompleteOutDto> {
-    const upload = await this.findUpload(uploadId);
-    this.assertCanManageUpload(upload.uploadedBy, actor);
-
-    if (upload.status === UploadBatchStatus.COMPLETED) {
-      return this.toUploadCompleteOut(upload);
-    }
-
-    if (upload.status !== UploadBatchStatus.OPEN) {
-      throw new BadRequestException({
-        code: 'UPLOAD_NOT_OPEN',
-        message: 'Upload is no longer open',
-      });
-    }
-
-    if (upload.expiresAt.getTime() <= Date.now()) {
-      await this.markUploadExpired(upload.id, actor.id);
-      throw new BadRequestException({
-        code: 'UPLOAD_EXPIRED',
-        message: 'Upload has expired',
-      });
-    }
-
-    const incompleteFiles = upload.files.filter((file) => file.status !== FileObjectStatus.READY);
-    if (incompleteFiles.length > 0) {
-      throw new BadRequestException({
-        code: 'UPLOAD_INCOMPLETE',
-        message: 'Some files have not been completed',
-        details: incompleteFiles.map((file) => ({ fileId: file.id, status: file.status })),
-      });
-    }
-
-    const completedAt = new Date();
-    const completedUpload = await this.prisma.uploadBatch.update({
-      where: { id: upload.id },
-      data: { status: UploadBatchStatus.COMPLETED, completedAt },
-      include: { files: true },
-    });
-
-    return this.toUploadCompleteOut(completedUpload);
-  }
-
-  async cancelUpload(uploadId: string, actor: AuthUser): Promise<UploadCompleteOutDto> {
-    const upload = await this.findUpload(uploadId);
-    this.assertCanManageUpload(upload.uploadedBy, actor);
-
-    if (upload.status === UploadBatchStatus.COMPLETED) {
-      throw new BadRequestException({
-        code: 'UPLOAD_ALREADY_COMPLETED',
-        message: 'Completed uploads cannot be cancelled',
-      });
-    }
-
-    await Promise.all(upload.files.map((file) => this.deleteObjectBestEffort(file.objectKey)));
-
-    const cancelledUpload = await this.prisma.$transaction(async (transaction) => {
-      await transaction.fileObject.updateMany({
-        where: { uploadBatchId: upload.id, deletedAt: null },
-        data: { status: FileObjectStatus.DELETED, deletedAt: new Date() },
-      });
-
-      return transaction.uploadBatch.update({
-        where: { id: upload.id },
-        data: { status: UploadBatchStatus.CANCELLED, cancelledAt: new Date() },
-        include: { files: true },
-      });
-    });
-
-    return this.toUploadCompleteOut(cancelledUpload);
   }
 
   async completeUpload(fileId: string, actor: AuthUser): Promise<FileObjectOutDto> {
@@ -293,6 +199,45 @@ export class FileStorageService {
     return this.toFileObjectOut(completedFile);
   }
 
+  /**
+   * Validate that business data links only files that are complete and were
+   * uploaded for the expected purpose. The business module still owns the
+   * relationship; file-storage only validates the storage metadata.
+   */
+  async assertReadyFilesForPurpose(fileIds: string[], purpose: FilePurpose, actor: AuthUser): Promise<void> {
+    const uniqueFileIds = [...new Set(fileIds)];
+    if (uniqueFileIds.length !== fileIds.length || uniqueFileIds.length === 0) {
+      throw new BadRequestException({
+        ...INCORRECT_INPUT,
+        code: 'FILE_LINK_INVALID',
+        message: 'Danh sách file liên kết không hợp lệ',
+      });
+    }
+
+    const files = await this.prisma.fileObject.findMany({
+      where: { id: { in: uniqueFileIds }, deletedAt: null },
+    });
+
+    if (files.length !== uniqueFileIds.length) {
+      throw new BadRequestException({
+        ...INCORRECT_INPUT,
+        code: 'FILE_LINK_NOT_FOUND',
+        message: 'Không tìm thấy đủ file để liên kết',
+      });
+    }
+
+    for (const file of files) {
+      this.assertCanRead(file, actor);
+      if (file.status !== FileObjectStatus.READY || file.purpose !== purpose) {
+        throw new BadRequestException({
+          ...INCORRECT_INPUT,
+          code: 'FILE_LINK_NOT_READY',
+          message: 'Chỉ có file READY đúng purpose mới được liên kết',
+        });
+      }
+    }
+  }
+
   async createDownloadUrl(fileId: string, actor: AuthUser): Promise<FileDownloadUrlOutDto> {
     const file = await this.findActiveFile(fileId);
     this.assertCanRead(file, actor);
@@ -352,12 +297,61 @@ export class FileStorageService {
     return this.toFileObjectOut(deletedFile);
   }
 
+  async cleanupExpiredFiles(): Promise<number> {
+    const files = await this.prisma.fileObject.findMany({
+      where: {
+        deletedAt: null,
+        status: { in: [FileObjectStatus.PENDING, FileObjectStatus.FAILED] },
+        expiresAt: { lte: new Date() },
+      },
+      orderBy: { expiresAt: 'asc' },
+      take: 100,
+    });
+
+    let cleanedCount = 0;
+    for (const file of files) {
+      try {
+        await this.r2Storage.deleteObject(file.objectKey);
+      } catch (error) {
+        this.logger.warn(`Failed to cleanup expired R2 object ${file.objectKey}: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+
+      await this.prisma.$transaction(async (transaction) => {
+        const updated = await transaction.fileObject.updateMany({
+          where: {
+            id: file.id,
+            deletedAt: null,
+            status: { in: [FileObjectStatus.PENDING, FileObjectStatus.FAILED] },
+          },
+          data: {
+            status: FileObjectStatus.DELETED,
+            deletedAt: new Date(),
+          },
+        });
+
+        if (updated.count > 0) {
+          await transaction.fileObjectEvent.create({
+            data: {
+              fileId: file.id,
+              event: FileObjectEventType.DELETED,
+              metadata: this.jsonValue({ reason: 'expired_cleanup' }),
+            },
+          });
+        }
+
+        cleanedCount += updated.count;
+      });
+    }
+
+    return cleanedCount;
+  }
+
   private validateUploadRequest(
     purpose: FilePurpose,
     mimeType: SupportedFileMimeType,
     sizeBytes: number,
-    visibility?: FileVisibility,
-    originalName?: string,
+    originalName: string,
   ): void {
     const allowedMimeTypes = FILE_ALLOWED_MIME_TYPES_BY_PURPOSE[purpose];
     if (!allowedMimeTypes?.includes(mimeType)) {
@@ -375,7 +369,7 @@ export class FileStorageService {
       });
     }
 
-    const extension = originalName ? extname(originalName).slice(1).toLowerCase() : '';
+    const extension = extname(originalName).slice(1).toLowerCase();
     if (extension && !FILE_ALLOWED_EXTENSIONS_BY_MIME[mimeType].includes(extension)) {
       throw new BadRequestException({
         ...INCORRECT_INPUT,
@@ -383,12 +377,6 @@ export class FileStorageService {
       });
     }
 
-    if (visibility === FileVisibility.PUBLIC && !PUBLIC_FILE_PURPOSES.has(purpose)) {
-      throw new BadRequestException({
-        ...INCORRECT_INPUT,
-        message: 'Chỉ media catalog/CMS mới được phép đánh dấu public',
-      });
-    }
   }
 
   private getMaxSizeBytes(mimeType: SupportedFileMimeType): number {
@@ -400,34 +388,20 @@ export class FileStorageService {
       return FILE_MAX_DOCUMENT_SIZE_BYTES;
     }
 
-    return FILE_MAX_EXPORT_SIZE_BYTES;
+    return FILE_MAX_DOCUMENT_SIZE_BYTES;
   }
 
-  private buildObjectKey(purpose: FilePurpose, actorId: string, mimeType: SupportedFileMimeType): string {
+  private buildObjectKey(purpose: FilePurpose, mimeType: SupportedFileMimeType): string {
     const extension = FILE_EXTENSION_BY_MIME[mimeType];
-    return `uploads/${purpose.toLowerCase()}/${actorId}/${randomUUID()}.${extension}`;
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    return `uploads/${purpose.toLowerCase()}/${year}/${month}/${randomUUID()}.${extension}`;
   }
 
   private normalizeOriginalName(originalName: string): string {
     const normalized = originalName.replace(/[\\/\r\n]/g, '_').trim();
     return normalized || 'upload';
-  }
-
-  private async findUpload(uploadId: string) {
-    const upload = await this.prisma.uploadBatch.findFirst({
-      where: { id: uploadId },
-      include: {
-        files: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-    });
-
-    if (!upload) {
-      throw new NotFoundException(RECORD_NOT_FOUND);
-    }
-
-    return upload;
   }
 
   private async findActiveFile(fileId: string) {
@@ -447,13 +421,6 @@ export class FileStorageService {
 
   private assertCanComplete(uploadedBy: string, actorId: string): void {
     if (uploadedBy !== actorId) {
-      throw new ForbiddenException(FORBIDDEN);
-    }
-  }
-
-  private assertCanManageUpload(uploadedBy: string, actor: AuthUser): void {
-    const privileged = actor.roles.some((role) => role === 'ADMIN' || role === 'MANAGER');
-    if (!privileged && uploadedBy !== actor.id) {
       throw new ForbiddenException(FORBIDDEN);
     }
   }
@@ -494,60 +461,30 @@ export class FileStorageService {
     }
   }
 
-  private async markUploadFailed(uploadId: string, actorId: string, reason: string): Promise<void> {
+  private async markFilesFailed(fileIds: string[], actorId: string, reason: string): Promise<void> {
+    if (fileIds.length === 0) {
+      return;
+    }
+
     try {
       await this.prisma.$transaction(async (transaction) => {
-        await transaction.uploadBatch.updateMany({
-          where: { id: uploadId, status: UploadBatchStatus.OPEN },
-          data: { status: UploadBatchStatus.FAILED },
-        });
-
-        const files = await transaction.fileObject.findMany({ where: { uploadBatchId: uploadId } });
         await transaction.fileObject.updateMany({
-          where: { uploadBatchId: uploadId, status: FileObjectStatus.PENDING },
+          where: { id: { in: fileIds }, status: FileObjectStatus.PENDING },
           data: { status: FileObjectStatus.FAILED },
         });
 
-        if (files.length > 0) {
-          await transaction.fileObjectEvent.createMany({
-            data: files.map((file) => ({
-              fileId: file.id,
-              actorId,
-              event: FileObjectEventType.FAILED,
-              metadata: this.jsonValue({ reason, uploadId }),
-            })),
-          });
-        }
-      });
-    } catch (error) {
-      this.logger.error(`Failed to persist upload failure for ${uploadId}`, error instanceof Error ? error.stack : undefined);
-    }
-  }
-
-  private async markUploadExpired(uploadId: string, actorId: string): Promise<void> {
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.uploadBatch.updateMany({
-        where: { id: uploadId, status: UploadBatchStatus.OPEN },
-        data: { status: UploadBatchStatus.EXPIRED },
-      });
-
-      const files = await transaction.fileObject.findMany({ where: { uploadBatchId: uploadId, status: FileObjectStatus.PENDING } });
-      await transaction.fileObject.updateMany({
-        where: { uploadBatchId: uploadId, status: FileObjectStatus.PENDING },
-        data: { status: FileObjectStatus.FAILED },
-      });
-
-      if (files.length > 0) {
         await transaction.fileObjectEvent.createMany({
-          data: files.map((file) => ({
-            fileId: file.id,
+          data: fileIds.map((fileId) => ({
+            fileId,
             actorId,
             event: FileObjectEventType.FAILED,
-            metadata: this.jsonValue({ reason: 'upload_expired', uploadId }),
+            metadata: this.jsonValue({ reason }),
           })),
         });
-      }
-    });
+      });
+    } catch (error) {
+      this.logger.error(`Failed to persist file failure events for ${fileIds.join(', ')}`, error instanceof Error ? error.stack : undefined);
+    }
   }
 
   private async deleteObjectBestEffort(objectKey: string): Promise<void> {
@@ -589,37 +526,6 @@ export class FileStorageService {
       deletedAt: file.deletedAt,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-    };
-  }
-
-  private toUploadCompleteOut(upload: {
-    id: string;
-    purpose: FilePurpose;
-    status: UploadBatchStatus;
-    completedAt: Date | null;
-    files: Array<{
-      id: string;
-      purpose: FilePurpose;
-      status: FileObjectStatus;
-      visibility: FileVisibility;
-      originalName: string;
-      mimeType: string;
-      sizeBytes: bigint;
-      etag: string | null;
-      uploadedBy: string;
-      expiresAt: Date;
-      completedAt: Date | null;
-      deletedAt: Date | null;
-      createdAt: Date;
-      updatedAt: Date;
-    }>;
-  }): UploadCompleteOutDto {
-    return {
-      uploadId: upload.id,
-      purpose: upload.purpose,
-      status: upload.status,
-      completedAt: upload.completedAt,
-      files: upload.files.map((file) => this.toFileObjectOut(file)),
     };
   }
 

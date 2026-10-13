@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsDate, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
-import { PickupMethod } from '@generated/prisma/enums';
+import { PickupMethod, RentalIdentityDocumentType } from '@generated/prisma/enums';
 import { INVALID_ARRAY, INVALID_DATE, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
 export class RentalOrderItemDto {
@@ -63,6 +63,18 @@ export class CreateRentalOrderDto {
   @ApiProperty({ type: String, format: 'uuid', description: 'Quote returned by POST /rental-orders/quote.' })
   @IsUUID('7', { message: INVALID_UUID })
   quoteId!: string;
+
+  @ApiProperty({ enum: Object.values(RentalIdentityDocumentType), description: 'Loại giấy tờ được đối chiếu cho đơn này.' })
+  @IsEnum(RentalIdentityDocumentType)
+  identityDocumentType!: RentalIdentityDocumentType;
+
+  @ApiProperty({ type: String, format: 'uuid', description: 'File READY purpose CUSTOMER_IDENTITY, ảnh mặt trước.' })
+  @IsUUID('7', { message: INVALID_UUID })
+  identityFrontFileId!: string;
+
+  @ApiProperty({ type: String, format: 'uuid', description: 'File READY purpose CUSTOMER_IDENTITY, ảnh mặt sau.' })
+  @IsUUID('7', { message: INVALID_UUID })
+  identityBackFileId!: string;
 
   @ApiPropertyOptional({ example: 'Khach se den lay may luc 8h' })
   @IsOptional()

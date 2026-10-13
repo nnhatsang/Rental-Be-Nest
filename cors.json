@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "id": "rental-admin-local",
+      "allowed": {
+        "origins": ["http://localhost:3000"],
+        "methods": ["PUT", "GET", "HEAD"],
+        "headers": ["Content-Type"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

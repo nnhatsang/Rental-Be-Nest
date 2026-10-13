@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { FileObjectStatus, FilePurpose, FileVisibility, UploadBatchStatus } from '@generated/prisma/enums';
+import { FileObjectStatus, FilePurpose, FileVisibility } from '@generated/prisma/enums';
 
 export class FileObjectOutDto {
   @ApiProperty({ type: String, format: 'uuid' })
@@ -77,43 +77,8 @@ export class UploadItemOutDto {
 }
 
 export class UploadOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  uploadId!: string;
-
-  @ApiProperty({ enum: FilePurpose })
-  purpose!: FilePurpose;
-
-  @ApiProperty({ enum: UploadBatchStatus })
-  status!: UploadBatchStatus;
-
-  @ApiProperty({ example: 3 })
-  expectedFileCount!: number;
-
-  @ApiProperty({ example: 10485760 })
-  expectedTotalBytes!: number;
-
-  @ApiProperty({ type: Date, format: 'date-time' })
-  expiresAt!: Date;
-
   @ApiProperty({ type: [UploadItemOutDto] })
   files!: UploadItemOutDto[];
-}
-
-export class UploadCompleteOutDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  uploadId!: string;
-
-  @ApiProperty({ enum: FilePurpose })
-  purpose!: FilePurpose;
-
-  @ApiProperty({ enum: UploadBatchStatus })
-  status!: UploadBatchStatus;
-
-  @ApiProperty({ type: Date, format: 'date-time', nullable: true })
-  completedAt!: Date | null;
-
-  @ApiProperty({ type: [FileObjectOutDto] })
-  files!: FileObjectOutDto[];
 }
 
 export class FileUploadPolicyOutDto {
@@ -126,7 +91,7 @@ export class FileUploadPolicyOutDto {
   @ApiProperty({ example: 104857600 })
   maxTotalSizeBytes!: number;
 
-  @ApiProperty({ example: 12582912 })
+  @ApiProperty({ example: 10485760 })
   maxFileSizeBytes!: number;
 
   @ApiProperty({ type: [String], example: ['image/jpeg', 'image/png'] })

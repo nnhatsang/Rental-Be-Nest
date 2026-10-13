@@ -1,6 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ApiPag, ApiPaginatedResponseDto, ApiRes } from '@/libs/types/custom-response.type';
-import { RentalOrderListItemOutDto, RentalOrderOutDto, RentalOrderQuoteOutDto } from './rental-order-out.dto';
+import {
+  RentalOrderListItemOutDto,
+  RentalOrderOutDto,
+  RentalOrderPaymentReviewQueueItemOutDto,
+  RentalOrderQuoteOutDto,
+} from './rental-order-out.dto';
 
 export class RentalOrderResponseDto extends ApiRes<RentalOrderOutDto> {
   @ApiProperty({ type: RentalOrderOutDto })
@@ -20,6 +25,16 @@ export class RentalOrdersPaginatedDataDto extends ApiPag<RentalOrderListItemOutD
 export class RentalOrdersPaginatedResponseDto extends ApiPaginatedResponseDto<RentalOrderListItemOutDto> {
   @ApiProperty({ type: RentalOrdersPaginatedDataDto })
   declare data: RentalOrdersPaginatedDataDto;
+}
+
+export class RentalPaymentReviewQueuePaginatedDataDto extends ApiPag<RentalOrderPaymentReviewQueueItemOutDto> {
+  @ApiProperty({ type: [RentalOrderPaymentReviewQueueItemOutDto] })
+  declare items: RentalOrderPaymentReviewQueueItemOutDto[];
+}
+
+export class RentalPaymentReviewQueuePaginatedResponseDto extends ApiPaginatedResponseDto<RentalOrderPaymentReviewQueueItemOutDto> {
+  @ApiProperty({ type: RentalPaymentReviewQueuePaginatedDataDto })
+  declare data: RentalPaymentReviewQueuePaginatedDataDto;
 }
 
 export class DeleteRentalOrderDataDto {

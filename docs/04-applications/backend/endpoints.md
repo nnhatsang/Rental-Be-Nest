@@ -96,7 +96,10 @@
 | `POST` | `/:id/confirm` | `orders.update_status` | Xác nhận đơn thuê (`DRAFT` → `CONFIRMED`). |
 | `POST` | `/:id/cancel` | `orders.cancel` | Hủy đơn thuê. |
 | `PATCH` | `/:id` | `orders.update` | Sửa đổi thông tin đơn nháp. |
+| `POST` | `/:id/identity-review` | `orders.identity_review` | Duyệt hoặc từ chối hai ảnh giấy tờ đã gắn vào đơn. |
 | `DELETE` | `/:id` | `orders.cancel` | Xóa mềm đơn thuê nháp. |
+
+| `GET` | `/payment-review-queue` | `orders.record_payment` | Danh sach giao dich chuyen khoan dang cho duyet bill. |
 
 ### 2.7 Nhom Mau Email (Mail Templates)
 - Base Path: `/api/mail-templates`

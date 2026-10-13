@@ -21,6 +21,7 @@ import {
   RentalInspectionCondition,
   RentalIncidentType,
   PaymentTransactionStatus,
+  RentalIdentityReviewStatus,
 } from '@generated/prisma/enums';
 import { INVALID_ARRAY, INVALID_DATE, INVALID_ENUM, INVALID_NUMBER, INVALID_STRING, INVALID_UUID } from '@/libs/constants/invalid.constant';
 
@@ -89,10 +90,19 @@ export class RecordRentalOrderPaymentDto {
   @IsEnum(PaymentMethod, { message: INVALID_ENUM(Object.values(PaymentMethod), 'method') })
   method!: PaymentMethod;
 
-  @ApiPropertyOptional({ enum: Object.values(PaymentTransactionStatus), default: PaymentTransactionStatus.PENDING })
+  @ApiPropertyOptional({
+    enum: Object.values(PaymentTransactionStatus),
+    default: PaymentTransactionStatus.PENDING,
+    description: 'Chỉ dùng SUCCESS trực tiếp cho tiền mặt; chuyển khoản luôn bắt đầu ở PENDING.',
+  })
   @IsOptional()
   @IsEnum(PaymentTransactionStatus)
   status?: PaymentTransactionStatus;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'File READY có purpose PAYMENT_PROOF.' })
+  @IsOptional()
+  @IsUUID('7', { message: INVALID_UUID })
+  proofFileId?: string;
 
   @ApiPropertyOptional({ example: 'BANK-FT-001' })
   @IsOptional()
@@ -215,6 +225,17 @@ export class SettleRentalOrderDto {
 
 export class RejectPaymentDto {
   @ApiPropertyOptional({ example: 'Chuyen khoan khong hop le' })
+  @IsOptional()
+  @IsString({ message: INVALID_STRING })
+  note?: string;
+}
+
+export class ReviewRentalOrderIdentityDto {
+  @ApiProperty({ enum: [RentalIdentityReviewStatus.VERIFIED, RentalIdentityReviewStatus.REJECTED] })
+  @IsEnum(RentalIdentityReviewStatus)
+  status!: RentalIdentityReviewStatus;
+
+  @ApiPropertyOptional({ example: 'Ảnh mặt sau bị mờ, vui lòng upload lại.' })
   @IsOptional()
   @IsString({ message: INVALID_STRING })
   note?: string;

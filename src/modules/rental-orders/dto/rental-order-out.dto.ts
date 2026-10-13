@@ -16,6 +16,8 @@ import {
   RentalRefundStatus,
   RentalSettlementStatus,
   ReturnStatus,
+  RentalIdentityDocumentType,
+  RentalIdentityReviewStatus,
 } from '@generated/prisma/enums';
 import { RentalOrderUnavailableItemDto } from './rental-order-unavailable-item.dto';
 
@@ -114,8 +116,28 @@ export class RentalOrderPaymentOutDto {
   @ApiProperty() amount!: number;
   @ApiProperty({ enum: PaymentMethod }) method!: PaymentMethod;
   @ApiProperty({ enum: PaymentTransactionStatus }) status!: PaymentTransactionStatus;
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' }) proofFileId!: string | null;
+  @ApiPropertyOptional({ nullable: true }) proofFileName!: string | null;
+  @ApiPropertyOptional({ nullable: true }) proofFileMimeType!: string | null;
   @ApiProperty({ nullable: true }) referenceCode!: string | null;
   @ApiProperty({ nullable: true }) idempotencyKey!: string | null;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class RentalOrderPaymentReviewQueueItemOutDto {
+  @ApiProperty({ format: 'uuid' }) paymentId!: string;
+  @ApiProperty({ format: 'uuid' }) orderId!: string;
+  @ApiProperty() orderCode!: string;
+  @ApiProperty() customerName!: string;
+  @ApiProperty({ nullable: true }) customerPhone!: string | null;
+  @ApiProperty() orderStatus!: OrderStatus;
+  @ApiProperty() amount!: number;
+  @ApiProperty({ enum: PaymentMethod }) method!: PaymentMethod;
+  @ApiProperty({ enum: PaymentTransactionStatus }) status!: PaymentTransactionStatus;
+  @ApiProperty({ format: 'uuid', nullable: true }) proofFileId!: string | null;
+  @ApiProperty({ nullable: true }) proofFileName!: string | null;
+  @ApiProperty({ nullable: true }) proofFileMimeType!: string | null;
+  @ApiProperty({ nullable: true }) referenceCode!: string | null;
   @ApiProperty() createdAt!: Date;
 }
 
@@ -193,6 +215,11 @@ export class RentalOrderOutDto {
   @ApiProperty() overdueHours!: number;
   @ApiProperty() customerId!: string;
   @ApiProperty({ type: RentalOrderCustomerSnapshotOutDto }) customerSnapshot!: RentalOrderCustomerSnapshotOutDto;
+  @ApiPropertyOptional({ enum: RentalIdentityDocumentType, nullable: true }) identityDocumentType!: RentalIdentityDocumentType | null;
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' }) identityFrontFileId!: string | null;
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' }) identityBackFileId!: string | null;
+  @ApiProperty({ enum: RentalIdentityReviewStatus }) identityReviewStatus!: RentalIdentityReviewStatus;
+  @ApiPropertyOptional({ nullable: true }) identityReviewNote!: string | null;
   @ApiProperty({ type: Object }) settingsSnapshot!: unknown;
   @ApiProperty({ type: Object }) rentalPeriod!: { startDate: Date; endDate: Date; actualPickupDate: Date | null; actualReturnDate: Date | null };
   @ApiProperty({ type: Object }) fulfillment!: { pickupMethod: PickupMethod; deliveryAddress: string | null };
